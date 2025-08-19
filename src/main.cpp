@@ -31,6 +31,7 @@ MatrixXd couplingmat(VectorXd xs, VectorXd ys, f64 rsq) {
   return J;
 }
 
+/*
 template <typename Out>
 void split(const std::string& s, char delim, Out result) {
   std::istringstream iss(s);
@@ -44,6 +45,50 @@ std::vector<std::string> split(const std::string& s, char delim) {
   std::vector<std::string> elems;
   split(s, delim, std::back_inserter(elems));
   return elems;
+}
+*/
+
+/// nx: number of hexagons along x axis.
+/// ny: number of hexagons along y axis.
+/// a: lattice constant.
+void makeHexLattice(u32 nx, u32 ny, f64 a) {
+  Eigen::Vector2d v1{a * std::cos(M_2_PI / 3), a * std::cos(M_2_PI / 3)};
+  Eigen::Vector2d v2{a * std::cos(M_PI / 3), a * std::cos(M_PI / 3)};
+  Eigen::Vector2d h{a, 0};
+  u32 npoints = 2 * (2 * ny + 1) + (nx - 1) * (2 * ny + 2);
+
+  Eigen::MatrixX2d = ;
+  Eigen::MatrixX2d H(npoints, 2);
+  if (nx % 2 == 1) {
+    u32 idx = 0;
+    for (u32 i = 0; i < 2 * ny + 1; i++) {
+      H(idx, {1, 2}) = (i + 1 / 2) * v1 + (i / 2) * v2;
+      idx += 1;
+    }
+
+    for (u32 j = 1; j < nx; j++) {
+      for (u32 i = 0; i < 2 * ny + 1; i++) {
+        H(idx, {1, 2}) = (i + 1 / 2) * v1 + (i / 2) * v2;
+        idx += 1;
+      }
+    }
+  }
+  H(0, {1, 2}) = 0 * v1 + 0 * v2;
+  H(1, {1, 2}) = 1 * v1 + 0 * v2;
+  H(2, {1, 2}) = 1 * v1 + 1 * v2;
+  /*if (nx % 2 == 0) {
+    for (u32 i = 0; i < nx + 1; i++) {
+      H(2 * i * (2 * ny + 1), {1, 2}) = 2 * i * h + (i / 2) * v2;
+      for (u32 j = 0; j < ny; j++) {
+        H(2 * i * (2 * ny + 1) + 2 * j, {1, 2}) = (i / 2) * v2
+      }
+    }
+    for (u32 i = 0; i < nx; i++) {
+      H(i * (2 * ny + 1), {1, 2});
+      for (u32 j = 0; j < ny; j++) {
+      }
+    }
+  }*/
 }
 
 MatrixXd couplingmat(MatrixX2d points, f64 rsq) {
@@ -72,7 +117,7 @@ void saveEigen(std::string fname, Eigen::MatrixBase<D>& x) {
   f.close();
 }
 
-template <class T>
+/* template <class T>
 Eigen::MatrixX<T> readEigen(std::string fname) {
   std::string line;
   std::ifstream f(fname);
@@ -94,10 +139,48 @@ Eigen::MatrixX<T> readEigen(std::string fname) {
   while (std::getline(f, line)) {
     auto x = split(line, ' ');
     for (u32 i = 0; i < m; i++) {
-      M(j, i) = std::stod(x[i]);
+      if (std::is_same_v<f64, T>)
+        M(j, i) = std::stod(x[i]);
+      if (std::is_same_v<f32, T>)
+        M(j, i) = std::stof(x[i]);
     }
     j += 1;
   }
+  return M;
+} */
+
+template <class T>
+Eigen::MatrixX<T> readEigen(std::string fname) {
+  std::string line;
+  std::ifstream f(fname);
+  u32 m = 0;
+  u32 n = 0;
+  while (std::getline(f, line)) {
+    if (n == 0) {
+      auto splits = line | std::ranges::views::split(' ');
+      for (const auto& _ : splits) {
+        m += 1;
+      }
+    }
+    n += 1;
+  }
+  f.clear();
+  f.seekg(0, std::ios::beg);
+  Eigen::MatrixX<T> M(n, m);
+  u32 j = 0;
+  while (std::getline(f, line)) {
+    auto splits = line | std::ranges::views::split(' ');
+    u32 i = 0;
+    for (const auto& split : splits) {
+      if constexpr (std::is_same_v<f64, T>)
+        M(j, i) = std::stod(std::string(split.begin(), split.end()));
+      if constexpr (std::is_same_v<f32, T>)
+        M(j, i) = std::stof(std::string(split.begin(), split.end()));
+      i += 1;
+    }
+    j += 1;
+  }
+  f.close();
   return M;
 }
 
