@@ -57,7 +57,7 @@ void makeHexLattice(u32 nx, u32 ny, f64 a) {
   Eigen::Vector2d h{a, 0};
   u32 npoints = 2 * (2 * ny + 1) + (nx - 1) * (2 * ny + 2);
 
-  Eigen::MatrixX2d = ;
+  // Eigen::MatrixX2d = ;
   Eigen::MatrixX2d H(npoints, 2);
   if (nx % 2 == 1) {
     u32 idx = 0;
@@ -186,11 +186,34 @@ Eigen::MatrixX<T> readEigen(std::string fname) {
 
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("MyProgram", "bleh");
-  options.add_options()("p,points", "File name", cxxopts::value<std::string>());
+  options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
+      "c,chain", "Make chain points", cxxopts::value<u32>())(
+      "r,radius", "Maximum separation between points to consider",
+      cxxopts::value<f64>());
 
   auto result = options.parse(argc, argv);
-  MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
-  std::cout << m;
+  if (result["c"].count()) {
+    u32 n = result["c"].as<u32>();
+    MatrixX2d points(n, 2);
+    for (u32 i = 0; i < n; i++) {
+      points(i, {0, 1}) = Eigen::Vector2d{i, 0};
+    }
+    saveEigen("chain.txt", points);
+  }
+  if (result["p"].count() && result["r"].count()) {
+    MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
+    MatrixXd H = couplingmat(m, result["r"].as<f64>());
+
+    Eigen::SelfAdjointEigenSolver<MatrixXd> eigensolver(H);
+
+    if (eigensolver.info() != Eigen::Success) {
+      std::cout << eigensolver.info() << std::endl;
+      abort();
+    }
+    std::ofstream f("eigvals.txt");
+    f << eigensolver.eigenvalues().format(defaultFormat);
+    f.close();
+  }
   // std::cout << m << std::endl;
   /*VectorXd xs(Nx * Ny);
   for (u32 j = 0; j < Ny; j++) {
@@ -206,14 +229,5 @@ int main(const int argc, const char* const* argv) {
     }
   }
 
-  MatrixXd H = couplingmat(xs, ys, 1.1);
-  Eigen::SelfAdjointEigenSolver<MatrixXd> eigensolver(H);
-
-  if (eigensolver.info() != Eigen::Success) {
-    std::cout << eigensolver.info() << std::endl;
-    abort();
-  }
-  std::ofstream f("eigvals.txt");
-  f << eigensolver.eigenvalues().format(defaultFormat);
-  f.close();*/
+*/
 }
