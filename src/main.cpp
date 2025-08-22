@@ -33,27 +33,11 @@ MatrixXd couplingmat(VectorXd xs, VectorXd ys, f64 rsq) {
   return J;
 }
 
-/*
-template <typename Out>
-void split(const std::string& s, char delim, Out result) {
-  std::istringstream iss(s);
-  std::string item;
-  while (std::getline(iss, item, delim)) {
-    *result++ = item;
-  }
-}
-
-std::vector<std::string> split(const std::string& s, char delim) {
-  std::vector<std::string> elems;
-  split(s, delim, std::back_inserter(elems));
-  return elems;
-}
-*/
-
 /// nx: number of hexagons along x axis.
 /// ny: number of hexagons along y axis.
 /// a: lattice constant.
-void makeHexLattice(u32 nx, u32 ny, f64 a) {
+/* 
+ * void makeHexLattice(u32 nx, u32 ny, f64 a) {
   Eigen::Vector2d v1{a * std::cos(M_2_PI / 3), a * std::cos(M_2_PI / 3)};
   Eigen::Vector2d v2{a * std::cos(M_PI / 3), a * std::cos(M_PI / 3)};
   Eigen::Vector2d h{a, 0};
@@ -90,10 +74,12 @@ void makeHexLattice(u32 nx, u32 ny, f64 a) {
       for (u32 j = 0; j < ny; j++) {
       }
     }
-  }*/
+  }
 }
+*/
 
-MatrixXd couplingmat(MatrixX2d points, f64 rsq) {
+template <class Func>
+MatrixXd couplingmat(MatrixX2d points, f64 rsq, Func f) {
   const u32 n = points.rows();
   std::cout << n << '\n';
   MatrixXd J(n, n);
@@ -101,8 +87,8 @@ MatrixXd couplingmat(MatrixX2d points, f64 rsq) {
     for (u32 i = j + 1; i < n; i++) {
       const Eigen::Vector2d x = points(i, {0, 1}) - points(j, {0, 1});
       if (x.squaredNorm() < rsq) {
-        J(j, i) = 1;
-        J(i, j) = 1;
+        J(j, i) = f(x.norm());
+        J(i, j) = f(x.norm());
       } else {
         J(j, i) = 0;
         J(i, j) = 0;
@@ -118,41 +104,6 @@ void saveEigen(std::string fname, Eigen::MatrixBase<D>& x) {
   f << x.format(defaultFormat);
   f.close();
 }
-
-/* template <class T>
-Eigen::MatrixX<T> readEigen(std::string fname) {
-  std::string line;
-  std::ifstream f(fname);
-  u32 m = 0;
-  u32 n = 0;
-  while (std::getline(f, line)) {
-    if (n == 0) {
-      auto splits = line | std::ranges::views::split(' ');
-      for (const auto& _ : splits) {
-        m += 1;
-      }
-    }
-    n += 1;
-  }
-  f.clear();
-  f.seekg(0, std::ios::beg);
-  Eigen::MatrixX<T> M(n, m);
-  u32 j = 0;
-  while (std::getline(f, line)) {
-    auto x = split(line, ' ');
-    for (u32 i = 0; i < m; i++) {
-      if (std::is_same_v<f64, T>)
-        M(j, i) = std::stod(x[i]);
-      if (std::is_same_v<f32, T>)
-        M(j, i) = std::stof(x[i]);
-    }
-    j += 1;
-  }
-  return M;
-} */
-
-// c64 stocd(std::string s) { auto splits = s | std::ranges::views::split('+');
-// }
 
 template <class T>
 Eigen::MatrixX<T> readEigenStream(std::string fname) {
@@ -215,7 +166,6 @@ Eigen::MatrixX<T> readEigen(std::string fname) {
     u32 i = 0;
     for (const auto bleh : v) {
       M(j, i) = bleh;
-      std::cout << bleh << ' ' << M(j, i) << '\n';
       i += 1;
     }
     j += 1;
@@ -235,7 +185,8 @@ int main(const int argc, const char* const* argv) {
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(
       "r,radius", "Maximum separation between points to consider",
-      cxxopts::value<f64>());
+      cxxopts::value<f64>())(
+      "s,sim", "Do dynamic simulation");
 
   auto result = options.parse(argc, argv);
   if (result["c"].count()) {
@@ -247,8 +198,8 @@ int main(const int argc, const char* const* argv) {
     saveEigen("chain.txt", points);
   }
   if (result["p"].count() && result["r"].count()) {
-    MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H = couplingmat(m, result["r"].as<f64>());
+    MatrixX2d m = readEigen<f64>(result["p"].as<std::string>());
+    MatrixXd H = couplingmat(m, result["r"].as<f64>(), [](f64 x){return -exp(-x);});
 
     Eigen::SelfAdjointEigenSolver<MatrixXd> eigensolver(H);
 
@@ -262,7 +213,7 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["s"].count()) {
     MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H = couplingmat(m, result["r"].as<f64>());
+    MatrixXd H = couplingmat(m, result["r"].as<f64>(), [](f64 x){return -1.0f64;});
 
     Eigen::VectorXcd psi;
     if (result["i"].count()) {
