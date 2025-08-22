@@ -8,7 +8,7 @@
 #include <ranges>
 #include <sstream>
 
-using Eigen::MatrixXd, Eigen::VectorXd, Eigen::MatrixX2d;
+using Eigen::MatrixXd, Eigen::VectorXd, Eigen::MatrixX2d, Eigen::VectorXcd;
 constexpr u32 Nx = 40;
 constexpr u32 Ny = 40;
 static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
@@ -36,7 +36,7 @@ MatrixXd couplingmat(VectorXd xs, VectorXd ys, f64 rsq) {
 /// nx: number of hexagons along x axis.
 /// ny: number of hexagons along y axis.
 /// a: lattice constant.
-/* 
+/*
  * void makeHexLattice(u32 nx, u32 ny, f64 a) {
   Eigen::Vector2d v1{a * std::cos(M_2_PI / 3), a * std::cos(M_2_PI / 3)};
   Eigen::Vector2d v2{a * std::cos(M_PI / 3), a * std::cos(M_PI / 3)};
@@ -62,7 +62,7 @@ MatrixXd couplingmat(VectorXd xs, VectorXd ys, f64 rsq) {
   H(0, {1, 2}) = 0 * v1 + 0 * v2;
   H(1, {1, 2}) = 1 * v1 + 0 * v2;
   H(2, {1, 2}) = 1 * v1 + 1 * v2;
-  /*if (nx % 2 == 0) {
+  if (nx % 2 == 0) {
     for (u32 i = 0; i < nx + 1; i++) {
       H(2 * i * (2 * ny + 1), {1, 2}) = 2 * i * h + (i / 2) * v2;
       for (u32 j = 0; j < ny; j++) {
@@ -185,8 +185,7 @@ int main(const int argc, const char* const* argv) {
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(
       "r,radius", "Maximum separation between points to consider",
-      cxxopts::value<f64>())(
-      "s,sim", "Do dynamic simulation");
+      cxxopts::value<f64>())("s,sim", "Do dynamic simulation");
 
   auto result = options.parse(argc, argv);
   if (result["c"].count()) {
@@ -199,7 +198,8 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["p"].count() && result["r"].count()) {
     MatrixX2d m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H = couplingmat(m, result["r"].as<f64>(), [](f64 x){return -exp(-x);});
+    MatrixXd H =
+        couplingmat(m, result["r"].as<f64>(), [](f64 x) { return -exp(-x); });
 
     Eigen::SelfAdjointEigenSolver<MatrixXd> eigensolver(H);
 
@@ -210,10 +210,23 @@ int main(const int argc, const char* const* argv) {
     std::ofstream f("eigvals.txt");
     f << eigensolver.eigenvalues().format(defaultFormat);
     f.close();
+    f64 xmin = std::min_element(m(..,0), m(..,, Compare)
+    MatrixX2d ks(m.rows(), 2);
+    ks = M_2_PI / m.array();
+    for (u32 i = 0; i < ks.rows(); i++) {
+      VectorXcd kvec(m.rows());
+      for (u32 j = 0; j < m.rows(); j++) {
+        std::cout << ks(i, {0, 1}) << '\n';
+        kvec(j) = std::exp(c64{0, ks(i, {0, 1}).dot(m(j, {0, 1}))}) /
+                  sqrt((f64)m.rows());
+      }
+      c64 E = kvec.adjoint() * H * kvec;
+    }
   }
   if (result["s"].count()) {
     MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H = couplingmat(m, result["r"].as<f64>(), [](f64 x){return -1.0f64;});
+    MatrixXd H =
+        couplingmat(m, result["r"].as<f64>(), [](f64 _) { return f64{-1.0}; });
 
     Eigen::VectorXcd psi;
     if (result["i"].count()) {
