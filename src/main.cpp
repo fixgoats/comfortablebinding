@@ -8,22 +8,25 @@
 #include <ranges>
 #include <sstream>
 
-using Eigen::MatrixXd, Eigen::VectorXd, Eigen::MatrixX2d, Eigen::VectorXcd;
+using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
+    Eigen::VectorXcd, Eigen::Vector2d;
 constexpr u32 Nx = 40;
 constexpr u32 Ny = 40;
 static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      Eigen::DontAlignCols, " ", "\n", "", "",
                                      "", "");
 
-MatrixXd couplingmat(VectorXd xs, VectorXd ys, f64 rsq) {
+MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0) {
   const u32 n = xs.size();
   std::cout << n << '\n';
-  MatrixXd J(n, n);
+  MatrixXcd J(n, n);
   for (u32 j = 0; j < n - 1; j++) {
     for (u32 i = j + 1; i < n; i++) {
-      if (square(xs[i] - xs[j]) + square(ys[i] - ys[j]) < rsq) {
-        J(j, i) = 1;
-        J(i, j) = 1;
+      Vector2d r{xs[i] - xs[j], ys[i] - ys[j]};
+      if (r.squaredNorm() < rsq0) {
+        c64 val = std::exp(M_2_PI * c64{0, k.dot(r)});
+        J(j, i) = val;
+        J(i, j) = std::conj(val);
       } else {
         J(j, i) = 0;
         J(i, j) = 0;
