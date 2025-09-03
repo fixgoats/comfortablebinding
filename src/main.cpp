@@ -16,20 +16,18 @@ static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      Eigen::DontAlignCols, " ", "\n", "", "",
                                      "", "");
 
-MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0) {
+template <class Func>
+MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
   const u32 n = xs.size();
   std::cout << n << '\n';
-  MatrixXcd J(n, n);
+  Eigen::MatrixXcd J = Eigen::MatrixXcd::Zero(n, n);
   for (u32 j = 0; j < n - 1; j++) {
     for (u32 i = j + 1; i < n; i++) {
       Vector2d r{xs[i] - xs[j], ys[i] - ys[j]};
       if (r.squaredNorm() < rsq0) {
-        c64 val = std::exp(M_2_PI * c64{0, k.dot(r)});
-        J(j, i) = val;
-        J(i, j) = std::conj(val);
-      } else {
-        J(j, i) = 0;
-        J(i, j) = 0;
+        c64 val = f(r.norm()) * std::exp(c64{0, k.dot(r)});
+        J(i, j) += val;
+        J(i, j) += std::conj(val);
       }
     }
   }
@@ -213,18 +211,14 @@ int main(const int argc, const char* const* argv) {
     std::ofstream f("eigvals.txt");
     f << eigensolver.eigenvalues().format(defaultFormat);
     f.close();
-    f64 xmin = std::min_element(m(..,0), m(..,, Compare)
-    MatrixX2d ks(m.rows(), 2);
-    ks = M_2_PI / m.array();
-    for (u32 i = 0; i < ks.rows(); i++) {
-      VectorXcd kvec(m.rows());
-      for (u32 j = 0; j < m.rows(); j++) {
-        std::cout << ks(i, {0, 1}) << '\n';
-        kvec(j) = std::exp(c64{0, ks(i, {0, 1}).dot(m(j, {0, 1}))}) /
-                  sqrt((f64)m.rows());
-      }
-      c64 E = kvec.adjoint() * H * kvec;
-    }
+    f64 xmin = m(Eigen::all, 0).minCoeff();
+    f64 ymin = m(Eigen::all, 1).minCoeff();
+    f64 xmax = m(Eigen::all, 0).maxCoeff();
+    f64 ymax = m(Eigen::all, 1).maxCoeff();
+    f64 Lx = xmax - xmin;
+    f64 Ly = ymax - ymin;
+    f64 dkx = M_2_PI / Lx;
+    f64 dky = M_2_PI / Ly;
   }
   if (result["s"].count()) {
     MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
