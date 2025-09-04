@@ -20,7 +20,7 @@ template <class Func>
 MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
   const u32 n = xs.size();
   std::cout << n << '\n';
-  Eigen::MatrixXcd J = Eigen::MatrixXcd::Zero(n, n);
+  MatrixXcd J = MatrixXcd::Zero(n, n);
   for (u32 j = 0; j < n - 1; j++) {
     for (u32 i = j + 1; i < n; i++) {
       Vector2d r{xs[i] - xs[j], ys[i] - ys[j]};
@@ -33,6 +33,11 @@ MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
   }
   return J;
 }
+
+std::vector <
+
+    template <class Func>
+    void update_hamiltonian(MatrixXcd& H, Vector2d k, Func f) {}
 
 /// nx: number of hexagons along x axis.
 /// ny: number of hexagons along y axis.
