@@ -1,4 +1,5 @@
 #include "Eigen/Dense"
+#include "kdtree.h"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
@@ -34,10 +35,8 @@ MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
   return J;
 }
 
-std::vector <
-
-    template <class Func>
-    void update_hamiltonian(MatrixXcd& H, Vector2d k, Func f) {}
+template <class Func>
+void update_hamiltonian(MatrixXcd& H, Vector2d k, Func f) {}
 
 /// nx: number of hexagons along x axis.
 /// ny: number of hexagons along y axis.
@@ -104,6 +103,91 @@ MatrixXd couplingmat(MatrixX2d points, f64 rsq, Func f) {
   return J;
 }
 
+struct Point : std::array<double, 2> {
+  static constexpr int DIM = 2;
+  Point() {}
+  Point(double x, double y, u32 idx) : idx{idx} {
+    (*this)[0] = x;
+    (*this)[1] = y;
+  }
+  u32 idx;
+};
+
+struct Line {
+  friend std::istream& operator>>(std::istream& is, Line& line) {
+    return std::getline(is, line.lineTemp);
+  }
+
+  // Output function.
+  friend std::ostream& operator<<(std::ostream& os, const Line& line) {
+    return os << line.lineTemp;
+  }
+
+  // cast to needed result
+  operator std::string() const { return lineTemp; }
+  // Temporary Local storage for line
+  std::string lineTemp{};
+};
+
+std::vector<Point> readPoints(std::string fname) {
+  u32 m = 0;
+  std::ifstream f(fname);
+  std::vector<std::string> allLines{std::istream_iterator<Line>(f),
+                                    std::istream_iterator<Line>()};
+  m = allLines.size();
+  // f.clear();
+  // f.seekg(0, std::ios::beg);
+  std::vector<Point> M(m);
+  for (u32 j = 0; j < m; j++) {
+    std::istringstream stream(allLines[j]);
+    std::vector<double> v{std::istream_iterator<double>(stream),
+                          std::istream_iterator<double>()};
+    M[j] = {v[0], v[1], j};
+  }
+  return M;
+}
+
+/* semsagt, gera kd tré, finna punkta innan r frá y/x-ásunum, gera nýtt safn af
+ * punktum með þeim punktum hliðruðum um grindarfasta til hægri, upp og bæði.
+ * Gera kd tré af *nýja* punktasafninu og gera radíus leit á því. Er það ekki
+ * bara fínt? Er nokkuð rosa dýrt að gera kd tré tvisvar? En bíddu við, ætti ég
+ * ekki að geta bætt "nýju" punktunum við í staðinn fyrir að gera nýtt tré?
+ * Eiginlega ekki, ég þarf alltaf að búa til nýtt tré frá grunni. Gæti fundið
+ * meðal NN fjarlægðirnar og lagt þær saman við lengdirnar til að meta
+ * grindarfastana.
+ */
+
+/* Skema:
+ * punktar í textaskrá -> vigur af punktum með indexum -> kd-tré af punktum
+ * -> finna meðalfjarlægð NN + finna alla punkta innan r frá ásum (Y, X og Z)
+ * -> bæta Y, X, og Z við mengið, hliðrað um grindarvigrana m. vi. hætti.
+ * -> endurgera kd tréð. -> gera radíus leit til að finna næstu nágranna.
+ * -> gera vigur af nágrannaupplýsingum (gæti verið vigur af (i, j, \vec{r}) eða
+ *  vigur af vigrum af (j, \vec{r}). vigur af vigrum myndi taka minna pláss ef
+ *  ef það eru a.m.k. 3 tengingar? allavega ef það eru margar tengingar þá fer
+ * það að borga sig en ég held að í mínu tilfelli sé vigur af (i, j, \vec{r})
+ * best.
+ */
+
+void pointsToPeriodicCouplings(MatrixX2d points, f64 rsq,
+                               std::optional<double> lx,
+                               std::optional<double> ly) {
+  /* This function is meant to create couplings for approximants of
+   * quasicrystals. The unit cell vectors are taken to be parallel to the x and
+   * y axes. If lx and/or ly have values, those are taken to be the x/y lengths
+   * of the unit cell, otherwise the lengths are estimated to be the x/y extents
+   * of the approximant plus the average x/y separation between neighbouring
+   * points (actually that sounds rather complicated, I'd have to iterate over
+   * the whole lattice, finding the neighbours, and then... actually that might
+   * be fine, if I do one pass for the approximant and then somehow handle edge
+   * cases... or! I could use rsq!) So, if I turn one unit cell into four, I'll
+   * have to check which cell the neighbour is in and correlate the neighbour
+   * with an "atom" in the original cell. So, I might filter out the points that
+   * are less than r from the x-axis, the y-axis and their intersection and only
+   * add those to the extended grid. Make a k-d tree?
+   */
+}
+
 template <class D>
 void saveEigen(std::string fname, Eigen::MatrixBase<D>& x) {
   std::ofstream f(fname);
@@ -133,22 +217,6 @@ Eigen::MatrixX<T> readEigenStream(std::string fname) {
   u32 i = 0;
   M(i, j) >> f;
 }
-
-struct Line {
-  friend std::istream& operator>>(std::istream& is, Line& line) {
-    return std::getline(is, line.lineTemp);
-  }
-
-  // Output function.
-  friend std::ostream& operator<<(std::ostream& os, const Line& line) {
-    return os << line.lineTemp;
-  }
-
-  // cast to needed result
-  operator std::string() const { return lineTemp; }
-  // Temporary Local storage for line
-  std::string lineTemp{};
-};
 
 template <class T>
 Eigen::MatrixX<T> readEigen(std::string fname) {
