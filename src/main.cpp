@@ -105,12 +105,17 @@ MatrixXd couplingmat(MatrixX2d points, f64 rsq, Func f) {
 
 struct Point : std::array<double, 2> {
   static constexpr int DIM = 2;
+  u32 idx;
+
   Point() {}
   Point(double x, double y, u32 idx) : idx{idx} {
     (*this)[0] = x;
     (*this)[1] = y;
   }
-  u32 idx;
+
+  friend std::ostream& operator<<(std::ostream& os, const Point& pt) {
+    return os << std::format("({}, {}, {})", pt[0], pt[1], pt.idx);
+  }
 };
 
 struct Line {
@@ -165,8 +170,15 @@ std::vector<Point> readPoints(std::string fname) {
  * -> gera vigur af nágrannaupplýsingum (gæti verið vigur af (i, j, \vec{r}) eða
  *  vigur af vigrum af (j, \vec{r}). vigur af vigrum myndi taka minna pláss ef
  *  ef það eru a.m.k. 3 tengingar? allavega ef það eru margar tengingar þá fer
- * það að borga sig en ég held að í mínu tilfelli sé vigur af (i, j, \vec{r})
- * best.
+ *  það að borga sig en ég held að í mínu tilfelli sé vigur af (i, j, \vec{r})
+ *  best.)
+ * -> Nota nágrannaupplýsingar til að gera H(k) eins og er gert í pythtb.
+ * -> Ólíkt PythTB get ég endurnýtt minnið sem Hamilton fylkið notar í staðinn
+ *  fyrir að deallocatea og allocatea.
+ * -> þráðun: margþráðaður eigingilda-algóriþmi? væri ekki skilvirka að keyra
+ *  einn algoriþma á hverjum þræði? Setja markmiðs-þráðafjölda, en ganga úr
+ * skugga um að forritið noti ekki of mikið vinnsluminni og kannski ekki alveg
+ * alla kjarnana á tölvunni nema notandinn biðji um það.
  */
 
 void pointsToPeriodicCouplings(MatrixX2d points, f64 rsq,
@@ -259,7 +271,9 @@ int main(const int argc, const char* const* argv) {
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(
       "r,radius", "Maximum separation between points to consider",
-      cxxopts::value<f64>())("s,sim", "Do dynamic simulation");
+      cxxopts::value<f64>())("s,sim", "Do dynamic simulation")(
+      "t,test", "Test whatever feature I'm working on rn.",
+      cxxopts::value<std::string>());
 
   auto result = options.parse(argc, argv);
   if (result["c"].count()) {
@@ -269,6 +283,13 @@ int main(const int argc, const char* const* argv) {
       points(i, {0, 1}) = Eigen::Vector2d{i, 0};
     }
     saveEigen("chain.txt", points);
+  }
+  if (result["t"].count()) {
+    auto vec = readPoints(result["t"].as<std::string>());
+    kdt::KDTree<Point> kdtree(vec);
+    auto min = kdtree.axisFindMin(0);
+    std::cout << min << '\n';
+    return 0;
   }
   if (result["p"].count() && result["r"].count()) {
     MatrixX2d m = readEigen<f64>(result["p"].as<std::string>());

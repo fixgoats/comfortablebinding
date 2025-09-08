@@ -113,6 +113,8 @@ public:
     return indices;
   }
 
+  int axisFindMin(int ax) const { return axisFindMinRecursive(root_, ax, 0); }
+
 private:
   /** @brief k-d tree node.
    */
@@ -235,6 +237,25 @@ private:
     return sqrt(dist);
   }
 
+  static double sqnorm(const PointT& p) {
+    double norm = 0;
+    for (size_t i = 0; i < PointT::DIM; i++)
+      norm += p[i] * p[i];
+    return norm;
+  }
+
+  static double norm(const PointT& p) { return sqrt(sqnorm(p)); }
+
+  static double axisDistance(const PointT& p, int axis) {
+    if constexpr (PointT::DIM == 2) {
+      return abs(p[1 - axis]);
+    } else {
+      PointT new_p(p);
+      new_p[axis] = 0;
+      return norm(new_p);
+    }
+  }
+
   /** @brief Searches the nearest neighbor recursively.
    */
   void nnSearchRecursive(const PointT& query, const Node* node, int* guess,
@@ -300,6 +321,59 @@ private:
     const double diff = fabs(query[axis] - train[axis]);
     if (diff < radius)
       radiusSearchRecursive(query, node->next[!dir], indices, radius);
+  }
+
+  /** @brief Finds point with lowest value along axis d. wtf þetta virkaði í svo
+   * gott sem fyrstu atrennu!
+   */
+  int axisFindMinRecursive(const Node* node, int ax, int cd) const {
+    if (!node->next[0] && !node->next[1])
+      return node->idx;
+
+    if (cd == ax) {
+      if (node->next[0] == nullptr) {
+        return node->idx;
+      } else {
+        return axisFindMinRecursive(node->next[0], ax, (cd + 1) % PointT::DIM);
+      }
+    } else {
+      int one = node->idx;
+      int two = node->idx;
+      if (node->next[0]) {
+        one = axisFindMinRecursive(node->next[0], ax, (cd + 1) % PointT::DIM);
+      }
+      if (node->next[1]) {
+        two = axisFindMinRecursive(node->next[1], ax, (cd + 1) % PointT::DIM);
+      }
+      bool onelttwo = (points_[one][ax] <= points_[two][ax]);
+      bool selfltone = (points_[node->idx][ax] <= points_[one][ax]);
+      if (selfltone && onelttwo) {
+        return node->idx;
+      }
+      if (selfltone) {
+        return points_[node->idx][ax] <= points_[two][ax] ? node->idx : two;
+      }
+      if (onelttwo) {
+        return one;
+      }
+      return two;
+    }
+  }
+
+  /** @brief Searches points within distance from axis WIP!
+   */
+  void axisSearchRecursive(const PointT& query, const Node* node,
+                           std::vector<int>& indices, double distance,
+                           int coord_axis) const {
+    if (node == nullptr)
+      return;
+
+    const PointT& train = points_[node->idx];
+    const double dist = axisDistance(train, coord_axis);
+    if (dist < distance)
+      indices.push_back(node->idx);
+
+    const int axis = node->axis;
   }
 
   Node* root_;                 //!< root node
