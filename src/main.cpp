@@ -113,6 +113,14 @@ struct Point : std::array<double, 2> {
     (*this)[1] = y;
   }
 
+  double sqdist(Point& p) {
+    return square((*this)[0] - p[0]) + square((*this)[1] - p[1]);
+  }
+
+  double dist(Point& p) {
+    return sqrt(square((*this)[0] - p[0]) + square((*this)[1] - p[1]));
+  }
+
   friend std::ostream& operator<<(std::ostream& os, const Point& pt) {
     return os << std::format("({}, {}, {})", pt[0], pt[1], pt.idx);
   }
@@ -266,6 +274,17 @@ Eigen::MatrixX<T> readEigen(std::string fname) {
   std::cout << m << std::endl;
 } */
 
+template <class PointT>
+double max_norm_dist(const PointT& q, const PointT& p) {
+  double max = 0;
+  for (size_t i = 0; i < PointT::DIM; i++) {
+    double d = abs(q[i] - p[i]);
+    if (d > max)
+      max = d;
+  }
+  return max;
+}
+
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
@@ -287,8 +306,71 @@ int main(const int argc, const char* const* argv) {
   if (result["t"].count()) {
     auto vec = readPoints(result["t"].as<std::string>());
     kdt::KDTree<Point> kdtree(vec);
-    auto min = kdtree.axisFindMin(0);
-    std::cout << min << '\n';
+    Point origin = {5, 5, 0};
+    auto square_grid = kdtree.genRadiusSearch(origin, 5, max_norm_dist<Point>);
+    std::vector<Point> reduced_vec(square_grid.size());
+    for (size_t i = 0; i < square_grid.size(); i++) {
+      reduced_vec[i] = vec[square_grid[i]];
+      reduced_vec[i].idx = i;
+    }
+    kdtree.build(reduced_vec);
+    double minx = reduced_vec[kdtree.axisFindMin(0)][0];
+    double miny = reduced_vec[kdtree.axisFindMin(1)][1];
+    double maxx = reduced_vec[kdtree.axisFindMax(0)][0];
+    double maxy = reduced_vec[kdtree.axisFindMax(1)][1];
+    std::for_each(reduced_vec.begin(), reduced_vec.end(), [&](Point& p) {
+      p[0] -= minx;
+      p[1] -= miny;
+    });
+    kdtree.build(reduced_vec);
+    std::vector<double> nn_dist(reduced_vec.size());
+    for (size_t i = 0; i < reduced_vec.size(); i++) {
+      int idx = kdtree.knnSearch(reduced_vec[i], 2)[1];
+      nn_dist[i] = reduced_vec[i].dist(reduced_vec[idx]);
+    }
+    double avg_nn_dist =
+        std::accumulate(nn_dist.begin() + 1, nn_dist.end(), nn_dist[0]) /
+        nn_dist.size();
+    double Lx = (maxx - minx) + avg_nn_dist;
+    double Ly = (maxy - miny) + avg_nn_dist;
+    std::cout << std::format("Average distance to next neighbour is: {}\n",
+                             avg_nn_dist);
+    auto x_edge = kdtree.axisSearch(0, 1.1 * avg_nn_dist);
+    auto y_edge = kdtree.axisSearch(1, 1.1 * avg_nn_dist);
+    std::vector<int> xy_corner;
+    // Estimate of how many points there are in the intersection of the edges.
+    xy_corner.reserve((size_t)((double)(x_edge.size() * y_edge.size()) /
+                               (double)reduced_vec.size()));
+    for (const auto xidx : x_edge) {
+      for (const auto yidx : y_edge) {
+        if (xidx == yidx) {
+          xy_corner.push_back(xidx);
+        }
+      }
+    }
+    std::vector<Point> final_grid(reduced_vec.size() + x_edge.size() +
+                                  y_edge.size() + xy_corner.size());
+    std::copy(reduced_vec.cbegin(), reduced_vec.cend(), final_grid.begin());
+    size_t offset = reduced_vec.size();
+    for (size_t i = 0; i < x_edge.size(); i++) {
+      Point p = reduced_vec[x_edge[i]];
+      p[1] += Ly;
+      final_grid[offset + i] = p;
+    }
+    offset += x_edge.size();
+    for (size_t i = 0; i < y_edge.size(); i++) {
+      Point p = reduced_vec[y_edge[i]];
+      p[0] += Lx;
+      final_grid[offset + i] = p;
+    }
+    offset += y_edge.size();
+    for (size_t i = 0; i < xy_corner.size(); i++) {
+      Point p = reduced_vec[xy_corner[i]];
+      p[0] += Lx;
+      p[1] += Ly;
+      final_grid[offset + i] = p;
+    }
+
     return 0;
   }
   if (result["p"].count() && result["r"].count()) {
