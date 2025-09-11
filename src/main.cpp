@@ -1,4 +1,5 @@
 #include "Eigen/Dense"
+#include "H5Cpp.h"
 #include "kdtree.h"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
@@ -10,7 +11,7 @@
 #include <sstream>
 
 using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
-    Eigen::VectorXcd, Eigen::Vector2d;
+    Eigen::VectorXcd, Eigen::Vector2d, Eigen::SelfAdjointEigenSolver;
 constexpr u32 Nx = 40;
 constexpr u32 Ny = 40;
 static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
@@ -18,7 +19,8 @@ static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      "", "");
 
 template <class Func>
-MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
+MatrixXcd couplingmat(const VectorXd& xs, const VectorXd& ys, Vector2d k,
+                      f64 rsq0, Func f) {
   const u32 n = xs.size();
   std::cout << n << '\n';
   MatrixXcd J = MatrixXcd::Zero(n, n);
@@ -34,9 +36,6 @@ MatrixXcd couplingmat(VectorXd xs, VectorXd ys, Vector2d k, f64 rsq0, Func f) {
   }
   return J;
 }
-
-template <class Func>
-void update_hamiltonian(MatrixXcd& H, Vector2d k, Func f) {}
 
 /// nx: number of hexagons along x axis.
 /// ny: number of hexagons along y axis.
@@ -84,7 +83,7 @@ void update_hamiltonian(MatrixXcd& H, Vector2d k, Func f) {}
 */
 
 template <class Func>
-MatrixXd couplingmat(MatrixX2d points, f64 rsq, Func f) {
+MatrixXd couplingmat(const MatrixX2d& points, f64 rsq, Func f) {
   const u32 n = points.rows();
   std::cout << n << '\n';
   MatrixXd J(n, n);
@@ -113,11 +112,11 @@ struct Point : std::array<double, 2> {
     (*this)[1] = y;
   }
 
-  double sqdist(Point& p) {
+  double sqdist(const Point& p) const {
     return square((*this)[0] - p[0]) + square((*this)[1] - p[1]);
   }
 
-  double dist(Point& p) {
+  double dist(const Point& p) const {
     return sqrt(square((*this)[0] - p[0]) + square((*this)[1] - p[1]));
   }
 
@@ -142,7 +141,7 @@ struct Line {
   std::string lineTemp{};
 };
 
-std::vector<Point> readPoints(std::string fname) {
+std::vector<Point> readPoints(const std::string& fname) {
   u32 m = 0;
   std::ifstream f(fname);
   std::vector<std::string> allLines{std::istream_iterator<Line>(f),
@@ -183,13 +182,13 @@ std::vector<Point> readPoints(std::string fname) {
  * -> Nota nágrannaupplýsingar til að gera H(k) eins og er gert í pythtb.
  * -> Ólíkt PythTB get ég endurnýtt minnið sem Hamilton fylkið notar í staðinn
  *  fyrir að deallocatea og allocatea.
- * -> þráðun: margþráðaður eigingilda-algóriþmi? væri ekki skilvirka að keyra
+ * -> þráðun: margþráðaður eigingilda-algóriþmi? væri ekki skilvirkara að keyra
  *  einn algoriþma á hverjum þræði? Setja markmiðs-þráðafjölda, en ganga úr
  * skugga um að forritið noti ekki of mikið vinnsluminni og kannski ekki alveg
  * alla kjarnana á tölvunni nema notandinn biðji um það.
  */
 
-void pointsToPeriodicCouplings(MatrixX2d points, f64 rsq,
+void pointsToPeriodicCouplings(const MatrixX2d& points, f64 rsq,
                                std::optional<double> lx,
                                std::optional<double> ly) {
   /* This function is meant to create couplings for approximants of
@@ -209,14 +208,14 @@ void pointsToPeriodicCouplings(MatrixX2d points, f64 rsq,
 }
 
 template <class D>
-void saveEigen(std::string fname, Eigen::MatrixBase<D>& x) {
+void saveEigen(const std::string& fname, const Eigen::MatrixBase<D>& x) {
   std::ofstream f(fname);
   f << x.format(defaultFormat);
   f.close();
 }
 
 template <class T>
-Eigen::MatrixX<T> readEigenStream(std::string fname) {
+Eigen::MatrixX<T> readEigenStream(const std::string& fname) {
   std::string line;
   std::ifstream f(fname);
   u32 m = 0;
@@ -295,8 +294,25 @@ struct Neighbour {
   }
 };
 
+template <class Func>
+void update_hamiltonian(MatrixXcd& H, const std::vector<Neighbour>& nbs,
+                        Vector2d k, Func f, bool reset = false) {
+  if (reset) {
+    for (const auto& nb : nbs) {
+      H(nb.i, nb.j) = 0;
+      H(nb.j, nb.i) = 0;
+    }
+  }
+  for (const auto& nb : nbs) {
+    c64 val = f(nb.d) * std::exp(c64{0, k.dot(nb.d)});
+    H(nb.i, nb.j) += val;
+    H(nb.j, nb.i) += val;
+  }
+}
+
 template <class PointT>
-double avgNNDist(kdt::KDTree<PointT>& kdtree, std::vector<PointT> points) {
+double avgNNDist(kdt::KDTree<PointT>& kdtree,
+                 const std::vector<PointT>& points) {
   std::vector<double> nn_dist(points.size());
   for (size_t i = 0; i < points.size(); i++) {
     int idx = kdtree.knnSearch(points[i], 2)[1];
@@ -359,6 +375,8 @@ int main(const int argc, const char* const* argv) {
     }
     double Lx = (maxx - minx) + avg_nn_dist;
     double Ly = (maxy - miny) + avg_nn_dist;
+    std::cout << "Lx is " << Lx << '\n';
+    std::cout << "Ly is " << Ly << '\n';
     std::cout << std::format("Average distance to next neighbour is: {}\n",
                              avg_nn_dist);
     double search_radius = 1.1 * avg_nn_dist;
@@ -397,10 +415,6 @@ int main(const int argc, const char* const* argv) {
       p[1] += Ly;
       final_grid[offset + i] = p;
     }
-    for (const auto& p : final_grid) {
-      std::cout << p << ' ';
-    }
-    std::cout << '\n';
     kdtree.build(final_grid);
     std::vector<Neighbour> nb_info;
     for (size_t i = 0; i < reduced_vec.size(); i++) {
@@ -414,10 +428,32 @@ int main(const int argc, const char* const* argv) {
         }
       }
     }
-    for (const auto& nb : nb_info) {
-      std::cout << nb << ' ';
+    MatrixXcd hamiltonian =
+        MatrixXcd::Zero(reduced_vec.size(), reduced_vec.size());
+    Vector2d dual1{2 * M_PI / Lx, 0};
+    Vector2d dual2{0, 2 * M_PI / Ly};
+    std::vector<double[20][20]> energies(reduced_vec.size());
+    for (u32 j = 0; j < 20; j++) {
+      double yfrac = (double)j / 20;
+      for (u32 i = 0; i < 20; i++) {
+        double xfrac = (double)i / 20;
+        update_hamiltonian(
+            hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
+            [](Vector2d) { return c64{-1, 0}; }, i | j);
+        SelfAdjointEigenSolver<MatrixXcd> es;
+        es.compute(hamiltonian);
+        for (size_t k = 0; k < reduced_vec.size(); k++) {
+          energies[k][j][i] = es.eigenvalues()[k];
+          std::cout << energies[k][j][i] << '\n';
+        }
+      }
     }
-    std::cout << std::endl;
+    hsize_t dims[3] = {reduced_vec.size(), 20, 20};
+    H5::DataSpace space(3, dims);
+    H5::H5File file("energies.h5", H5F_ACC_TRUNC);
+    H5::DataSet dataset(
+        file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
+    dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
 
     return 0;
   }
@@ -441,13 +477,11 @@ int main(const int argc, const char* const* argv) {
     f64 ymax = m(Eigen::all, 1).maxCoeff();
     f64 Lx = xmax - xmin;
     f64 Ly = ymax - ymin;
-    f64 dkx = M_2_PI / Lx;
-    f64 dky = M_2_PI / Ly;
   }
   if (result["s"].count()) {
     MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
     MatrixXd H =
-        couplingmat(m, result["r"].as<f64>(), [](f64 _) { return f64{-1.0}; });
+        couplingmat(m, result["r"].as<f64>(), [](f64) { return f64{-1.0}; });
 
     Eigen::VectorXcd psi;
     if (result["i"].count()) {

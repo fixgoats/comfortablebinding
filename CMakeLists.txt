@@ -30,5 +30,6 @@ else()
     message(WARNING "LTO is not supported: ${output}")
 endif()
 find_package(Eigen3 REQUIRED NO_MODULE)
+FIND_PACKAGE(HDF5 REQUIRED COMPONENTS C CXX HL)
 
-target_link_libraries(${MAIN_TARGET} PRIVATE Eigen3::Eigen)
+target_link_libraries(${MAIN_TARGET} PRIVATE Eigen3::Eigen hdf5::hdf5_cpp hdf5::hdf5)

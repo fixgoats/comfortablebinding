@@ -105,7 +105,7 @@ public:
     return indices;
   }
 
-  /** @brief Searches neighbors within radius.
+  /** @brief Searches neighbors within radius from query.
    */
   std::vector<int> radiusSearch(const PointT& query, double radius) const {
     std::vector<int> indices;
@@ -113,17 +113,49 @@ public:
     return indices;
   }
 
-  std::vector<int> axisSearch(int ax, double radius) const {
+  /** @brief Searches neighbors within radius from axis.
+   */
+  std::vector<int> axisSearch(int axis, double radius) const {
     std::vector<int> indices;
-    axisSearchRecursive(root_, indices, radius, ax);
+    axisSearchRecursive(root_, indices, radius, axis);
     return indices;
   }
 
+  /** @brief Searches neighbors within radius from query with metric dist_func.
+   */
   template <class Func>
   std::vector<int> genRadiusSearch(const PointT& query, double radius,
                                    Func dist_func) const {
     std::vector<int> indices;
     genRadiusSearchRecursive(query, root_, indices, radius, dist_func);
+    return indices;
+  }
+
+  /** @brief Searches neighbors within or at radius from query.
+   */
+  std::vector<int> radiusSearchInclusive(const PointT& query,
+                                         double radius) const {
+    std::vector<int> indices;
+    radiusSearchInclusiveRecursive(query, root_, indices, radius);
+    return indices;
+  }
+
+  /** @brief Searches neighbors within or at radius from axis.
+   */
+  std::vector<int> axisSearchInclusive(int axis, double radius) const {
+    std::vector<int> indices;
+    axisSearchInclusiveRecursive(root_, indices, radius, axis);
+    return indices;
+  }
+
+  /** @brief Searches neighbors within or at radius from query with metric
+   * dist_func.
+   */
+  template <class Func>
+  std::vector<int> genRadiusSearchInclusive(const PointT& query, double radius,
+                                            Func dist_func) const {
+    std::vector<int> indices;
+    genRadiusSearchInclusiveRecursive(query, root_, indices, radius, dist_func);
     return indices;
   }
 
@@ -342,6 +374,27 @@ private:
       radiusSearchRecursive(query, node->next[!dir], indices, radius);
   }
 
+  void radiusSearchInclusiveRecursive(const PointT& query, const Node* node,
+                                      std::vector<int>& indices,
+                                      double radius) const {
+    if (node == nullptr)
+      return;
+
+    const PointT& train = points_[node->idx];
+
+    const double dist = distance(query, train);
+    if (dist <= radius)
+      indices.push_back(node->idx);
+
+    const int axis = node->axis;
+    const int dir = query[axis] < train[axis] ? 0 : 1;
+    radiusSearchRecursive(query, node->next[dir], indices, radius);
+
+    const double diff = fabs(query[axis] - train[axis]);
+    if (diff <= radius)
+      radiusSearchRecursive(query, node->next[!dir], indices, radius);
+  }
+
   template <class Func>
   void genRadiusSearchRecursive(const PointT& query, const Node* node,
                                 std::vector<int>& indices, double radius,
@@ -366,7 +419,31 @@ private:
                                dist_func);
   }
 
-  /** @brief Searches points within distance from axis WIP!
+  template <class Func>
+  void genRadiusSearchInclusiveRecursive(const PointT& query, const Node* node,
+                                         std::vector<int>& indices,
+                                         double radius, Func dist_func) const {
+    if (node == nullptr)
+      return;
+
+    const PointT& train = points_[node->idx];
+
+    const double dist = dist_func(query, train);
+    if (dist <= radius)
+      indices.push_back(node->idx);
+
+    const int axis = node->axis;
+    const int dir = query[axis] < train[axis] ? 0 : 1;
+    genRadiusSearchRecursive(query, node->next[dir], indices, radius,
+                             dist_func);
+
+    const double diff = fabs(query[axis] - train[axis]);
+    if (diff <= radius)
+      genRadiusSearchRecursive(query, node->next[!dir], indices, radius,
+                               dist_func);
+  }
+
+  /** @brief Searches points within distance from axis
    */
   void axisSearchRecursive(const Node* node, std::vector<int>& indices,
                            double distance, int ax) const {
@@ -389,6 +466,30 @@ private:
       const double diff = fabs(train[axis]);
       if (diff < distance)
         axisSearchRecursive(node->next[!dir], indices, distance, ax);
+    }
+  }
+
+  void axisSearchInclusiveRecursive(const Node* node, std::vector<int>& indices,
+                                    double distance, int ax) const {
+    if (node == nullptr)
+      return;
+
+    const PointT& train = points_[node->idx];
+    const double dist = axisDistance(train, ax);
+    if (dist <= distance)
+      indices.push_back(node->idx);
+
+    const int axis = node->axis;
+    if (axis == ax) {
+      axisSearchInclusiveRecursive(node->next[0], indices, distance, ax);
+      axisSearchInclusiveRecursive(node->next[1], indices, distance, ax);
+    } else {
+      const int dir = 0 < train[axis] ? 0 : 1;
+      axisSearchInclusiveRecursive(node->next[dir], indices, distance, ax);
+
+      const double diff = fabs(train[axis]);
+      if (diff <= distance)
+        axisSearchInclusiveRecursive(node->next[!dir], indices, distance, ax);
     }
   }
 
