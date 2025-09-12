@@ -310,6 +310,32 @@ void update_hamiltonian(MatrixXcd& H, const std::vector<Neighbour>& nbs,
   }
 }
 
+template <class T>
+struct Arr3D : std::vector<T> {
+  size_t x;
+  size_t y;
+  size_t z;
+
+  Arr3D(size_t x, size_t y, size_t z)
+      : std::vector<T>(x * y * z), x{x}, y{y}, z{z} {}
+
+  T& operator()(size_t i, size_t j, size_t k) {
+    return (*this)[y * z * i + z * j + k];
+  }
+
+  T operator()(size_t i, size_t j, size_t k) const {
+    return (*this)[y * z * i + z * j + k];
+  }
+};
+
+constexpr size_t sum(std::convertible_to<size_t> auto... i) {
+  return (0 + ... + i);
+}
+
+constexpr size_t product(std::convertible_to<size_t> auto... i) {
+  return (0 * ... * i);
+}
+
 template <class PointT>
 double avgNNDist(kdt::KDTree<PointT>& kdtree,
                  const std::vector<PointT>& points) {
@@ -327,7 +353,18 @@ double avgNNDist(kdt::KDTree<PointT>& kdtree,
   return totalnndist / (double)nn_dist.size();
 }
 
+void standardise(std::vector<Point>& points) {
+  kdt::KDTree<Point> kdtree(points);
+  double minx = points[kdtree.axisFindMin(0)][0];
+  double miny = points[kdtree.axisFindMin(1)][1];
+  std::for_each(points.begin(), points.end(), [&](Point& p) {
+    p[0] -= minx;
+    p[1] -= miny;
+  });
+}
+
 int main(const int argc, const char* const* argv) {
+  ArrND<double> A(2, 3, 4);
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(
@@ -347,45 +384,28 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     auto vec = readPoints(result["t"].as<std::string>());
+    standardise(vec);
     kdt::KDTree<Point> kdtree(vec);
-    Point origin = {5, 5, 0};
-    auto square_grid = kdtree.genRadiusSearch(origin, 6, max_norm_dist<Point>);
-    std::vector<Point> reduced_vec(square_grid.size());
-    for (size_t i = 0; i < square_grid.size(); i++) {
-      reduced_vec[i] = vec[square_grid[i]];
-      reduced_vec[i].idx = i;
-    }
-    for (const auto& p : reduced_vec) {
-      std::cout << p << ' ';
-    }
-    std::cout << '\n';
-    kdtree.build(reduced_vec);
-    double minx = reduced_vec[kdtree.axisFindMin(0)][0];
-    double miny = reduced_vec[kdtree.axisFindMin(1)][1];
-    double maxx = reduced_vec[kdtree.axisFindMax(0)][0];
-    double maxy = reduced_vec[kdtree.axisFindMax(1)][1];
-    std::for_each(reduced_vec.begin(), reduced_vec.end(), [&](Point& p) {
-      p[0] -= minx;
-      p[1] -= miny;
-    });
-    kdtree.build(reduced_vec);
+    double maxx = vec[kdtree.axisFindMax(0)][0];
+    double maxy = vec[kdtree.axisFindMax(1)][1];
+    kdtree.build(vec);
     double avg_nn_dist = 1.0;
-    if (reduced_vec.size() > 1) {
-      avg_nn_dist = avgNNDist(kdtree, reduced_vec);
+    if (vec.size() > 1) {
+      avg_nn_dist = avgNNDist(kdtree, vec);
     }
-    double Lx = (maxx - minx) + avg_nn_dist;
-    double Ly = (maxy - miny) + avg_nn_dist;
-    std::cout << "Lx is " << Lx << '\n';
-    std::cout << "Ly is " << Ly << '\n';
-    std::cout << std::format("Average distance to next neighbour is: {}\n",
-                             avg_nn_dist);
-    double search_radius = 1.1 * avg_nn_dist;
-    auto x_edge = kdtree.axisSearch(0, 0.5 * search_radius);
-    auto y_edge = kdtree.axisSearch(1, 0.5 * search_radius);
+    double Lx = maxx + avg_nn_dist;
+    double Ly = maxy + avg_nn_dist;
+    std::cout << std::format("Lx is {}\n"
+                             "Ly is {}\n"
+                             "Average distance to next neighbour is: {}\n",
+                             Lx, Ly, avg_nn_dist);
+    double search_radius = 2.01 * avg_nn_dist;
+    auto x_edge = kdtree.axisSearch(0, search_radius - avg_nn_dist + 1e-6);
+    auto y_edge = kdtree.axisSearch(1, search_radius - avg_nn_dist + 1e-6);
     std::vector<int> xy_corner;
     // Estimate of how many points there are in the intersection of the edges.
-    xy_corner.reserve((size_t)((double)(x_edge.size() * y_edge.size()) /
-                               (double)reduced_vec.size()));
+    xy_corner.reserve(
+        (size_t)((double)(x_edge.size() * y_edge.size()) / (double)vec.size()));
     for (const auto xidx : x_edge) {
       for (const auto yidx : y_edge) {
         if (xidx == yidx) {
@@ -393,31 +413,31 @@ int main(const int argc, const char* const* argv) {
         }
       }
     }
-    std::vector<Point> final_grid(reduced_vec.size() + x_edge.size() +
-                                  y_edge.size() + xy_corner.size());
-    std::copy(reduced_vec.cbegin(), reduced_vec.cend(), final_grid.begin());
-    size_t offset = reduced_vec.size();
+    std::vector<Point> final_grid(vec.size() + x_edge.size() + y_edge.size() +
+                                  xy_corner.size());
+    std::copy(vec.cbegin(), vec.cend(), final_grid.begin());
+    size_t offset = vec.size();
     for (size_t i = 0; i < x_edge.size(); i++) {
-      Point p = reduced_vec[x_edge[i]];
+      Point p = vec[x_edge[i]];
       p[1] += Ly;
       final_grid[offset + i] = p;
     }
     offset += x_edge.size();
     for (size_t i = 0; i < y_edge.size(); i++) {
-      Point p = reduced_vec[y_edge[i]];
+      Point p = vec[y_edge[i]];
       p[0] += Lx;
       final_grid[offset + i] = p;
     }
     offset += y_edge.size();
     for (size_t i = 0; i < xy_corner.size(); i++) {
-      Point p = reduced_vec[xy_corner[i]];
+      Point p = vec[xy_corner[i]];
       p[0] += Lx;
       p[1] += Ly;
       final_grid[offset + i] = p;
     }
     kdtree.build(final_grid);
     std::vector<Neighbour> nb_info;
-    for (size_t i = 0; i < reduced_vec.size(); i++) {
+    for (size_t i = 0; i < vec.size(); i++) {
       auto q = final_grid[i];
       auto nbs = kdtree.radiusSearch(q, search_radius);
       for (const auto idx : nbs) {
@@ -428,27 +448,27 @@ int main(const int argc, const char* const* argv) {
         }
       }
     }
-    MatrixXcd hamiltonian =
-        MatrixXcd::Zero(reduced_vec.size(), reduced_vec.size());
+    MatrixXcd hamiltonian = MatrixXcd::Zero(vec.size(), vec.size());
+    constexpr u32 ksamples = 20;
     Vector2d dual1{2 * M_PI / Lx, 0};
     Vector2d dual2{0, 2 * M_PI / Ly};
-    std::vector<double[20][20]> energies(reduced_vec.size());
-    for (u32 j = 0; j < 20; j++) {
-      double yfrac = (double)j / 20;
-      for (u32 i = 0; i < 20; i++) {
-        double xfrac = (double)i / 20;
+    Arr3D<double> energies(ksamples, ksamples, vec.size());
+    for (u32 j = 0; j < ksamples; j++) {
+      double yfrac = (double)j / ksamples;
+      for (u32 i = 0; i < ksamples; i++) {
+        double xfrac = (double)i / ksamples;
         update_hamiltonian(
             hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
             [](Vector2d) { return c64{-1, 0}; }, i | j);
         SelfAdjointEigenSolver<MatrixXcd> es;
         es.compute(hamiltonian);
-        for (size_t k = 0; k < reduced_vec.size(); k++) {
-          energies[k][j][i] = es.eigenvalues()[k];
-          std::cout << energies[k][j][i] << '\n';
+        for (size_t k = 0; k < vec.size(); k++) {
+          energies(i, j, k) = es.eigenvalues()[k];
+          // std::cout << energies(i, j, k) << '\n';
         }
       }
     }
-    hsize_t dims[3] = {reduced_vec.size(), 20, 20};
+    hsize_t dims[3] = {ksamples, ksamples, vec.size()};
     H5::DataSpace space(3, dims);
     H5::H5File file("energies.h5", H5F_ACC_TRUNC);
     H5::DataSet dataset(

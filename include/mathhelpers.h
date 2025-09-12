@@ -134,3 +134,23 @@ std::vector<u8> colorMapVec(InputIt it, InputIt end) {
   colorMap(it, end, out.begin());
   return out;
 }
+
+/* wip ndarray struct that might come in handy
+template <class T, size_t N>
+struct ArrND : std::vector<T> {
+  std::array<size_t, N> dim;
+
+  template <size_t... ns>
+  ArrND<T, sizeof...(ns)>(size_t...) : std::vector<T>(product(ns...)),
+dim{ns...} {}
+
+  template<size_t... idx>
+  T& operator()(size_t...) {
+    return (*this)[idx];
+  }
+
+  T operator()(size_t i, size_t j, size_t k) const {
+    return (*this)[y * z * i + z * j + k];
+  }
+};
+*/
