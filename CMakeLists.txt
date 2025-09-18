@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(stuff)
 
-set(CMAKE_C_STANDARD 99)
+#set(CMAKE_C_STANDARD 99)
 
 
 set(PROJECT_SOURCES

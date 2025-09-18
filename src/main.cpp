@@ -6,6 +6,7 @@
 #include "typedefs.h"
 #include <cxxopts.hpp>
 #include <iostream>
+#include <mdspan>
 #include <random>
 #include <ranges>
 #include <sstream>
@@ -328,14 +329,6 @@ struct Arr3D : std::vector<T> {
   }
 };
 
-constexpr size_t sum(std::convertible_to<size_t> auto... i) {
-  return (0 + ... + i);
-}
-
-constexpr size_t product(std::convertible_to<size_t> auto... i) {
-  return (0 * ... * i);
-}
-
 template <class PointT>
 double avgNNDist(kdt::KDTree<PointT>& kdtree,
                  const std::vector<PointT>& points) {
@@ -364,7 +357,8 @@ void standardise(std::vector<Point>& points) {
 }
 
 int main(const int argc, const char* const* argv) {
-  ArrND<double> A(2, 3, 4);
+  std::vector<double> v{1, 2, 3, 4};
+  auto A = std::mdspan(v.data(), 2, 2);
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(

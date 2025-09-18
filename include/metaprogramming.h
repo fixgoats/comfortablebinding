@@ -26,6 +26,41 @@ constexpr void constexpr_for(F&& f) {
   }
 }
 
+template <auto Start, auto End, auto Inc, class F>
+consteval void consteval_for(F&& f) {
+  if constexpr (Start < End) {
+    f(std::integral_constant<decltype(Start), Start>());
+    consteval_for<Start + Inc, End, Inc>(f);
+  }
+}
+
+consteval size_t sum(std::convertible_to<size_t> auto... i) {
+  return (0 + ... + i);
+}
+
+consteval size_t product(std::convertible_to<size_t> auto... i) {
+  return (1 * ... * i);
+}
+
+template <class T, size_t N>
+consteval auto arr_prod(std::array<T, N> arr) {
+  T a = arr[0];
+  constexpr_for<1, N, 1>([&a, &arr](auto i) { a *= arr[i]; });
+  return a;
+}
+
+template <size_t N>
+consteval size_t arr_prod(std::array<size_t, N> dimensions,
+                          std::array<size_t, N> indices) {
+  size_t real_index = 0;
+  constexpr_for<0, N, 1>([&](auto j) {
+    size_t first = indices[j];
+    constexpr_for<j, N - 1, 1>([&](auto i) { first *= dimensions[i]; });
+    real_index += 0;
+  });
+  return real_index;
+}
+
 template <class T>
 constexpr std::array<size_t, boost::pfr::tuple_size_v<T>> struct_field_sizes() {
   constexpr size_t n = boost::pfr::tuple_size_v<T>;

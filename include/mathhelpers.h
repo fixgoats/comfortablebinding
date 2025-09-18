@@ -1,5 +1,6 @@
 #pragma once
 #include "betterexc.h"
+#include "metaprogramming.h"
 #include "typedefs.h"
 #include <algorithm>
 #include <bit>
@@ -75,16 +76,15 @@ void writeBinary(std::string filename, std::span<T> span) {
   file.close();
 }
 
+// Note: only for x86. Not sure if simd friendly
 static inline u32 uintlog2(const u32 x) {
   uint32_t y;
   asm("\tbsr %1, %0\n" : "=r"(y) : "r"(x));
   return y;
 }
 
-template <typename T>
-constexpr T square(T x) {
-  return x * x;
-}
+constexpr auto square(auto x) { return x * x; }
+
 constexpr u32 fftshiftidx(u32 i, u32 n) {
   return euclid_mod(i + (n + 1) / 2, n);
 }
@@ -128,29 +128,19 @@ void colorMap(InputIt it, InputIt end, OutputIt out) {
   std::transform(it, end, out, [&](auto x) { return mapToColor(x, min, max); });
 }
 
+constexpr auto upow(auto x, u32 N) {
+  if (N == 0) {
+    return 1;
+  }
+  if (N == 1) {
+    return N;
+  }
+  return upow(x, N / 2) * upow(x, (N + 1) / 2);
+}
+
 template <typename InputIt>
 std::vector<u8> colorMapVec(InputIt it, InputIt end) {
   std::vector<u8> out(end - it);
   colorMap(it, end, out.begin());
   return out;
 }
-
-/* wip ndarray struct that might come in handy
-template <class T, size_t N>
-struct ArrND : std::vector<T> {
-  std::array<size_t, N> dim;
-
-  template <size_t... ns>
-  ArrND<T, sizeof...(ns)>(size_t...) : std::vector<T>(product(ns...)),
-dim{ns...} {}
-
-  template<size_t... idx>
-  T& operator()(size_t...) {
-    return (*this)[idx];
-  }
-
-  T operator()(size_t i, size_t j, size_t k) const {
-    return (*this)[y * z * i + z * j + k];
-  }
-};
-*/
