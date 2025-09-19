@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(stuff)
 
-#set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 99)
 
 
 set(PROJECT_SOURCES
@@ -10,6 +10,9 @@ set(PROJECT_SOURCES
 )
 set(MAIN_TARGET disp)
 
+set(CMAKE_CXX_COMPILER "clang++")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 add_executable(${MAIN_TARGET})
 target_sources(${MAIN_TARGET} PRIVATE ${PROJECT_SOURCES})
 

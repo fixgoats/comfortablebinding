@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <type_traits>
 #include <vector>
 
