@@ -288,7 +288,18 @@ void update_hamiltonian(MatrixXcd& H, const std::vector<Neighbour>& nbs,
   for (const auto& nb : nbs) {
     c64 val = f(nb.d) * std::exp(c64{0, k.dot(nb.d)});
     H(nb.i, nb.j) += val;
-    H(nb.j, nb.i) += val;
+    H(nb.j, nb.i) += std::conj(val);
+  }
+}
+
+template <class Func>
+MatrixXcd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
+                             Func f) {
+  MatrixXcd H = MatrixXcd::Zero(n_points, n_points);
+  for (const auto& nb : nbs) {
+    c64 val = f(nb.d);
+    H(nb.i, nb.j) = val;
+    H(nb.j, nb.i) = std::conj(val);
   }
 }
 
@@ -352,24 +363,35 @@ std::vector<Point> extended_grid(const std::vector<Point>& base,
 void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
                                std::optional<double> lx,
                                std::optional<double> ly) {
+  /* This function is meant to create couplings for approximants of
+   * quasicrystals. The unit cell vectors are taken to be parallel to the x and
+   * y axes. If lx and/or ly have values, those are taken to be the x/y lengths
+   * of the unit cell, otherwise the lengths are estimated to be the x/y extents
+   * of the approximant plus the average x/y separation between neighbouring
+   * points.
+   */
   standardise(points);
   kdt::KDTree<Point> kdtree(points);
   double maxx = points[kdtree.axisFindMax(0)][0];
   double maxy = points[kdtree.axisFindMax(1)][1];
   kdtree.build(points);
   double avg_nn_dist = 1.0;
-  if (points.size() > 1) {
-    avg_nn_dist = avgNNDist(kdtree, points);
+  if (!lx.has_value() || !ly.has_value()) {
+    if (points.size() > 1) {
+      avg_nn_dist = avgNNDist(kdtree, points);
+    }
   }
-  double Lx = maxx + avg_nn_dist;
-  double Ly = maxy + avg_nn_dist;
+  double Lx = lx.value_or(maxx + avg_nn_dist);
+  double Ly = ly.value_or(maxy + avg_nn_dist);
   std::cout << std::format("Lx is {}\n"
                            "Ly is {}\n"
                            "Average distance to next neighbour is: {}\n",
                            Lx, Ly, avg_nn_dist);
-  double search_radius = 2.01 * avg_nn_dist;
-  auto x_edge = kdtree.axisSearch(0, search_radius - avg_nn_dist + 1e-6);
-  auto y_edge = kdtree.axisSearch(1, search_radius - avg_nn_dist + 1e-6);
+  double search_radius = std::sqrt(rsq);
+  auto x_edge =
+      kdtree.axisSearch(0, (1 + 1e-8) * (search_radius - avg_nn_dist));
+  auto y_edge =
+      kdtree.axisSearch(1, (1 + 1e-8) * (search_radius - avg_nn_dist));
   std::vector<int> xy_corner;
   // Estimate of how many points there are in the intersection of the edges.
   xy_corner.reserve((size_t)((double)(x_edge.size() * y_edge.size()) /
@@ -423,22 +445,62 @@ void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
   H5::DataSet dataset(
       file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
   dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
-
-  /* This function is meant to create couplings for approximants of
-   * quasicrystals. The unit cell vectors are taken to be parallel to the x and
-   * y axes. If lx and/or ly have values, those are taken to be the x/y lengths
-   * of the unit cell, otherwise the lengths are estimated to be the x/y extents
-   * of the approximant plus the average x/y separation between neighbouring
-   * points (actually that sounds rather complicated, I'd have to iterate over
-   * the whole lattice, finding the neighbours, and then... actually that might
-   * be fine, if I do one pass for the approximant and then somehow handle edge
-   * cases... or! I could use rsq!) So, if I turn one unit cell into four, I'll
-   * have to check which cell the neighbour is in and correlate the neighbour
-   * with an "atom" in the original cell. So, I might filter out the points that
-   * are less than r from the x-axis, the y-axis and their intersection and only
-   * add those to the extended grid. Make a k-d tree?
-   */
 }
+
+MatrixXcd pointsToFiniteHamiltonian(std::vector<Point>& points, f64 rsq) {
+  /* This function creates a hamiltonian for a simple finite lattice.
+   * Can't exactly do a dispersion from this.
+   */
+  standardise(points);
+  kdt::KDTree<Point> kdtree(points);
+  kdtree.build(points);
+  double search_radius = std::sqrt(rsq);
+  std::vector<Neighbour> nb_info;
+  for (size_t i = 0; i < points.size(); i++) {
+    auto q = points[i];
+    auto nbs = kdtree.radiusSearch(q, search_radius);
+    for (const auto idx : nbs) {
+      if ((size_t)idx > i) {
+        auto p = points[idx];
+        Vector2d d = {p[0] - q[0], p[1] - q[1]};
+        nb_info.emplace_back(i, p.idx, d);
+      }
+    }
+  }
+  return finite_hamiltonian(points.size(), nb_info,
+                            [](Vector2d) { return -1; });
+}
+
+// dos: finna minnsta og lægsta eigingildi, og scaling þætti a, b.
+// a = (E_max - E_min) / (2 - epsilon)
+// b = (E_max + E_min) / 2
+/*
+  std::vector<double> energies(ksamples * ksamples * points.size());
+  auto energy_view =
+      std::mdspan(energies.data(), ksamples, ksamples, points.size());
+  for (u32 j = 0; j < ksamples; j++) {
+    double yfrac = (double)j / ksamples;
+    for (u32 i = 0; i < ksamples; i++) {
+      double xfrac = (double)i / ksamples;
+      update_hamiltonian(
+          hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
+          [](Vector2d) { return c64{-1, 0}; }, i | j);
+      SelfAdjointEigenSolver<MatrixXcd> es;
+      es.compute(hamiltonian);
+      for (size_t k = 0; k < points.size(); k++) {
+        energy_view[i, j, k] = es.eigenvalues()[k];
+        // std::cout << energies(i, j, k) << '\n';
+      }
+    }
+  }
+  hsize_t dims[3] = {ksamples, ksamples, points.size()};
+  H5::DataSpace space(3, dims);
+  H5::H5File file("energies.h5", H5F_ACC_TRUNC);
+  H5::DataSet dataset(
+      file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
+  dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
+}
+*/
 
 int main(const int argc, const char* const* argv) {
   std::vector<double> v{1, 2, 3, 4};

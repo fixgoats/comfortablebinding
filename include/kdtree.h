@@ -109,7 +109,7 @@ public:
    */
   std::vector<int> radiusSearch(const PointT& query, double radius) const {
     std::vector<int> indices;
-    radiusSearchRecursive(query, root_, indices, radius);
+    radiusSearchRecursive(query, root_, indices, radius * radius);
     return indices;
   }
 
@@ -117,7 +117,7 @@ public:
    */
   std::vector<int> axisSearch(int axis, double radius) const {
     std::vector<int> indices;
-    axisSearchRecursive(root_, indices, radius, axis);
+    axisSearchRecursive(root_, indices, radius * radius, axis);
     return indices;
   }
 
@@ -136,7 +136,7 @@ public:
   std::vector<int> radiusSearchInclusive(const PointT& query,
                                          double radius) const {
     std::vector<int> indices;
-    radiusSearchInclusiveRecursive(query, root_, indices, radius);
+    radiusSearchInclusiveRecursive(query, root_, indices, radius * radius);
     return indices;
   }
 
@@ -144,7 +144,7 @@ public:
    */
   std::vector<int> axisSearchInclusive(int axis, double radius) const {
     std::vector<int> indices;
-    axisSearchInclusiveRecursive(root_, indices, radius, axis);
+    axisSearchInclusiveRecursive(root_, indices, radius * radius, axis);
     return indices;
   }
 
@@ -284,6 +284,13 @@ private:
     return sqrt(dist);
   }
 
+  static double distanceSq(const PointT& p, const PointT& q) {
+    double dist = 0;
+    for (size_t i = 0; i < PointT::DIM; i++)
+      dist += (p[i] - q[i]) * (p[i] - q[i]);
+    return dist;
+  }
+
   static double sqnorm(const PointT& p) {
     double norm = 0;
     for (size_t i = 0; i < PointT::DIM; i++)
@@ -293,7 +300,7 @@ private:
 
   static double norm(const PointT& p) { return sqrt(sqnorm(p)); }
 
-  static double axisDistance(const PointT& p, int axis) {
+  static double axisDistanceSq(const PointT& p, int axis) {
     if constexpr (PointT::DIM == 2) {
       return abs(p[1 - axis]);
     } else {
@@ -303,7 +310,7 @@ private:
           continue;
         sum += p[i] * p[i];
       }
-      return sqrt(sum);
+      return sum;
     }
   }
 
@@ -316,7 +323,7 @@ private:
 
     const PointT& train = points_[node->idx];
 
-    const double dist = distance(query, train);
+    const double dist = distanceSq(query, train);
     if (dist < *minDist) {
       *minDist = dist;
       *guess = node->idx;
@@ -340,7 +347,7 @@ private:
 
     const PointT& train = points_[node->idx];
 
-    const double dist = distance(query, train);
+    const double dist = distanceSq(query, train);
     queue.push(std::make_pair(dist, node->idx));
 
     const int axis = node->axis;
@@ -361,7 +368,7 @@ private:
 
     const PointT& train = points_[node->idx];
 
-    const double dist = distance(query, train);
+    const double dist = distanceSq(query, train);
     if (dist < radius)
       indices.push_back(node->idx);
 
@@ -382,7 +389,7 @@ private:
 
     const PointT& train = points_[node->idx];
 
-    const double dist = distance(query, train);
+    const double dist = distanceSq(query, train);
     if (dist <= radius)
       indices.push_back(node->idx);
 
@@ -446,50 +453,50 @@ private:
   /** @brief Searches points within distance from axis
    */
   void axisSearchRecursive(const Node* node, std::vector<int>& indices,
-                           double distance, int ax) const {
+                           double distancesq, int ax) const {
     if (node == nullptr)
       return;
 
     const PointT& train = points_[node->idx];
-    const double dist = axisDistance(train, ax);
-    if (dist < distance)
+    const double dist = axisDistanceSq(train, ax);
+    if (dist < distancesq)
       indices.push_back(node->idx);
 
     const int axis = node->axis;
     if (axis == ax) {
-      axisSearchRecursive(node->next[0], indices, distance, ax);
-      axisSearchRecursive(node->next[1], indices, distance, ax);
+      axisSearchRecursive(node->next[0], indices, distancesq, ax);
+      axisSearchRecursive(node->next[1], indices, distancesq, ax);
     } else {
       const int dir = 0 < train[axis] ? 0 : 1;
-      axisSearchRecursive(node->next[dir], indices, distance, ax);
+      axisSearchRecursive(node->next[dir], indices, distancesq, ax);
 
       const double diff = fabs(train[axis]);
       if (diff < distance)
-        axisSearchRecursive(node->next[!dir], indices, distance, ax);
+        axisSearchRecursive(node->next[!dir], indices, distancesq, ax);
     }
   }
 
   void axisSearchInclusiveRecursive(const Node* node, std::vector<int>& indices,
-                                    double distance, int ax) const {
+                                    double distancesq, int ax) const {
     if (node == nullptr)
       return;
 
     const PointT& train = points_[node->idx];
-    const double dist = axisDistance(train, ax);
-    if (dist <= distance)
+    const double dist = axisDistanceSq(train, ax);
+    if (dist <= distancesq)
       indices.push_back(node->idx);
 
     const int axis = node->axis;
     if (axis == ax) {
-      axisSearchInclusiveRecursive(node->next[0], indices, distance, ax);
-      axisSearchInclusiveRecursive(node->next[1], indices, distance, ax);
+      axisSearchInclusiveRecursive(node->next[0], indices, distancesq, ax);
+      axisSearchInclusiveRecursive(node->next[1], indices, distancesq, ax);
     } else {
       const int dir = 0 < train[axis] ? 0 : 1;
-      axisSearchInclusiveRecursive(node->next[dir], indices, distance, ax);
+      axisSearchInclusiveRecursive(node->next[dir], indices, distancesq, ax);
 
       const double diff = fabs(train[axis]);
-      if (diff <= distance)
-        axisSearchInclusiveRecursive(node->next[!dir], indices, distance, ax);
+      if (diff <= distancesq)
+        axisSearchInclusiveRecursive(node->next[!dir], indices, distancesq, ax);
     }
   }
 
