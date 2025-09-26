@@ -160,35 +160,6 @@ std::vector<Point> readPoints(const std::string& fname) {
   return M;
 }
 
-/* semsagt, gera kd tré, finna punkta innan r frá y/x-ásunum, gera nýtt safn af
- * punktum með þeim punktum hliðruðum um grindarfasta til hægri, upp og bæði.
- * Gera kd tré af *nýja* punktasafninu og gera radíus leit á því. Er það ekki
- * bara fínt? Er nokkuð rosa dýrt að gera kd tré tvisvar? En bíddu við, ætti ég
- * ekki að geta bætt "nýju" punktunum við í staðinn fyrir að gera nýtt tré?
- * Eiginlega ekki, ég þarf alltaf að búa til nýtt tré frá grunni. Gæti fundið
- * meðal NN fjarlægðirnar og lagt þær saman við lengdirnar til að meta
- * grindarfastana.
- */
-
-/* Skema:
- * punktar í textaskrá -> vigur af punktum með indexum -> kd-tré af punktum
- * -> finna meðalfjarlægð NN + finna alla punkta innan r frá ásum (Y, X og Z)
- * -> bæta Y, X, og Z við mengið, hliðrað um grindarvigrana m. vi. hætti.
- * -> endurgera kd tréð. -> gera radíus leit til að finna næstu nágranna.
- * -> gera vigur af nágrannaupplýsingum (gæti verið vigur af (i, j, \vec{r}) eða
- *  vigur af vigrum af (j, \vec{r}). vigur af vigrum myndi taka minna pláss ef
- *  ef það eru a.m.k. 3 tengingar? allavega ef það eru margar tengingar þá fer
- *  það að borga sig en ég held að í mínu tilfelli sé vigur af (i, j, \vec{r})
- *  best.)
- * -> Nota nágrannaupplýsingar til að gera H(k) eins og er gert í pythtb.
- * -> Ólíkt PythTB get ég endurnýtt minnið sem Hamilton fylkið notar í staðinn
- *  fyrir að deallocatea og allocatea.
- * -> þráðun: margþráðaður eigingilda-algóriþmi? væri ekki skilvirkara að keyra
- *  einn algoriþma á hverjum þræði? Setja markmiðs-þráðafjölda, en ganga úr
- * skugga um að forritið noti ekki of mikið vinnsluminni og kannski ekki alveg
- * alla kjarnana á tölvunni nema notandinn biðji um það.
- */
-
 template <class D>
 void saveEigen(const std::string& fname, const Eigen::MatrixBase<D>& x) {
   std::ofstream f(fname);
@@ -301,6 +272,7 @@ MatrixXcd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
     H(nb.i, nb.j) = val;
     H(nb.j, nb.i) = std::conj(val);
   }
+  return H;
 }
 
 template <class PointT>
@@ -359,6 +331,7 @@ std::vector<Point> extended_grid(const std::vector<Point>& base,
   }
   return final_grid;
 }
+
 
 void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
                                std::optional<double> lx,
@@ -469,6 +442,32 @@ MatrixXcd pointsToFiniteHamiltonian(std::vector<Point>& points, f64 rsq) {
   }
   return finite_hamiltonian(points.size(), nb_info,
                             [](Vector2d) { return -1; });
+}
+
+MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXd& U, const MatrixXd& UH) {
+  const double range = eigvals(Eigen::last) - eigvals(0);
+  const double error = range / (2 * (double)eigvals.size());
+  const size_t n = [&](){
+    size_t i = 0;
+    for (const auto& x : eigvals) {
+      if (std::abs(x - e) < error)
+        break;
+      i += 1;
+    }
+    return i;
+  }();
+  // some member of eigvals was close enough to e
+  if (n < (size_t)eigvals.size()) {
+    return U(n, Eigen::all) * UH(Eigen::all, n);
+  } else {
+    return MatrixXd::Zero(eigvals.size(), eigvals.size());
+  }
+}
+
+void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
+  const auto hamiltonian = pointsToFiniteHamiltonian(points, rsq);
+  Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
+  MatrixXcd U = eigensolver.eigenvectors();
 }
 
 // dos: finna minnsta og lægsta eigingildi, og scaling þætti a, b.

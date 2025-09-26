@@ -470,8 +470,8 @@ private:
       const int dir = 0 < train[axis] ? 0 : 1;
       axisSearchRecursive(node->next[dir], indices, distancesq, ax);
 
-      const double diff = fabs(train[axis]);
-      if (diff < distance)
+      const double diff = train[axis] * train[axis];
+      if (diff < distancesq)
         axisSearchRecursive(node->next[!dir], indices, distancesq, ax);
     }
   }
@@ -494,7 +494,7 @@ private:
       const int dir = 0 < train[axis] ? 0 : 1;
       axisSearchInclusiveRecursive(node->next[dir], indices, distancesq, ax);
 
-      const double diff = fabs(train[axis]);
+      const double diff = train[axis] * train[axis];
       if (diff <= distancesq)
         axisSearchInclusiveRecursive(node->next[!dir], indices, distancesq, ax);
     }
