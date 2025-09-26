@@ -221,13 +221,6 @@ Eigen::MatrixX<T> readEigen(std::string fname) {
   return M;
 }
 
-/* int main(const int argc, const char* const* argv) {
-  output<f64>("../data/testfile.txt");
-  output<c64>("../data/complexfile.txt");
-  auto m = readEigen<f64>("../data/testfile.txt");
-  std::cout << m << std::endl;
-} */
-
 template <class PointT>
 double max_norm_dist(const PointT& q, const PointT& p) {
   double max = 0;
@@ -333,7 +326,6 @@ std::vector<Point> extended_grid(const std::vector<Point>& base,
   }
   return final_grid;
 }
-
 
 void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
                                std::optional<double> lx,
@@ -446,10 +438,11 @@ MatrixXcd pointsToFiniteHamiltonian(std::vector<Point>& points, f64 rsq) {
                             [](Vector2d) { return -1; });
 }
 
-MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXd& U, const MatrixXd& UH) {
+MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXcd& U,
+               const MatrixXcd& UH) {
   const double range = eigvals(Eigen::last) - eigvals(0);
   const double error = range / (2 * (double)eigvals.size());
-  const size_t n = [&](){
+  const size_t n = [&]() {
     size_t i = 0;
     for (const auto& x : eigvals) {
       if (std::abs(x - e) < error)
@@ -459,8 +452,9 @@ MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXd& U, const Matri
     return i;
   }();
   // some member of eigvals was close enough to e
+  // Might need refinement for degenerate eigvals, but this should be super fast
   if (n < (size_t)eigvals.size()) {
-    return U(n, Eigen::all) * UH(Eigen::all, n);
+    return (U(n, Eigen::all) * UH(Eigen::all, n)).real();
   } else {
     return MatrixXd::Zero(eigvals.size(), eigvals.size());
   }
@@ -468,11 +462,42 @@ MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXd& U, const Matri
 
 void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
   const auto hamiltonian = pointsToFiniteHamiltonian(points, rsq);
+  kdt::KDTree<Point> kdtree(points);
+  const double maxx = kdtree.axisFindMax(0);
   Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
-  const MatrixXcd& U = eigensolver.eigenvectors();
+  const MatrixXcd U = eigensolver.eigenvectors();
+  const VectorXd D = eigensolver.eigenvalues();
   MatrixXcd UH = U.adjoint();
   const size_t nk = 100;
+  const double a = avgNNDist(kdtree, points);
+  const double kmax = M_PI / a;
+  const double dkx = 2 * kmax / nk;
   const size_t ne = 100;
+  const double emin = -4.;
+  const double emax = 4.;
+  const double de = (emax - emin) / ne;
+  std::vector<double> densities(nk * ne);
+  auto density_view = std::mdspan(densities.data(), ne, nk);
+  for (size_t i = 0; i < nk; i++) {
+    const double kx = -kmax + i * dkx;
+    for (size_t j = 0; j < ne; j++) {
+      const double e = emax - j * de;
+      auto del = delta(D, e, U, UH);
+      const VectorXcd k_vec = [&]() {
+        VectorXcd tmp = VectorXcd::Zero(points.size());
+        std::transform(points.begin(), points.end(), tmp.begin(),
+                       [&](Point p) { return std::exp(c64{0, kx * p[0]}); });
+        return tmp;
+      }();
+      density_view[j, i] = k_vec.conjugate().dot(del * k_vec).real();
+    }
+  }
+  hsize_t dims[2] = {ne, nk};
+  H5::DataSpace space(2, dims);
+  H5::H5File file("densities.h5", H5F_ACC_TRUNC);
+  H5::DataSet dataset(
+      file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
+  dataset.write(densities.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
 // dos: finna minnsta og lægsta eigingildi, og scaling þætti a, b.
@@ -528,99 +553,7 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     auto vec = readPoints(result["t"].as<std::string>());
-    standardise(vec);
-    kdt::KDTree<Point> kdtree(vec);
-    double maxx = vec[kdtree.axisFindMax(0)][0];
-    double maxy = vec[kdtree.axisFindMax(1)][1];
-    kdtree.build(vec);
-    double avg_nn_dist = 1.0;
-    if (vec.size() > 1) {
-      avg_nn_dist = avgNNDist(kdtree, vec);
-    }
-    double Lx = maxx + avg_nn_dist;
-    double Ly = maxy + avg_nn_dist;
-    std::cout << std::format("Lx is {}\n"
-                             "Ly is {}\n"
-                             "Average distance to next neighbour is: {}\n",
-                             Lx, Ly, avg_nn_dist);
-    double search_radius = 2.01 * avg_nn_dist;
-    auto x_edge = kdtree.axisSearch(0, search_radius - avg_nn_dist + 1e-6);
-    auto y_edge = kdtree.axisSearch(1, search_radius - avg_nn_dist + 1e-6);
-    std::vector<int> xy_corner;
-    // Estimate of how many points there are in the intersection of the edges.
-    xy_corner.reserve(
-        (size_t)((double)(x_edge.size() * y_edge.size()) / (double)vec.size()));
-    for (const auto xidx : x_edge) {
-      for (const auto yidx : y_edge) {
-        if (xidx == yidx) {
-          xy_corner.push_back(xidx);
-        }
-      }
-    }
-    std::vector<Point> final_grid(vec.size() + x_edge.size() + y_edge.size() +
-                                  xy_corner.size());
-    std::copy(vec.cbegin(), vec.cend(), final_grid.begin());
-    size_t offset = vec.size();
-    for (size_t i = 0; i < x_edge.size(); i++) {
-      Point p = vec[x_edge[i]];
-      p[1] += Ly;
-      final_grid[offset + i] = p;
-    }
-    offset += x_edge.size();
-    for (size_t i = 0; i < y_edge.size(); i++) {
-      Point p = vec[y_edge[i]];
-      p[0] += Lx;
-      final_grid[offset + i] = p;
-    }
-    offset += y_edge.size();
-    for (size_t i = 0; i < xy_corner.size(); i++) {
-      Point p = vec[xy_corner[i]];
-      p[0] += Lx;
-      p[1] += Ly;
-      final_grid[offset + i] = p;
-    }
-    kdtree.build(final_grid);
-    std::vector<Neighbour> nb_info;
-    for (size_t i = 0; i < vec.size(); i++) {
-      auto q = final_grid[i];
-      auto nbs = kdtree.radiusSearch(q, search_radius);
-      for (const auto idx : nbs) {
-        if ((size_t)idx > i) {
-          auto p = final_grid[idx];
-          Vector2d d = {p[0] - q[0], p[1] - q[1]};
-          nb_info.emplace_back(i, p.idx, d);
-        }
-      }
-    }
-    MatrixXcd hamiltonian = MatrixXcd::Zero(vec.size(), vec.size());
-    constexpr u32 ksamples = 20;
-    Vector2d dual1{2 * M_PI / Lx, 0};
-    Vector2d dual2{0, 2 * M_PI / Ly};
-    std::vector<double> energies(ksamples * ksamples * vec.size());
-    auto energy_view =
-        std::mdspan(energies.data(), ksamples, ksamples, vec.size());
-    for (u32 j = 0; j < ksamples; j++) {
-      double yfrac = (double)j / ksamples;
-      for (u32 i = 0; i < ksamples; i++) {
-        double xfrac = (double)i / ksamples;
-        update_hamiltonian(
-            hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
-            [](Vector2d) { return c64{-1, 0}; }, i | j);
-        SelfAdjointEigenSolver<MatrixXcd> es;
-        es.compute(hamiltonian);
-        for (size_t k = 0; k < vec.size(); k++) {
-          energy_view[i, j, k] = es.eigenvalues()[k];
-          // std::cout << energies(i, j, k) << '\n';
-        }
-      }
-    }
-    hsize_t dims[3] = {ksamples, ksamples, vec.size()};
-    H5::DataSpace space(3, dims);
-    H5::H5File file("energies.h5", H5F_ACC_TRUNC);
-    H5::DataSet dataset(
-        file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
-    dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
-
+    spectralDensityFunction(vec, 1.0);
     return 0;
   }
   if (result["p"].count() && result["r"].count()) {
