@@ -4,6 +4,8 @@
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
+#include <Eigen/src/Core/Matrix.h>
+#include <cstddef>
 #include <cxxopts.hpp>
 #include <iostream>
 #include <mdspan>
@@ -467,7 +469,10 @@ MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXd& U, const Matri
 void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
   const auto hamiltonian = pointsToFiniteHamiltonian(points, rsq);
   Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
-  MatrixXcd U = eigensolver.eigenvectors();
+  const MatrixXcd& U = eigensolver.eigenvectors();
+  MatrixXcd UH = U.adjoint();
+  const size_t nk = 100;
+  const size_t ne = 100;
 }
 
 // dos: finna minnsta og lægsta eigingildi, og scaling þætti a, b.
