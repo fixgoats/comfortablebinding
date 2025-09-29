@@ -480,15 +480,16 @@ void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
   auto density_view = std::mdspan(densities.data(), ne, nk);
   for (size_t i = 0; i < nk; i++) {
     const double kx = -kmax + i * dkx;
+    const VectorXcd k_vec = [&]() {
+      VectorXcd tmp = VectorXcd::Zero(points.size());
+      std::transform(points.begin(), points.end(), tmp.begin(),
+                     [&](Point p) { return std::exp(c64{0, kx * p[0]}); });
+      tmp = UH * k_vec;
+      return tmp;
+    }();
     for (size_t j = 0; j < ne; j++) {
       const double e = emax - j * de;
       auto del = delta(D, e, U, UH);
-      const VectorXcd k_vec = [&]() {
-        VectorXcd tmp = VectorXcd::Zero(points.size());
-        std::transform(points.begin(), points.end(), tmp.begin(),
-                       [&](Point p) { return std::exp(c64{0, kx * p[0]}); });
-        return tmp;
-      }();
       density_view[j, i] = k_vec.conjugate().dot(del * k_vec).real();
     }
   }
