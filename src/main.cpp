@@ -1,6 +1,7 @@
 #include "Eigen/Dense"
 #include "H5Cpp.h"
 #include "kdtree.h"
+#include "lodepng.h"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
@@ -438,9 +439,72 @@ MatrixXcd pointsToFiniteHamiltonian(std::vector<Point>& points, f64 rsq) {
                             [](Vector2d) { return -1; });
 }
 
+// array with space for at most N elements, but may have fewer
+template <class T, size_t N>
+struct MaxHeadroom {
+  T data[N];
+  size_t n;
+  void push(T x) {
+#ifndef NDEBUG
+    assert(n < N);
+#endif
+    data[n] = x;
+    n += 1;
+  }
+  void pop() {
+#ifndef NDEBUG
+    assert(n > 0);
+#endif
+    n -= 1;
+  }
+  T operator[](size_t i) const { return data[i]; }
+  T& operator[](size_t i) { return data[i]; }
+  T* begin() { return data; }
+
+  T* end() { return data + n; }
+  constexpr T* cbegin() noexcept { return data; }
+
+  constexpr T* cend() noexcept { return data + n; }
+};
+
+struct Delta {
+  // indices corresponding to where the delta is non-zeros
+  std::vector<size_t> indices;
+  // offset[i] corresponds to the end of the range in indices corresponding to
+  // energy value no. i
+  std::vector<size_t> offsets;
+
+  Delta(size_t n) : indices(n), offsets(n) {}
+};
+
+// Assumes vals are ordered, exits once the search can't yield more indices.
+// Accepts a begin parameter so you don't always have to start searching from
+// the beginning
+Delta delta(const VectorXd& vals, double tol, double ebegin, double eend,
+            size_t n) {
+  Delta indices(n);
+  double de = (eend - ebegin) / n;
+  size_t val_start = 0;
+  for (size_t i = 0; i < n; i++) {
+    double e = ebegin + i * de;
+    if (i > 0)
+      indices.offsets[i] = indices.offsets[i - 1];
+    for (size_t j = val_start; j < (size_t)vals.size(); j++) {
+      if (std::abs(vals[j] - e) < tol) {
+        indices.indices.push_back(j);
+        indices.offsets[i] += 1;
+      } else if (vals[j] > e) {
+        break;
+      } else
+        val_start = j;
+    }
+  }
+  return indices;
+}
+
 MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXcd& U,
                const MatrixXcd& UH) {
-  const double range = eigvals(Eigen::last) - eigvals(0);
+  const double range = eigvals(Eigen::indexing::last) - eigvals(0);
   const double error = range / (2 * (double)eigvals.size());
   const size_t n = [&]() {
     size_t i = 0;
@@ -454,45 +518,74 @@ MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXcd& U,
   // some member of eigvals was close enough to e
   // Might need refinement for degenerate eigvals, but this should be super fast
   if (n < (size_t)eigvals.size()) {
-    return (U(n, Eigen::all) * UH(Eigen::all, n)).real();
+    return (U(n, Eigen::indexing::all) * UH(Eigen::indexing::all, n)).real();
   } else {
     return MatrixXd::Zero(eigvals.size(), eigvals.size());
   }
 }
 
-void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
-  const auto hamiltonian = pointsToFiniteHamiltonian(points, rsq);
+double smallestNonZeroGap(const VectorXd& vals) {
+  double min_gap = std::numeric_limits<double>::max();
+  for (int i = 1; i < vals.size(); i++) {
+    if (double gap = vals[i] - vals[i - 1]; gap > 1e-14 && gap < min_gap) {
+      min_gap = gap;
+    }
+  }
+  return min_gap;
+}
+
+// Not sure whether I should insert rsq here or find it outside the function.
+void spectralDensityFunction(std::vector<Point>& points, f64) {
   kdt::KDTree<Point> kdtree(points);
-  const double maxx = kdtree.axisFindMax(0);
-  Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
-  const MatrixXcd U = eigensolver.eigenvectors();
-  const VectorXd D = eigensolver.eigenvalues();
-  MatrixXcd UH = U.adjoint();
-  const size_t nk = 100;
+  std::cout << "Finding average nearest neighbour distance\n";
   const double a = avgNNDist(kdtree, points);
+  std::cout << "Making Hamiltonian\n";
+  const auto hamiltonian = pointsToFiniteHamiltonian(points, 4 * a * a);
+  std::cout << "Diagonalizing Hamiltonian\n";
+  Eigen::BDCSVD<MatrixXcd> svd(hamiltonian);
+  // Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
+  // const MatrixXcd U = eigensolver.eigenvectors();
+  const MatrixXcd U = svd.matrixU();
+  // const VectorXd D = eigensolver.eigenvalues();
+  const VectorXd D = svd.singularValues();
+  const size_t ne = 100;
+  std::cout << "Finding smallest gap\n";
+  const double tol = smallestNonZeroGap(D);
+  const Delta del = delta(D, tol, D(0), D(Eigen::indexing::last), ne);
+  // MatrixXcd UH = U.adjoint();
+  const size_t nk = 100;
+  const u32 its = nk / 10;
   const double kmax = M_PI / a;
   const double dkx = 2 * kmax / nk;
-  const size_t ne = 100;
   const double emin = -4.;
   const double emax = 4.;
   const double de = (emax - emin) / ne;
-  std::vector<double> densities(nk * ne);
+  std::vector<double> densities(nk * ne, 0);
   auto density_view = std::mdspan(densities.data(), ne, nk);
+  std::cout << "Calculating SDF\n";
+  std::cout << '[';
   for (size_t i = 0; i < nk; i++) {
     const double kx = -kmax + i * dkx;
     const VectorXcd k_vec = [&]() {
       VectorXcd tmp = VectorXcd::Zero(points.size());
       std::transform(points.begin(), points.end(), tmp.begin(),
-                     [&](Point p) { return std::exp(c64{0, kx * p[0]}); });
-      tmp = UH * k_vec;
+                     [&](Point p) { return std::exp(c64{0, -kx * p[0]}); });
+      tmp = U * k_vec;
       return tmp;
     }();
     for (size_t j = 0; j < ne; j++) {
-      const double e = emax - j * de;
-      auto del = delta(D, e, U, UH);
-      density_view[j, i] = k_vec.conjugate().dot(del * k_vec).real();
+      const size_t begin = j > 0 ? del.offsets[j - 1] : 0;
+      const size_t end = del.offsets[j];
+      for (size_t k = begin; k < end; k++) {
+        density_view[j, i] += std::norm(k_vec(del.indices[k]));
+      }
+    }
+    if (i % its == 0) {
+      std::cout << "█|";
     }
   }
+  std::cout << "█]";
+  // Er þetta komið? held það
   hsize_t dims[2] = {ne, nk};
   H5::DataSpace space(2, dims);
   H5::H5File file("densities.h5", H5F_ACC_TRUNC);
@@ -533,8 +626,6 @@ void spectralDensityFunction(std::vector<Point>& points, f64 rsq) {
 */
 
 int main(const int argc, const char* const* argv) {
-  std::vector<double> v{1, 2, 3, 4};
-  auto A = std::mdspan(v.data(), 2, 2);
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,chain", "Make chain points", cxxopts::value<u32>())(
@@ -554,45 +645,17 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     auto vec = readPoints(result["t"].as<std::string>());
+    /*std::vector<Point> vec(20 *
+                           20); //
+    for (u32 i = 0; i < 20; i++) {
+      for (u32 j = 0; j < 20; j++) {
+        vec[20 * i + j] = Point(i, j, 20 * i + j);
+      }
+    }*/
     spectralDensityFunction(vec, 1.0);
     return 0;
   }
-  if (result["p"].count() && result["r"].count()) {
-    MatrixX2d m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H =
-        couplingmat(m, result["r"].as<f64>(), [](f64 x) { return -exp(-x); });
-
-    Eigen::SelfAdjointEigenSolver<MatrixXd> eigensolver(H);
-
-    if (eigensolver.info() != Eigen::Success) {
-      std::cout << eigensolver.info() << std::endl;
-      abort();
-    }
-    std::ofstream f("eigvals.txt");
-    f << eigensolver.eigenvalues().format(defaultFormat);
-    f.close();
-    f64 xmin = m(Eigen::all, 0).minCoeff();
-    f64 ymin = m(Eigen::all, 1).minCoeff();
-    f64 xmax = m(Eigen::all, 0).maxCoeff();
-    f64 ymax = m(Eigen::all, 1).maxCoeff();
-    f64 Lx = xmax - xmin;
-    f64 Ly = ymax - ymin;
-  }
-  if (result["s"].count()) {
-    MatrixXd m = readEigen<f64>(result["p"].as<std::string>());
-    MatrixXd H =
-        couplingmat(m, result["r"].as<f64>(), [](f64) { return f64{-1.0}; });
-
-    Eigen::VectorXcd psi;
-    if (result["i"].count()) {
-      psi = readEigen<c64>(result["i"].as<std::string>());
-    } else {
-      std::random_device dev;
-      std::mt19937_64 mt(dev());
-      std::uniform_real_distribution<f64> dis(0, M_2_PI);
-      for (u32 i = 0; i < H.rows(); i++) {
-        psi(i) = c64{cos(dis(mt)), sin(dis(mt))};
-      }
-    }
+  if (result["p"].count()) {
+    hsize_t size = {};
   }
 }

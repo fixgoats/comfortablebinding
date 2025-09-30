@@ -20,7 +20,9 @@ using std::bit_cast;
 
 template <typename T>
 constexpr u32 euclid_mod(T a, u32 b) {
+#ifndef NDEBUG
   assert(b != 0);
+#endif
   return a % b;
 }
 
