@@ -1,11 +1,18 @@
 #include "Eigen/Dense"
 #include "H5Cpp.h"
+#include "betterexc.h"
 #include "kdtree.h"
 #include "lodepng.h"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
 #include <Eigen/src/Core/Matrix.h>
+#include <H5DataSet.h>
+#include <H5File.h>
+#include <H5FloatType.h>
+#include <H5Fpublic.h>
+#include <H5PredType.h>
+#include <H5public.h>
 #include <cstddef>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -653,6 +660,20 @@ int main(const int argc, const char* const* argv) {
       }
     }*/
     spectralDensityFunction(vec, 1.0);
+    H5::H5File file("density.h5", H5F_ACC_RDONLY);
+    H5::DataSet dataset = file.openDataSet("aaa");
+    H5T_class_t type_class = dataset.getTypeClass();
+    H5::FloatType floattype = dataset.getFloatType();
+    size_t size = floattype.getSize();
+    H5::DataSpace space = dataset.getSpace();
+    int rank = space.getSimpleExtentNdims();
+    if (rank != 2) {
+      runtime_exc("Rank should be 2");
+    }
+    hsize_t dims[2];
+    space.getSimpleExtentDims(dims);
+    std::vector<double> data(dims[0] * dims[1]);
+    dataset.read(data.data(), H5::PredType::NATIVE_DOUBLE, space, space);
     return 0;
   }
   if (result["p"].count()) {
