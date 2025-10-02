@@ -1,5 +1,6 @@
 #pragma once
 #include "betterexc.h"
+#include "colormaps.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -126,9 +128,9 @@ u8 mapToColor(T v, T min, T max) {
 
 template <typename InputIt, typename OutputIt>
 void colorMap(InputIt it, InputIt end, OutputIt out) {
-  const auto max = *std::max_element(it, end);
-  const auto min = *std::min_element(it, end);
-  std::transform(it, end, out, [&](auto x) { return mapToColor(x, min, max); });
+  auto minmax = std::ranges::minmax(it, end);
+  std::transform(it, end, out,
+                 [&](auto x) { return mapToColor(x, minmax.min, minmax.max); });
 }
 
 constexpr auto upow(auto x, u32 N) {
@@ -145,5 +147,16 @@ template <typename InputIt>
 std::vector<u8> colorMapVec(InputIt it, InputIt end) {
   std::vector<u8> out(end - it);
   colorMap(it, end, out.begin());
+  return out;
+}
+
+template <class IIt>
+std::vector<RGBA> valuesToColor(IIt it, IIt end,
+                                const std::array<AlignedColor, 256>& cmap) {
+  std::vector<RGBA> out(end - it);
+  auto minmax = std::ranges::minmax(it, end);
+  std::transform(it, end, out.begin(), [&](auto x) {
+    return fcolor_to_ucolor(cmap[mapToColor(x, minmax.min, minmax.max)]);
+  });
   return out;
 }

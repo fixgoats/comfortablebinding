@@ -5,8 +5,25 @@
 struct AlignedColor {
   vec3<f32> rgb;
   f32 pad = 0;
-  AlignedColor(f32 x, f32 y, f32, z) : rgb{x, y, z}, pad = 0 {}
+  constexpr AlignedColor(f32 x, f32 y, f32 z) : rgb{x, y, z}, pad{0} {}
 };
+
+struct RGBA {
+  u8 r;
+  u8 g;
+  u8 b;
+  u8 a;
+};
+
+static RGBA fcolor_to_ucolor(AlignedColor lhs) {
+  return {
+      std::min((u8)std::abs(lhs.rgb.x * 256), (u8)255),
+      std::min((u8)std::abs(lhs.rgb.y * 256), (u8)255),
+      std::min((u8)std::abs(lhs.rgb.z * 256), (u8)255),
+      255,
+  };
+}
+
 // magma, inferno, plasma, viridis by Nathaniel J. Smith, Stefan van der Walt
 // and Eric Firing. CC0
 constexpr std::array<AlignedColor, 256> magma = {
