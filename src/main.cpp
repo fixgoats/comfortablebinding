@@ -7,6 +7,7 @@
 #include "metaprogramming.h"
 #include "typedefs.h"
 #include <Eigen/src/Core/Matrix.h>
+#include <algorithm>
 #include <cstddef>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -625,12 +626,13 @@ void spectralDensityFunction(std::vector<Point>& points, f64) {
       std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
         return (1. / sqrt(points.size())) * std::exp(c64{0, kx * p[0]});
       });
-      tmp = UH * k_vec;
+      tmp = UH * tmp;
       return tmp;
     }();
     for (size_t j = 0; j < ne; j++) {
       const double e = emin + j * de;
-      Eigen::VectorX<bool> del = Eigen::abs(D.array() - e).array() < 0.01;
+      VectorXd del = Eigen::exp(-50 * (D.array() - e)*(D.array() - e));
+      std::transform(del.begin(), del.end(), del.begin(), [](double x){ return x < 0.8 ? 0 : x;});
       for (u32 k = 0; k < del.size(); k++) {
         if (del[k]) {
           /*density_view[j, i] += k_vec
@@ -678,7 +680,7 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     // auto vec = readPoints(result["t"].as<std::string>());
-    constexpr size_t N = 60;
+    constexpr size_t N = 30;
     std::vector<Point> vec(N * N);
     for (u32 i = 0; i < N; i++) {
       for (u32 j = 0; j < N; j++) {

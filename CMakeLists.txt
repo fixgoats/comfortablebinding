@@ -13,6 +13,13 @@ set(MAIN_TARGET disp)
 set(CMAKE_CXX_COMPILER "clang++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+
+find_package(OpenMP)
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+set(EIGEN_USE_BLAS)
+set(EIGEN_USE_LAPACKE)
+
 add_executable(${MAIN_TARGET})
 target_sources(${MAIN_TARGET} PRIVATE ${PROJECT_SOURCES})
 add_compile_options(
@@ -48,4 +55,8 @@ endif()
 # find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 
-target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng)# Eigen3::Eigen)
+if(NOT OpenMP_CXX_FOUND)
+  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng)# Eigen3::Eigen)
+else()
+  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng OpenMP::OpenMP_CXX ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+endif()
