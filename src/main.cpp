@@ -25,6 +25,20 @@ static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      Eigen::DontAlignCols, " ", "\n", "", "",
                                      "", "");
 
+void writeh5wexc(H5::DataSet& dataset, const void* data, H5::DataType type) {
+  try {
+    dataset.write(data, type);
+  } catch (H5::FileIException error) {
+    error.printErrorStack();
+  } catch (H5::DataSetIException error) {
+    error.printErrorStack();
+  } catch (H5::DataSpaceIException error) {
+    error.printErrorStack();
+  } catch (H5::DataTypeIException error) {
+    error.printErrorStack();
+  }
+}
+
 template <class Func>
 MatrixXcd couplingmat(const VectorXd& xs, const VectorXd& ys, Vector2d k,
                       f64 rsq0, Func f) {
@@ -43,51 +57,6 @@ MatrixXcd couplingmat(const VectorXd& xs, const VectorXd& ys, Vector2d k,
   }
   return J;
 }
-
-/// nx: number of hexagons along x axis.
-/// ny: number of hexagons along y axis.
-/// a: lattice constant.
-/*
- * void makeHexLattice(u32 nx, u32 ny, f64 a) {
-  Eigen::Vector2d v1{a * std::cos(M_2_PI / 3), a * std::cos(M_2_PI / 3)};
-  Eigen::Vector2d v2{a * std::cos(M_PI / 3), a * std::cos(M_PI / 3)};
-  Eigen::Vector2d h{a, 0};
-  u32 npoints = 2 * (2 * ny + 1) + (nx - 1) * (2 * ny + 2);
-
-  // Eigen::MatrixX2d = ;
-  Eigen::MatrixX2d H(npoints, 2);
-  if (nx % 2 == 1) {
-    u32 idx = 0;
-    for (u32 i = 0; i < 2 * ny + 1; i++) {
-      H(idx, {1, 2}) = (i + 1 / 2) * v1 + (i / 2) * v2;
-      idx += 1;
-    }
-
-    for (u32 j = 1; j < nx; j++) {
-      for (u32 i = 0; i < 2 * ny + 1; i++) {
-        H(idx, {1, 2}) = (i + 1 / 2) * v1 + (i / 2) * v2;
-        idx += 1;
-      }
-    }
-  }
-  H(0, {1, 2}) = 0 * v1 + 0 * v2;
-  H(1, {1, 2}) = 1 * v1 + 0 * v2;
-  H(2, {1, 2}) = 1 * v1 + 1 * v2;
-  if (nx % 2 == 0) {
-    for (u32 i = 0; i < nx + 1; i++) {
-      H(2 * i * (2 * ny + 1), {1, 2}) = 2 * i * h + (i / 2) * v2;
-      for (u32 j = 0; j < ny; j++) {
-        H(2 * i * (2 * ny + 1) + 2 * j, {1, 2}) = (i / 2) * v2
-      }
-    }
-    for (u32 i = 0; i < nx; i++) {
-      H(i * (2 * ny + 1), {1, 2});
-      for (u32 j = 0; j < ny; j++) {
-      }
-    }
-  }
-}
-*/
 
 template <class Func>
 MatrixXd couplingmat(const MatrixX2d& points, f64 rsq, Func f) {
@@ -418,18 +387,16 @@ void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
   dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
-MatrixXcd pointsToFiniteHamiltonian(std::vector<Point>& points, f64 rsq) {
+MatrixXcd pointsToFiniteHamiltonian(const std::vector<Point>& points,
+                                    const kdt::KDTree<Point>& kdtree,
+                                    f64 radius) {
   /* This function creates a hamiltonian for a simple finite lattice.
    * Can't exactly do a dispersion from this.
    */
-  standardise(points);
-  kdt::KDTree<Point> kdtree(points);
-  kdtree.build(points);
-  double search_radius = std::sqrt(rsq);
   std::vector<Neighbour> nb_info;
   for (size_t i = 0; i < points.size(); i++) {
     auto q = points[i];
-    auto nbs = kdtree.radiusSearch(q, search_radius);
+    auto nbs = kdtree.radiusSearch(q, radius);
     for (const auto idx : nbs) {
       if ((size_t)idx > i) {
         auto p = points[idx];
@@ -536,128 +503,148 @@ double smallestNonZeroGap(const VectorXd& vals) {
   return min_gap;
 }
 
-// Veit að þetta virkar
-void bruteSDF(std::vector<Point>& points, f64) {
-  kdt::KDTree<Point> kdtree(points);
-  std::cout << "Finding average nearest neighbour distance\n";
-  const double a = avgNNDist(kdtree, points);
-  std::cout << "Making Hamiltonian\n";
-  const auto hamiltonian = pointsToFiniteHamiltonian(points, 1.01 * a * a);
-  std::cout << "Diagonalizing Hamiltonian\n";
-  Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
-  const MatrixXcd U = eigensolver.eigenvectors();
-  const MatrixXcd UH = U.adjoint();
-  const VectorXd D = eigensolver.eigenvalues();
-  const size_t ne = 100;
-  std::cout << "Finding smallest gap\n";
-  const double tol = 2 * smallestNonZeroGap(D);
-  const double fuzz = 50;
-  const size_t nk = 100;
-  const u32 its = nk / 10;
-  const double kmax = M_PI / a;
-  const double dkx = 2 * kmax / nk;
-  const double emin = -4.;
-  const double emax = 4.;
-  const double de = (emax - emin) / ne;
-  std::vector<double> densities(nk * ne, 0);
-  auto density_view = std::mdspan(densities.data(), ne, nk);
-  std::cout << "Calculating SDF\n";
-  std::cout << '[';
-  for (size_t i = 0; i < nk; i++) {
-    const double kx = -kmax + i * dkx;
-    const VectorXcd k_vec = [&]() {
-      VectorXcd tmp = VectorXcd::Zero(points.size());
-      std::transform(points.begin(), points.end(), tmp.begin(),
-                     [&](Point p) { return std::exp(c64{0, kx * p[0]}); });
-      // tmp = U * k_vec;
-      return tmp;
-    }();
-    for (size_t j = 0; j < ne; j++) {
-      const double e = emin + j * de;
-      VectorXd del = Eigen::exp(-fuzz * (D.array() - e) * (D.array() - e));
-      density_view[j, i] =
-          (k_vec.dot(U * del.asDiagonal() * UH * k_vec)).real();
-      std::cout << density_view[j, i] << ' ';
-    }
-    std::cout << '\n';
-    if (i % its == 0) {
-      std::cout << "█|";
-    }
-  }
-  std::cout << "█]";
-  hsize_t dims[2] = {ne, nk};
-  H5::DataSpace space(2, dims);
-  H5::H5File file("densities.h5", H5F_ACC_TRUNC);
-  H5::DataSet dataset(
-      file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
-  dataset.write(densities.data(), H5::PredType::NATIVE_DOUBLE);
-}
+struct RangeConf {
+  double min;
+  double max;
+  u64 n;
+};
 
-// Bestuð útgáfa af BruteSDF
-void spectralDensityFunction(std::vector<Point>& points, f64) {
-  kdt::KDTree<Point> kdtree(points);
-  std::cout << "Finding average nearest neighbour distance\n";
-  const double a = avgNNDist(kdtree, points);
-  std::cout << "Making Hamiltonian\n";
-  const auto hamiltonian = pointsToFiniteHamiltonian(points, 1.01 * a * a);
-  std::cout << "Diagonalizing Hamiltonian\n";
-  Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
-  const MatrixXcd U = eigensolver.eigenvectors();
-  const VectorXd D = eigensolver.eigenvalues();
-  const MatrixXcd UH = U.adjoint();
-  const size_t ne = 100;
-  std::cout << "Finding smallest gap\n";
-  const double tol = 2 * smallestNonZeroGap(D);
-  const size_t nk = 100;
-  const u32 its = nk / 10;
-  const double kmax = M_PI / a;
-  const double dkx = 2 * kmax / nk;
-  const double emin = 0.;
-  const double emax = 4.;
-  const double de = (emax - emin) / ne;
-  std::vector<double> densities(nk * ne, 0);
-  auto density_view = std::mdspan(densities.data(), ne, nk);
-  std::cout << "Calculating SDF\n";
-  // std::cout << '[';
-  for (size_t i = 0; i < nk; i++) {
-    const double kx = -kmax + i * dkx;
+// Along with gauss_sharpening, controls acceptable deviation from each e for an
+// eigenvalue to be considered. Increase for less acceptable deviation.
+constexpr double gauss_cutoff = 0.5;
+// increase to decrease fuzziness. If too sharp with too high cutoff, could miss
+// some or all structure.
+constexpr double gauss_sharpening = 50;
+// The acceptable deviation from energy value
+static const double nonzero_range =
+    std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
+
+std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
+                        const std::vector<Point>& points, RangeConf kc,
+                        RangeConf ec, bool printProgress = true) {
+  const double dkx = (kc.max - kc.min) / (double)kc.n;
+  const double de = (ec.max - ec.min) / (double)ec.n;
+  const u32 its = kc.n / 10;
+  std::vector<double> densities(kc.n * ec.n, 0);
+  auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
+  if (printProgress)
+    std::cout << "[";
+  for (size_t i = 0; i < kc.n; i++) {
+    const double kx = kc.min + i * dkx;
     const VectorXcd k_vec = [&]() {
-      VectorXcd tmp = VectorXcd::Zero(points.size());
+      VectorXcd tmp = VectorXcd::Zero(D.size());
       std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
         return (1. / sqrt(points.size())) * std::exp(c64{0, kx * p[0]});
       });
-      tmp = UH * tmp;
+      tmp = UH * k_vec;
       return tmp;
     }();
-    for (size_t j = 0; j < ne; j++) {
-      const double e = emin + j * de;
-      VectorXd del = Eigen::exp(-50 * (D.array() - e)*(D.array() - e));
-      std::transform(del.begin(), del.end(), del.begin(), [](double x){ return x < 0.8 ? 0 : x;});
-      for (u32 k = 0; k < del.size(); k++) {
-        if (del[k]) {
+    for (size_t j = 0; j < ec.n; j++) {
+      const double e = ec.min + j * de;
+      for (u32 k = 0; k < D.size(); k++) {
+        if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
           /*density_view[j, i] += k_vec
                                     .dot((U(Eigen::indexing::all, k) *
                                           UH(k, Eigen::indexing::all)) *
                                          k_vec)
                                     .real();*/
-          density_view[j, i] += std::norm(k_vec(k));
+          density_view[j, i] +=
+              std::exp(-gauss_sharpening * square(diff)) * std::norm(k_vec(k));
         }
       }
-      std::cout << density_view[j, i] << ' ';
     }
-    std::cout << '\n';
-    if (i % its == 0) {
-      std::cout << "█|";
-    }
+    if (printProgress)
+      if (i % its == 0)
+        std::cout << "█|";
   }
-  // std::cout << "█]";
-  // Er þetta komið? held það
+  if (printProgress)
+    std::cout << "█]\n";
+  return densities;
+}
+
+std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
+                        const std::vector<Point>& points, RangeConf kc,
+                        RangeConf ec, bool printProgress = true) {
+  const double dk = (kc.max - kc.min) / (double)kc.n;
+  const double de = (ec.max - ec.min) / (double)ec.n;
+  const u32 its = kc.n / 10;
+  std::vector<double> densities(ec.n, 0);
+  // auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
+  if (printProgress)
+    std::cout << "[";
+  for (size_t i = 0; i < kc.n; i++) {
+    const double kx = kc.min + i * dk;
+    std::cout << "doing kx " << kx << '\n';
+    for (u64 j = 0; j < kc.n; j++) {
+      const double ky = kc.min + j * dk;
+      std::cout << "doing ky " << ky << '\n';
+      const VectorXcd k_vec = [&]() {
+        VectorXcd tmp = VectorXcd::Zero(D.size());
+        std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
+          return (1. / sqrt(points.size())) *
+                 std::exp(c64{0, kx * p[0] + ky * p[1]});
+        });
+        tmp = UH * k_vec;
+        return tmp;
+      }();
+      for (u32 k = 0; k < ec.n; k++) {
+        const double e = ec.min + k * de;
+        std::cout << "doing energy " << e << '\n';
+        for (u64 l = 0; l < D.size(); l++) {
+          if (double diff = std::abs(D(l) - e); diff < nonzero_range) {
+            densities[k] += std::exp(-gauss_sharpening * square(diff)) *
+                            std::norm(k_vec(l));
+          }
+        }
+      }
+      if (printProgress)
+        if (i % its == 0)
+          std::cout << "█|";
+    }
+    if (printProgress)
+      std::cout << "█]\n";
+  }
+  return densities;
+}
+
+// Takes set of points, finds nn-interaction hamiltonian, calculates and saves
+// SDF.
+void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
+  kdt::KDTree<Point> kdtree(points);
+  std::cout << "Finding average nearest neighbour distance\n";
+  const double a = avgNNDist(kdtree, points);
+  std::cout << "Making Hamiltonian\n";
+  const auto hamiltonian = pointsToFiniteHamiltonian(points, kdtree, 1.01 * a);
+  std::cout << "Diagonalizing Hamiltonian\n";
+  Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
+  const MatrixXcd U = eigensolver.eigenvectors();
+  const VectorXd D = eigensolver.eigenvalues();
+  const MatrixXcd UH = U.adjoint();
+  const u64 ne = 100;
+  const u64 nk = 100;
+  const double kmax = M_PI / a;
+  const double emin = 0.;
+  const double emax = 4.;
+  std::cout << "Calculating SDF\n";
+  auto densities = SDF(D, UH, points, {-kmax, kmax, nk}, {emin, emax, ne});
   hsize_t dims[2] = {ne, nk};
   H5::DataSpace space(2, dims);
   H5::H5File file("densities.h5", H5F_ACC_TRUNC);
-  H5::DataSet dataset(
-      file.createDataSet("aaa", H5::PredType::NATIVE_DOUBLE, space));
-  dataset.write(densities.data(), H5::PredType::NATIVE_DOUBLE);
+  H5::DataSet matrix =
+      file.createDataSet("matrix", H5::PredType::NATIVE_DOUBLE, space);
+  writeh5wexc(matrix, densities.data(), H5::PredType::NATIVE_DOUBLE);
+  hsize_t confdim[1] = {4};
+  H5::DataSpace boundspace(1, confdim);
+  H5::DataSet boundset =
+      file.createDataSet("bounds", H5::PredType::NATIVE_DOUBLE, boundspace);
+  double bounds[4] = {-kmax, kmax, emin, emax};
+  writeh5wexc(boundset, bounds, H5::PredType::NATIVE_DOUBLE);
+  const auto dos = DOS(D, UH, points, {-kmax, kmax, 20}, {emin, emax, ne});
+  hsize_t dosdim[1] = {ne};
+  H5::DataSpace dosspace(1, dosdim);
+  H5::DataSet dosset =
+      file.createDataSet("dos", H5::PredType::NATIVE_DOUBLE, dosspace);
+  writeh5wexc(dosset, dos.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
 int main(const int argc, const char* const* argv) {
@@ -680,14 +667,14 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     // auto vec = readPoints(result["t"].as<std::string>());
-    constexpr size_t N = 30;
+    constexpr size_t N = 40;
     std::vector<Point> vec(N * N);
     for (u32 i = 0; i < N; i++) {
       for (u32 j = 0; j < N; j++) {
         vec[N * i + j] = Point(i, j, N * i + j);
       }
     }
-    spectralDensityFunction(vec, 1.0);
+    pointsToSDFOnFile(vec, 1.0);
     /*H5::H5File file("density.h5", H5F_ACC_RDONLY);
     H5::DataSet dataset = file.openDataSet("aaa");
     H5T_class_t type_class = dataset.getTypeClass();

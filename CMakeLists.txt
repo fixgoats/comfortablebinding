@@ -14,17 +14,19 @@ set(CMAKE_CXX_COMPILER "clang++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 
-find_package(OpenMP)
-find_package(BLAS REQUIRED)
+find_package(OpenMP REQUIRED)
+find_package(BLAS REQUIRED COMPONENTS openmp)
 find_package(LAPACK REQUIRED)
 set(EIGEN_USE_BLAS)
+message("Found BLAS libraries ${BLAS_LIBRARIES}")
+message("Found LAPACK libraries ${BLAS_LIBRARIES}")
 set(EIGEN_USE_LAPACKE)
 
 add_executable(${MAIN_TARGET})
 target_sources(${MAIN_TARGET} PRIVATE ${PROJECT_SOURCES})
 add_compile_options(
-       -Wall -Werror -Wno-error=maybe-uninitialized
-       $<$<CONFIG:RELEASE>:-O3>
+       -Wall -Wextra -Wpedantic -Wno-error=maybe-uninitialized
+       $<$<CONFIG:RELEASE>:-Ofast -march=native>
        $<$<CONFIG:DEBUG>:-O0>
        $<$<CONFIG:DEBUG>:-ggdb3>
 )
@@ -35,16 +37,12 @@ add_compile_definitions(
 
 set_property(TARGET ${MAIN_TARGET} PROPERTY CXX_STANDARD 23)
 include(CheckIPOSupported)
-check_ipo_supported(RESULT result OUTPUT output)
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-target_compile_options(${MAIN_TARGET} PRIVATE -Wall -Wextra -Wpedantic)
+check_ipo_supported(RESULT ipoSupported OUTPUT output)
+target_compile_options(${MAIN_TARGET} PRIVATE -Wall )
 
 target_include_directories(${MAIN_TARGET} PRIVATE include deps/eigen-5.0.0)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-endif()
-if(result AND CMAKE_BUILD_TYPE STREQUAL "Release")
+if(ipoSupported AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO")
     set_property(TARGET ${MAIN_TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
