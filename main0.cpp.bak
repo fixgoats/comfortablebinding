@@ -21,16 +21,6 @@ using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
     Eigen::VectorXi;
 constexpr u32 Nx = 40;
 constexpr u32 Ny = 40;
-// Along with gauss_sharpening, controls acceptable deviation from each e for an
-// eigenvalue to be considered. Increase for less acceptable deviation.
-constexpr double gauss_cutoff = 0.5;
-// increase to decrease fuzziness. If too sharp with too high cutoff, could miss
-// some or all structure.
-constexpr double gauss_sharpening = 50;
-// The acceptable deviation from energy value
-static const double nonzero_range =
-    std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
-
 static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      Eigen::DontAlignCols, " ", "\n", "", "",
                                      "", "");
@@ -456,6 +446,63 @@ struct MaxHeadroom {
   constexpr T* cend() noexcept { return data + n; }
 };
 
+struct Delta {
+  // indices corresponding to where the delta is non-zeros
+  std::vector<size_t> indices;
+  // offset[i] corresponds to the end of the range in indices corresponding to
+  // energy value no. i
+  std::vector<size_t> offsets;
+
+  Delta(size_t n) : indices(n), offsets(n) {}
+};
+
+// Assumes vals are ordered, exits once the search can't yield more indices.
+// Accepts a begin parameter so you don't always have to start searching from
+// the beginning
+Delta delta(const VectorXd& vals, double tol, double ebegin, double eend,
+            size_t n) {
+  Delta indices(n);
+  double de = (eend - ebegin) / n;
+  size_t val_start = 0;
+  for (size_t i = 0; i < n; i++) {
+    double e = ebegin + i * de;
+    if (i > 0)
+      indices.offsets[i] = indices.offsets[i - 1];
+    for (size_t j = val_start; j < (size_t)vals.size(); j++) {
+      if (std::abs(vals[j] - e) < tol) {
+        indices.indices.push_back(j);
+        indices.offsets[i] += 1;
+      } else if (vals[j] > e) {
+        break;
+      } else
+        val_start = j;
+    }
+  }
+  return indices;
+}
+
+MatrixXd delta(const VectorXd& eigvals, double e, const MatrixXcd& U,
+               const MatrixXcd& UH) {
+  const double range = eigvals(Eigen::indexing::last) - eigvals(0);
+  const double error = range / (2 * (double)eigvals.size());
+  const size_t n = [&]() {
+    size_t i = 0;
+    for (const auto& x : eigvals) {
+      if (std::abs(x - e) < error)
+        break;
+      i += 1;
+    }
+    return i;
+  }();
+  // some member of eigvals was close enough to e
+  // Might need refinement for degenerate eigvals, but this should be super fast
+  if (n < (size_t)eigvals.size()) {
+    return (U(n, Eigen::indexing::all) * UH(Eigen::indexing::all, n)).real();
+  } else {
+    return MatrixXd::Zero(eigvals.size(), eigvals.size());
+  }
+}
+
 double smallestNonZeroGap(const VectorXd& vals) {
   double min_gap = std::numeric_limits<double>::max();
   for (int i = 1; i < vals.size(); i++) {
@@ -470,61 +517,32 @@ struct RangeConf {
   double min;
   double max;
   u64 n;
-
-  constexpr double d() const { return (max - min) / n; }
 };
 
-typedef std::vector<std::vector<std::pair<double, u32>>> Delta;
-
-Delta delta(const VectorXd& D, RangeConf ec) {
-  Delta delta(ec.n);
-  for (u32 i = 0; i < ec.n; i++) {
-    const double e = ec.min + i * ec.d();
-    delta[i] = [&]() {
-      std::vector<std::pair<double, u32>> tmp;
-      tmp.reserve(5);
-      for (u32 k = 0; k < D.size(); k++) {
-        if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
-          tmp.push_back({std::exp(-gauss_sharpening * square(diff)), k});
-        }
-      }
-      tmp.shrink_to_fit();
-      return tmp;
-    }();
-  }
-  return delta;
-}
+// Along with gauss_sharpening, controls acceptable deviation from each e for an
+// eigenvalue to be considered. Increase for less acceptable deviation.
+constexpr double gauss_cutoff = 0.5;
+// increase to decrease fuzziness. If too sharp with too high cutoff, could miss
+// some or all structure.
+constexpr double gauss_sharpening = 50;
+// The acceptable deviation from energy value
+static const double nonzero_range =
+    std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
 
 std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
                         const std::vector<Point>& points, RangeConf kc,
                         RangeConf ec, bool printProgress = true) {
-  // VectorXd energies = VectorXd::LinSpaced(ec.n, ec.min, ec.max);
+  const double dkx = (kc.max - kc.min) / (double)kc.n;
+  const double de = (ec.max - ec.min) / (double)ec.n;
   const u32 its = kc.n / 10;
   std::vector<double> densities(kc.n * ec.n, 0);
   auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
   if (printProgress)
     std::cout << "[";
 
-  auto del = delta(D, ec);
-  /*const double de = (ec.max - ec.min) / ec.n;
-  Delta delta(ec.n);
-  for (u32 i = 0; i < ec.n; i++) {
-    const double e = ec.min + i * de;
-    std::cout << "e = " << e << '\n';
-    delta[i] = [&]() {
-      std::vector<std::pair<double, u32>> tmp;
-      tmp.reserve(5);
-      for (u32 k = 0; k < D.size(); k++) {
-        if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
-          tmp.push_back({std::exp(-gauss_sharpening * square(diff)), k});
-        }
-      }
-      tmp.shrink_to_fit();
-      return tmp;
-    }();
-  }*/
+  std::unordered_map<double, std::vector<double>> delta;
   for (size_t i = 0; i < kc.n; i++) {
-    const double kx = kc.min + i * kc.d();
+    const double kx = kc.min + i * dkx;
     const VectorXcd k_vec = [&]() {
       VectorXcd tmp = VectorXcd::Zero(D.size());
       std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
@@ -534,8 +552,17 @@ std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
       return tmp;
     }();
     for (size_t j = 0; j < ec.n; j++) {
-      for (const auto& pair : del[j]) {
-        density_view[j, i] += pair.first * std::norm(k_vec(pair.second));
+      const double e = ec.min + j * de;
+      for (u32 k = 0; k < D.size(); k++) {
+        if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
+          /*density_view[j, i] += k_vec
+                                    .dot((U(Eigen::indexing::all, k) *
+                                          UH(k, Eigen::indexing::all)) *
+                                         k_vec)
+                                    .real();*/
+          density_view[j, i] +=
+              std::exp(-gauss_sharpening * square(diff)) * std::norm(k_vec(k));
+        }
       }
     }
     if (printProgress)
@@ -550,27 +577,36 @@ std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
 std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
                         const std::vector<Point>& points, RangeConf kc,
                         RangeConf ec, bool printProgress = true) {
+  const double dk = (kc.max - kc.min) / (double)kc.n;
+  const double de = (ec.max - ec.min) / (double)ec.n;
   const u32 its = kc.n / 10;
   std::vector<double> densities(ec.n, 0);
-  auto del = delta(D, ec);
+  // auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
   if (printProgress)
     std::cout << "[";
   for (size_t i = 0; i < kc.n; i++) {
-    const double kx = kc.min + i * kc.d();
+    const double kx = kc.min + i * dk;
+    std::cout << "doing kx " << kx << '\n';
     for (u64 j = 0; j < kc.n; j++) {
-      const double ky = kc.min + j * kc.d();
+      const double ky = kc.min + j * dk;
+      std::cout << "doing ky " << ky << '\n';
       const VectorXcd k_vec = [&]() {
         VectorXcd tmp = VectorXcd::Zero(D.size());
         std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
           return (1. / sqrt(points.size())) *
                  std::exp(c64{0, kx * p[0] + ky * p[1]});
         });
-        tmp = UH * k_vec; // Hlýt að geta stytt þetta eitthvað
+        tmp = UH * k_vec;
         return tmp;
       }();
       for (u32 k = 0; k < ec.n; k++) {
-        for (const auto& pair : del[k]) {
-          densities[k] += pair.first * std::norm(k_vec(pair.second));
+        const double e = ec.min + k * de;
+        std::cout << "doing energy " << e << '\n';
+        for (u64 l = 0; l < D.size(); l++) {
+          if (double diff = std::abs(D(l) - e); diff < nonzero_range) {
+            densities[k] += std::exp(-gauss_sharpening * square(diff)) *
+                            std::norm(k_vec(l));
+          }
         }
       }
       if (printProgress)
@@ -654,13 +690,12 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
       file.createDataSet("bounds", H5::PredType::NATIVE_DOUBLE, boundspace);
   double bounds[4] = {-kmax, kmax, emin, emax};
   writeh5wexc(boundset, bounds, H5::PredType::NATIVE_DOUBLE);
-  const auto dos =
-      DOS(eigsol.D, UH, points, {-kmax, kmax, 100}, {emin, emax, ne});
-  hsize_t dosdim[1] = {ne};
-  H5::DataSpace dosspace(1, dosdim);
-  H5::DataSet dosset =
-      file.createDataSet("dos", H5::PredType::NATIVE_DOUBLE, dosspace);
-  writeh5wexc(dosset, dos.data(), H5::PredType::NATIVE_DOUBLE);
+  // const auto dos = DOS(D, UH, points, {-kmax, kmax, 20}, {emin, emax, ne});
+  // hsize_t dosdim[1] = {ne};
+  // H5::DataSpace dosspace(1, dosdim);
+  // H5::DataSet dosset =
+  //     file.createDataSet("dos", H5::PredType::NATIVE_DOUBLE, dosspace);
+  // writeh5wexc(dosset, dos.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
 int main(const int argc, const char* const* argv) {
@@ -683,7 +718,7 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     // auto vec = readPoints(result["t"].as<std::string>());
-    constexpr size_t N = 60;
+    constexpr size_t N = 40;
     std::vector<Point> vec(N * N);
     for (u32 i = 0; i < N; i++) {
       for (u32 j = 0; j < N; j++) {
