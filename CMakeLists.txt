@@ -28,7 +28,7 @@ add_compile_options(
        -Wall -Wextra -Wpedantic -Wno-error=maybe-uninitialized
        $<$<CONFIG:RELEASE>:-Ofast -march=native>
        $<$<CONFIG:DEBUG>:-O0>
-       $<$<CONFIG:DEBUG>:-ggdb3>
+       $<$<CONFIG:DEBUG>:-ggdb3 -fsanitize=address>
 )
 add_compile_definitions(
         $<$<CONFIG:RELEASE>:NDEBUG>

@@ -19,14 +19,12 @@
 using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
     Eigen::VectorXcd, Eigen::Vector2d, Eigen::SelfAdjointEigenSolver,
     Eigen::VectorXi;
-constexpr u32 Nx = 40;
-constexpr u32 Ny = 40;
 // Along with gauss_sharpening, controls acceptable deviation from each e for an
 // eigenvalue to be considered. Increase for less acceptable deviation.
-constexpr double gauss_cutoff = 0.5;
+constexpr double gauss_cutoff = 0.1;
 // increase to decrease fuzziness. If too sharp with too high cutoff, could miss
 // some or all structure.
-constexpr double gauss_sharpening = 50;
+constexpr double gauss_sharpening = 100;
 // The acceptable deviation from energy value
 static const double nonzero_range =
     std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
@@ -480,6 +478,7 @@ Delta delta(const VectorXd& D, RangeConf ec) {
   Delta delta(ec.n);
   for (u32 i = 0; i < ec.n; i++) {
     const double e = ec.min + i * ec.d();
+    std::cout << "Energy is " << e << '\n';
     delta[i] = [&]() {
       std::vector<std::pair<double, u32>> tmp;
       tmp.reserve(5);
@@ -495,10 +494,18 @@ Delta delta(const VectorXd& D, RangeConf ec) {
   return delta;
 }
 
+VectorXcd planeWave(Vector2d k, const std::vector<Point>& points) {
+  VectorXcd tmp = VectorXcd::Zero(points.size());
+  std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
+    return (1. / sqrt(points.size())) *
+           std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
+  });
+  return tmp.transpose();
+}
+
 std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
                         const std::vector<Point>& points, RangeConf kc,
                         RangeConf ec, bool printProgress = true) {
-  // VectorXd energies = VectorXd::LinSpaced(ec.n, ec.min, ec.max);
   const u32 its = kc.n / 10;
   std::vector<double> densities(kc.n * ec.n, 0);
   auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
@@ -506,41 +513,19 @@ std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
     std::cout << "[";
 
   auto del = delta(D, ec);
-  /*const double de = (ec.max - ec.min) / ec.n;
-  Delta delta(ec.n);
-  for (u32 i = 0; i < ec.n; i++) {
-    const double e = ec.min + i * de;
-    std::cout << "e = " << e << '\n';
-    delta[i] = [&]() {
-      std::vector<std::pair<double, u32>> tmp;
-      tmp.reserve(5);
-      for (u32 k = 0; k < D.size(); k++) {
-        if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
-          tmp.push_back({std::exp(-gauss_sharpening * square(diff)), k});
-        }
-      }
-      tmp.shrink_to_fit();
-      return tmp;
-    }();
-  }*/
   for (size_t i = 0; i < kc.n; i++) {
     const double kx = kc.min + i * kc.d();
-    const VectorXcd k_vec = [&]() {
-      VectorXcd tmp = VectorXcd::Zero(D.size());
-      std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
-        return (1. / sqrt(points.size())) * std::exp(c64{0, kx * p[0]});
-      });
-      tmp = UH * k_vec;
-      return tmp;
-    }();
+    const VectorXcd k_vec = UH * planeWave({kx, 0}, points);
+#pragma omp parallel for
     for (size_t j = 0; j < ec.n; j++) {
       for (const auto& pair : del[j]) {
         density_view[j, i] += pair.first * std::norm(k_vec(pair.second));
       }
     }
+#pragma omp barrier
     if (printProgress)
       if (i % its == 0)
-        std::cout << "█|";
+        std::cout << "█|" << std::flush;
   }
   if (printProgress)
     std::cout << "█]\n";
@@ -553,33 +538,30 @@ std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
   const u32 its = kc.n / 10;
   std::vector<double> densities(ec.n, 0);
   auto del = delta(D, ec);
+  std::random_device rdev;
+  std::mt19937 gen(rdev());
+  std::uniform_real_distribution<double> dis(-1.0, 1.0);
   if (printProgress)
-    std::cout << "[";
+    std::cout << "[" << std::flush;
   for (size_t i = 0; i < kc.n; i++) {
     const double kx = kc.min + i * kc.d();
     for (u64 j = 0; j < kc.n; j++) {
       const double ky = kc.min + j * kc.d();
-      const VectorXcd k_vec = [&]() {
-        VectorXcd tmp = VectorXcd::Zero(D.size());
-        std::transform(points.begin(), points.end(), tmp.begin(), [&](Point p) {
-          return (1. / sqrt(points.size())) *
-                 std::exp(c64{0, kx * p[0] + ky * p[1]});
-        });
-        tmp = UH * k_vec; // Hlýt að geta stytt þetta eitthvað
-        return tmp;
-      }();
+      const VectorXcd k_vec = UH * planeWave({kx, ky}, points);
+#pragma omp parallel for
       for (u32 k = 0; k < ec.n; k++) {
         for (const auto& pair : del[k]) {
           densities[k] += pair.first * std::norm(k_vec(pair.second));
         }
       }
-      if (printProgress)
-        if (i % its == 0)
-          std::cout << "█|";
+#pragma omp barrier
     }
     if (printProgress)
-      std::cout << "█]\n";
+      if (i % its == 0)
+        std::cout << "█|" << std::flush;
   }
+  if (printProgress)
+    std::cout << "█]\n";
   return densities;
 }
 
@@ -630,19 +612,24 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   const auto hamiltonian = pointsToFiniteHamiltonian(points, kdtree, 1.01 * a);
   std::cout << "Diagonalizing Hamiltonian\n";
   auto eigsol = hermitianEigenSolver(hamiltonian);
+  std::cout << "Highest energy value is :" << eigsol.D.maxCoeff() << '\n';
   // Eigen::SelfAdjointEigenSolver<MatrixXcd> eigensolver(hamiltonian);
   // const MatrixXcd U = eigensolver.eigenvectors();
   // const VectorXd D = eigensolver.eigenvalues();
   const MatrixXcd UH = eigsol.U.adjoint();
-  const u64 ne = 100;
-  const u64 nk = 100;
+  const u64 sdf_ne = 300;
+  const u64 sdf_nk = 300;
+  const u64 dos_ne = 200;
+  const u64 dos_nk = 100;
   const double kmax = M_PI / a;
-  const double emin = 0.;
-  const double emax = 4.;
+  const double sdf_emin = 0.;
+  const double sdf_emax = 4.;
+  const double dos_emin = -4.;
+  const double dos_emax = 4.;
   std::cout << "Calculating SDF\n";
-  auto densities =
-      SDF(eigsol.D, UH, points, {-kmax, kmax, nk}, {emin, emax, ne});
-  hsize_t dims[2] = {ne, nk};
+  auto densities = SDF(eigsol.D, UH, points, {-kmax, kmax, sdf_nk},
+                       {sdf_emin, sdf_emax, sdf_ne});
+  hsize_t dims[2] = {sdf_ne, sdf_nk};
   H5::DataSpace space(2, dims);
   H5::H5File file("densities.h5", H5F_ACC_TRUNC);
   H5::DataSet matrix =
@@ -652,11 +639,11 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   H5::DataSpace boundspace(1, confdim);
   H5::DataSet boundset =
       file.createDataSet("bounds", H5::PredType::NATIVE_DOUBLE, boundspace);
-  double bounds[4] = {-kmax, kmax, emin, emax};
+  double bounds[4] = {-kmax, kmax, sdf_emin, sdf_emax};
   writeh5wexc(boundset, bounds, H5::PredType::NATIVE_DOUBLE);
-  const auto dos =
-      DOS(eigsol.D, UH, points, {-kmax, kmax, 100}, {emin, emax, ne});
-  hsize_t dosdim[1] = {ne};
+  const auto dos = DOS(eigsol.D, UH, points, {-kmax, kmax, dos_nk},
+                       {dos_emin, dos_emax, dos_ne});
+  hsize_t dosdim[1] = {dos_ne};
   H5::DataSpace dosspace(1, dosdim);
   H5::DataSet dosset =
       file.createDataSet("dos", H5::PredType::NATIVE_DOUBLE, dosspace);
@@ -683,7 +670,7 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["t"].count()) {
     // auto vec = readPoints(result["t"].as<std::string>());
-    constexpr size_t N = 60;
+    constexpr size_t N = 40;
     std::vector<Point> vec(N * N);
     for (u32 i = 0; i < N; i++) {
       for (u32 j = 0; j < N; j++) {
