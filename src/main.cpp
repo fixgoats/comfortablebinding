@@ -8,6 +8,7 @@
 #include "typedefs.h"
 #include <Eigen/src/Core/Matrix.h>
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -24,7 +25,7 @@ using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
 constexpr double gauss_cutoff = 0.1;
 // increase to decrease fuzziness. If too sharp with too high cutoff, could miss
 // some or all structure.
-constexpr double gauss_sharpening = 100;
+constexpr double gauss_sharpening = 200;
 // The acceptable deviation from energy value
 static const double nonzero_range =
     std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
@@ -515,7 +516,7 @@ std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
   auto del = delta(D, ec);
   for (size_t i = 0; i < kc.n; i++) {
     const double kx = kc.min + i * kc.d();
-    const VectorXcd k_vec = UH * planeWave({kx, 0}, points);
+    const VectorXcd k_vec = UH * planeWave({kx, kx}, points);
 #pragma omp parallel for
     for (size_t j = 0; j < ec.n; j++) {
       for (const auto& pair : del[j]) {
@@ -617,13 +618,13 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   // const MatrixXcd U = eigensolver.eigenvectors();
   // const VectorXd D = eigensolver.eigenvalues();
   const MatrixXcd UH = eigsol.U.adjoint();
-  const u64 sdf_ne = 300;
+  const u64 sdf_ne = 400;
   const u64 sdf_nk = 300;
-  const u64 dos_ne = 200;
+  const u64 dos_ne = 300;
   const u64 dos_nk = 100;
   const double kmax = M_PI / a;
-  const double sdf_emin = 0.;
-  const double sdf_emax = 4.;
+  const double sdf_emin = -3.5;
+  const double sdf_emax = 3.5;
   const double dos_emin = -4.;
   const double dos_emax = 4.;
   std::cout << "Calculating SDF\n";
@@ -639,7 +640,7 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   H5::DataSpace boundspace(1, confdim);
   H5::DataSet boundset =
       file.createDataSet("bounds", H5::PredType::NATIVE_DOUBLE, boundspace);
-  double bounds[4] = {-kmax, kmax, sdf_emin, sdf_emax};
+  double bounds[4] = {-M_PI, M_PI, sdf_emin, sdf_emax};
   writeh5wexc(boundset, bounds, H5::PredType::NATIVE_DOUBLE);
   const auto dos = DOS(eigsol.D, UH, points, {-kmax, kmax, dos_nk},
                        {dos_emin, dos_emax, dos_ne});
@@ -669,14 +670,14 @@ int main(const int argc, const char* const* argv) {
     saveEigen("chain.txt", points);
   }
   if (result["t"].count()) {
-    // auto vec = readPoints(result["t"].as<std::string>());
-    constexpr size_t N = 40;
-    std::vector<Point> vec(N * N);
-    for (u32 i = 0; i < N; i++) {
-      for (u32 j = 0; j < N; j++) {
-        vec[N * i + j] = Point(i, j, N * i + j);
-      }
-    }
+    auto vec = readPoints(result["t"].as<std::string>());
+    // constexpr size_t N = 40;
+    // std::vector<Point> vec(N * N);
+    // for (u32 i = 0; i < N; i++) {
+    //   for (u32 j = 0; j < N; j++) {
+    //     vec[N * i + j] = Point(i, j, N * i + j);
+    //   }
+    // }
     pointsToSDFOnFile(vec, 1.0);
     /*H5::H5File file("density.h5", H5F_ACC_RDONLY);
     H5::DataSet dataset = file.openDataSet("aaa");
