@@ -16,6 +16,7 @@
 #include <random>
 #include <ranges>
 #include <sstream>
+#include <toml++/toml.hpp>
 
 using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
     Eigen::VectorXcd, Eigen::Vector2d, Eigen::SelfAdjointEigenSolver,
@@ -465,20 +466,22 @@ double smallestNonZeroGap(const VectorXd& vals) {
   return min_gap;
 }
 
+template <class T>
 struct RangeConf {
-  double min;
-  double max;
+  T start;
+  T end;
   u64 n;
 
-  constexpr double d() const { return (max - min) / n; }
+  constexpr T d() const { return (end - start) / n; }
+  constexpr T ith(uint i) const { return start + i * d(); }
 };
 
 typedef std::vector<std::vector<std::pair<double, u32>>> Delta;
 
-Delta delta(const VectorXd& D, RangeConf ec) {
+Delta delta(const VectorXd& D, RangeConf<double> ec) {
   Delta delta(ec.n);
   for (u32 i = 0; i < ec.n; i++) {
-    const double e = ec.min + i * ec.d();
+    const double e = ec.ith(i);
     std::cout << "Energy is " << e << '\n';
     delta[i] = [&]() {
       std::vector<std::pair<double, u32>> tmp;
@@ -504,23 +507,35 @@ VectorXcd planeWave(Vector2d k, const std::vector<Point>& points) {
   return tmp.transpose();
 }
 
-std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
-                        const std::vector<Point>& points, RangeConf kc,
-                        RangeConf ec, bool printProgress = true) {
+void autoLimits(const VectorXd& D, RangeConf<double>& rc) {
+  double max = D.maxCoeff();
+  double min = D.maxCoeff();
+  double l = max - min;
+  rc.start = min - 0.01 * l;
+  rc.end = max + 0.01 * l;
+}
+
+std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
+                         const std::vector<Point>& points,
+                         RangeConf<Vector2d> kc, RangeConf<double>& ec,
+                         bool printProgress = true) {
   const u32 its = kc.n / 10;
-  std::vector<double> densities(kc.n * ec.n, 0);
-  auto density_view = std::mdspan(densities.data(), ec.n, kc.n);
+  std::vector<double> disp(kc.n * ec.n, 0);
+  if (fleq(ec.start, ec.end, 1e-16)) {
+    autoLimits(D, ec);
+  }
+  auto disp_view = std::mdspan(disp.data(), ec.n, kc.n);
   if (printProgress)
     std::cout << "[";
 
   auto del = delta(D, ec);
   for (size_t i = 0; i < kc.n; i++) {
-    const double kx = kc.min + i * kc.d();
-    const VectorXcd k_vec = UH * planeWave({kx, kx}, points);
+    const auto k = kc.ith(i);
+    const VectorXcd k_vec = UH * planeWave(k, points);
 #pragma omp parallel for
     for (size_t j = 0; j < ec.n; j++) {
       for (const auto& pair : del[j]) {
-        density_view[j, i] += pair.first * std::norm(k_vec(pair.second));
+        disp_view[j, i] += pair.first * std::norm(k_vec(pair.second));
       }
     }
 #pragma omp barrier
@@ -530,24 +545,25 @@ std::vector<double> SDF(const VectorXd& D, const MatrixXcd& UH,
   }
   if (printProgress)
     std::cout << "█]\n";
-  return densities;
+  return disp;
 }
 
 std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
-                        const std::vector<Point>& points, RangeConf kc,
-                        RangeConf ec, bool printProgress = true) {
-  const u32 its = kc.n / 10;
+                        const std::vector<Point>& points, RangeConf<double> kxc,
+                        RangeConf<double> kyc, RangeConf<double>& ec,
+                        bool printProgress = true) {
+  const u32 its = kxc.n / 10;
   std::vector<double> densities(ec.n, 0);
+  if (fleq(ec.start, ec.end, 1e-16)) {
+    autoLimits(D, ec);
+  }
   auto del = delta(D, ec);
-  std::random_device rdev;
-  std::mt19937 gen(rdev());
-  std::uniform_real_distribution<double> dis(-1.0, 1.0);
   if (printProgress)
     std::cout << "[" << std::flush;
-  for (size_t i = 0; i < kc.n; i++) {
-    const double kx = kc.min + i * kc.d();
-    for (u64 j = 0; j < kc.n; j++) {
-      const double ky = kc.min + j * kc.d();
+  for (size_t i = 0; i < kxc.n; i++) {
+    const double kx = kxc.ith(i);
+    for (u64 j = 0; j < kyc.n; j++) {
+      const double ky = kyc.ith(j);
       const VectorXcd k_vec = UH * planeWave({kx, ky}, points);
 #pragma omp parallel for
       for (u32 k = 0; k < ec.n; k++) {
@@ -564,6 +580,41 @@ std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
   if (printProgress)
     std::cout << "█]\n";
   return densities;
+}
+
+std::vector<double> fullSDF(const VectorXd& D, const MatrixXcd& UH,
+                            const std::vector<Point>& points,
+                            RangeConf<double> kxc, RangeConf<double> kyc,
+                            RangeConf<double>& ec, bool printProgress = true) {
+  const u32 its = kxc.n / 10;
+  std::vector<double> sdf(ec.n * kyc.n * kxc.n, 0);
+  auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n, ec.n);
+  if (fleq(ec.start, ec.end, 1e-16)) {
+    autoLimits(D, ec);
+  }
+  auto del = delta(D, ec);
+  if (printProgress)
+    std::cout << "[" << std::flush;
+#pragma omp parallel for
+  for (size_t i = 0; i < kxc.n; i++) {
+    const double kx = kxc.ith(i);
+    for (u64 j = 0; j < kyc.n; j++) {
+      const double ky = kyc.ith(j);
+      const VectorXcd k_vec = UH * planeWave({kx, ky}, points);
+      for (u32 k = 0; k < ec.n; k++) {
+        for (const auto& pair : del[k]) {
+          sdf_view[i, j, k] += pair.first * std::norm(k_vec(pair.second));
+        }
+      }
+    }
+    if (printProgress)
+      if (i % its == 0)
+        std::cout << "█|" << std::flush;
+  }
+#pragma omp barrier
+  if (printProgress)
+    std::cout << "█]\n";
+  return sdf;
 }
 
 struct EigenSolution {
@@ -610,7 +661,7 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   std::cout << "Finding average nearest neighbour distance\n";
   const double a = avgNNDist(kdtree, points);
   std::cout << "Making Hamiltonian\n";
-  const auto hamiltonian = pointsToFiniteHamiltonian(points, kdtree, 1.01 * a);
+  const auto hamiltonian = pointsToFiniteHamiltonian(points, kdtree, 2.01 * a);
   std::cout << "Diagonalizing Hamiltonian\n";
   auto eigsol = hermitianEigenSolver(hamiltonian);
   std::cout << "Highest energy value is :" << eigsol.D.maxCoeff() << '\n';
@@ -628,8 +679,9 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   const double dos_emin = -4.;
   const double dos_emax = 4.;
   std::cout << "Calculating SDF\n";
-  auto densities = SDF(eigsol.D, UH, points, {-kmax, kmax, sdf_nk},
-                       {sdf_emin, sdf_emax, sdf_ne});
+  RangeConf<double> ec{sdf_emin, sdf_emax, sdf_ne};
+  auto densities =
+      disp(eigsol.D, UH, points, {{-kmax, 0}, {kmax, 0}, sdf_nk}, ec);
   hsize_t dims[2] = {sdf_ne, sdf_nk};
   H5::DataSpace space(2, dims);
   H5::H5File file("densities.h5", H5F_ACC_TRUNC);
@@ -642,8 +694,9 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
       file.createDataSet("bounds", H5::PredType::NATIVE_DOUBLE, boundspace);
   double bounds[4] = {-M_PI, M_PI, sdf_emin, sdf_emax};
   writeh5wexc(boundset, bounds, H5::PredType::NATIVE_DOUBLE);
+  RangeConf<double> dos_ec = {dos_emin, dos_emax, dos_ne};
   const auto dos = DOS(eigsol.D, UH, points, {-kmax, kmax, dos_nk},
-                       {dos_emin, dos_emax, dos_ne});
+                       {-kmax, kmax, dos_nk}, dos_ec);
   hsize_t dosdim[1] = {dos_ne};
   H5::DataSpace dosspace(1, dosdim);
   H5::DataSet dosset =
@@ -651,23 +704,142 @@ void pointsToSDFOnFile(std::vector<Point>& points, f64 searchradius) {
   writeh5wexc(dosset, dos.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
+struct SdfConf {
+  // sharpness of Gaussian used to approximate Delta function
+  double sharpening;
+  // values below this will be removed from the Delta function.
+  double cutoff;
+  // In units of average nearest neighbour distance.
+  double searchRadius;
+  // if hasValue, do a dispersion relation with the line given by this range.
+  std::optional<RangeConf<Vector2d>> DispKline;
+  // Set Emin=Emax to automatically set E range
+  std::optional<RangeConf<double>> DispE;
+  // in units of "Brillouin zone", i.e. 1 = 2pi/a where a is a lattice constant.
+  // Average nearest neighbour distance is used as a proxy for a
+  RangeConf<double> SDFKx;
+  RangeConf<double> SDFKy;
+  // Set Emin=Emax to automatically set E range
+  RangeConf<double> SDFE;
+  // lattice point input (could possibly take special strings to do common
+  // lattices)
+  std::string pointPath;
+  // Output file name
+  std::string H5Filename;
+  // Generally what I want. Not any more expensive than computing DOS and the
+  // rest can be obtained by slicing this dataset.
+  bool doFullSDF;
+  // Only set if you don't want to output a full sdf to disk. Will be ignored if
+  // doFullSDF is set.
+  bool doDOS;
+};
+
+RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
+  toml::array start = tbl["start"].value<toml::array>().value();
+  toml::array end = tbl["end"].value<toml::array>().value();
+  return {{start[0], start[1]}, {end[0], end[1]}, tbl["n"].value_or<u64>(0)};
+}
+
+RangeConf<double> tblToRange(toml::table& tbl) {
+  return {tbl["start"].value_or<double>(0.0), tbl["end"].value_or<double>(0.0),
+          tbl["n"].value_or<u64>(0)};
+}
+
+#define SET_STRUCT_FIELD(c, tbl, key, val) c.key = tbl["key"].value_or(val)
+
+SdfConf tomlToSDFConf(std::string tomlPath) {
+  toml::table tbl;
+  try {
+    tbl = toml::parse_file(tomlPath);
+  } catch (const toml::parse_error& err) {
+    std::cerr << "Parsing failed:\n" << err << '\n';
+    throw;
+  }
+  SdfConf conf{};
+  toml::table& preConf = *tbl["PreConf"].as_table();
+  SET_STRUCT_FIELD(conf, preConf, sharpening, 200.0);
+  SET_STRUCT_FIELD(conf, preConf, cutoff, 0.1);
+  SET_STRUCT_FIELD(conf, preConf, searchRadius, 1.01);
+  SET_STRUCT_FIELD(conf, preConf, pointPath, "");
+  SET_STRUCT_FIELD(conf, preConf, H5Filename, "SDF.h5");
+  SET_STRUCT_FIELD(conf, preConf, doFullSDF, true);
+  SET_STRUCT_FIELD(conf, preConf, doDOS, false);
+  if (tbl["DispKline"].is_value()) {
+    conf.DispKline = tblToVecRange(*tbl["DispKline"].as_table());
+    conf.DispE = tblToRange(*tbl["DispE"].as_table());
+  }
+  conf.SDFKx = tblToRange(*tbl["SDFKx"].as_table());
+  conf.SDFKy = tblToRange(*tbl["SDFKy"].as_table());
+  conf.SDFE = tblToRange(*tbl["SDFE"].as_table());
+  return conf;
+}
+#undef SET_STRUCT_FIELD
+
+EigenSolution pointsToDiagFormHamiltonian(const std::vector<Point>& points,
+                                          const kdt::KDTree<Point>& kdtree,
+                                          double rad) {
+  auto H = pointsToFiniteHamiltonian(points, kdtree, rad);
+  EigenSolution eig = hermitianEigenSolver(H);
+  return eig;
+}
+
+template <hsize_t... sizes>
+void writeArray(std::string s, H5::H5File& file, void* data, hsize_t...) {
+  std::array<hsize_t, sizeof...(sizes)> dims{sizes...};
+  H5::DataSpace space(sizeof...(sizes), dims.data());
+  H5::DataSet matrix =
+      file.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
+  writeh5wexc(matrix, data, H5::PredType::NATIVE_DOUBLE);
+}
+
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
-      "c,chain", "Make chain points", cxxopts::value<u32>())(
-      "r,radius", "Maximum separation between points to consider",
-      cxxopts::value<f64>())("s,sim", "Do dynamic simulation")(
+      "c,config", "TOML configuration", cxxopts::value<std::string>())(
       "t,test", "Test whatever feature I'm working on rn.",
       cxxopts::value<std::string>());
 
   auto result = options.parse(argc, argv);
   if (result["c"].count()) {
-    u32 n = result["c"].as<u32>();
-    MatrixX2d points(n, 2);
-    for (u32 i = 0; i < n; i++) {
-      points(i, {0, 1}) = Eigen::Vector2d{i, 0};
+    auto conf = tomlToSDFConf(result["c"].as<std::string>());
+    auto points = readPoints(conf.pointPath);
+    kdt::KDTree kdtree(points);
+    double a = avgNNDist(kdtree, points);
+    auto eigsol =
+        pointsToDiagFormHamiltonian(points, kdtree, conf.searchRadius * a);
+    H5::H5File file(conf.H5Filename, H5F_ACC_TRUNC);
+    if (conf.doFullSDF) {
+      auto UH = eigsol.U.adjoint();
+      auto sdf =
+          fullSDF(eigsol.D, UH, points, conf.SDFKx, conf.SDFKy, conf.SDFE);
+      writeArray("sdf", file, sdf.data(), conf.SDFKx.n, conf.SDFKy.n,
+                 conf.SDFE.n);
+      std::array<double, 6> sdfBounds = {conf.SDFKx.start, conf.SDFKx.end,
+                                         conf.SDFKy.start, conf.SDFKy.end,
+                                         conf.SDFE.start,  conf.SDFE.end};
+      writeArray("sdf_bounds", file, sdfBounds.data(), 6);
+    } else if (conf.doDOS) {
+      auto UH = eigsol.U.adjoint();
+      auto dos = DOS(eigsol.D, UH, points, conf.SDFKx, conf.SDFKy, conf.SDFE);
+      writeArray("dos", file, dos.data(), conf.SDFE.n);
+      std::array<double, 2> dosBounds = {conf.SDFE.start, conf.SDFE.end};
+      writeArray("dos_bounds", file, dosBounds.data(), 2);
     }
-    saveEigen("chain.txt", points);
+    if (conf.DispKline.has_value()) {
+      if (conf.DispE.has_value()) {
+        auto kc = conf.DispKline.value();
+        auto ec = conf.DispE.value();
+        auto UH = eigsol.U.adjoint();
+        auto bleh = conf.DispKline.value();
+        auto dis = disp(eigsol.D, UH, points, bleh, conf.DispE.value());
+        writeArray("disp", file, dis.data(), kc.n, ec.n);
+        std::array<double, 6> dispBounds = {kc.start[0], kc.start[1], kc.end[0],
+                                            kc.end[1],   ec.start,    ec.end};
+        writeArray("dos_bounds", file, dispBounds.data(), 6);
+      } else {
+        std::cout << "Need to supply a non-zero number of energy samples\n";
+      }
+    }
   }
   if (result["t"].count()) {
     auto vec = readPoints(result["t"].as<std::string>());
@@ -679,29 +851,6 @@ int main(const int argc, const char* const* argv) {
     //   }
     // }
     pointsToSDFOnFile(vec, 1.0);
-    /*H5::H5File file("density.h5", H5F_ACC_RDONLY);
-    H5::DataSet dataset = file.openDataSet("aaa");
-    H5T_class_t type_class = dataset.getTypeClass();
-    H5::FloatType floattype = dataset.getFloatType();
-    size_t size = floattype.getSize();
-    H5::DataSpace space = dataset.getSpace();
-    int rank = space.getSimpleExtentNdims();
-    if (rank != 2) {
-      runtime_exc("Rank should be 2");
-    }
-    hsize_t dims[2];
-    space.getSimpleExtentDims(dims);
-    std::vector<double> data(dims[0] * dims[1]);
-    dataset.read(data.data(), H5::PredType::NATIVE_DOUBLE,
-    space, space);
-
-    std::vector<RGBA> colors =
-        valuesToColor(data.cbegin(), data.cend(), viridis);
-    u32 error = lodepng::encode("density.png",
-    pcast<u8>(colors.data()), dims[1], dims[0]);*/
     return 0;
-  }
-  if (result["p"].count()) {
-    hsize_t size = {};
   }
 }

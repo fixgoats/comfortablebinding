@@ -1,0 +1,30 @@
+[PreConf]
+sharpening = 200.0
+cutoff = 1.0
+searchRadius = 2.01
+pointPath = "../data/smallermonotilepoints.txt"
+H5Filename = "SDF.h5"
+doFullSDF = true
+saveHamiltonian = false
+saveDiagonalisation = true
+
+[DispKline]
+start = [0.0, 0.0]
+end = [1.0, 1.0]
+n = 100
+
+[DispE]
+n = 100
+
+[SDFKx]
+start = 0.0
+end = 1.0
+n = 100
+
+[SDFKy]
+start = 0.0
+end = 1.0
+n = 100
+
+[SDFE]
+n = 100

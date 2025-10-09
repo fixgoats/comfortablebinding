@@ -28,6 +28,8 @@ constexpr u32 euclid_mod(T a, u32 b) {
   return a % b;
 }
 
+bool fleq(auto x, auto y, double tol) { return std::abs(y - x) < tol; }
+
 template <class T>
 constexpr auto numfmt(T x) {
   if constexpr (std::is_same_v<T, c32> or std::is_same_v<T, c64>) {
