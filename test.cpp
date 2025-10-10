@@ -1,18 +1,18 @@
 #include <iostream>
 #include <vector>
 
+template<int... ns>
+void uhh() {
+  std::cout << sizeof...(ns);
+}
+
+template<class... Bs>
+void foo(Bs... bs) {
+  std::cout << sizeof...(bs);
+}
+
 int main(int argc, char* argv[]) {
-  constexpr uint N = 100;
-  std::vector<double> v(N, 0);
-#pragma omp parallel for
-  for (uint i = 0; i < N; i++) {
-    std::vector<uint> bleh = {i};
-    v[i] = bleh[0];
-  }
-#pragma omp barrier
-  for (uint i = 0; i < N; i++) {
-    std::cout << v[i] << ' ';
-  }
-  std::cout << std::endl;
+  uhh<1, 2, 3, 4, 5, 6>();
+  foo(4, 3, 2, 1, 5);
   return 0;
 }
