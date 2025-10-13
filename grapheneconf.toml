@@ -1,9 +1,9 @@
 [PreConf]
 sharpening = 1000.0
 cutoff = 0.1
-searchRadius = 2.01
-pointPath = "../data/smallermonotilepoints.txt"
-H5Filename = "SDF.h5"
+searchRadius = 1.01
+pointPath = "../data/hexgrid.txt"
+H5Filename = "esection.h5"
 doEsection = true
 doFullSDF = false
 saveHamiltonian = false
@@ -21,7 +21,7 @@ n = 2000
 [SDFKx]
 start = -1.0
 end = 1.0
-n = 200
+n = 2000
 
 [SDFKy]
 start = -1.0

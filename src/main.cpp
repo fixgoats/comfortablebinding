@@ -14,6 +14,7 @@
 #include <exception>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <mdspan>
 #include <random>
 #include <ranges>
@@ -23,15 +24,7 @@
 using Eigen::MatrixXd, Eigen::MatrixXcd, Eigen::VectorXd, Eigen::MatrixX2d,
     Eigen::VectorXcd, Eigen::Vector2d, Eigen::SelfAdjointEigenSolver,
     Eigen::VectorXi;
-// Along with gauss_sharpening, controls acceptable deviation from each e for an
-// eigenvalue to be considered. Increase for less acceptable deviation.
-constexpr double gauss_cutoff = 0.1;
-// increase to decrease fuzziness. If too sharp with too high cutoff, could miss
-// some or all structure.
-constexpr double gauss_sharpening = 200;
 // The acceptable deviation from energy value
-static const double nonzero_range =
-    std::sqrt(std::log(std::pow(gauss_cutoff, -gauss_sharpening)));
 
 static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      Eigen::DontAlignCols, " ", "\n", "", "",
@@ -468,7 +461,9 @@ struct RangeConf {
 
 typedef std::vector<std::vector<std::pair<double, u32>>> Delta;
 
-Delta delta(const VectorXd& D, RangeConf<double> ec) {
+Delta delta(const VectorXd& D, RangeConf<double> ec, double sharpening, double cutoff) {
+  const double nonzero_range =
+    std::sqrt(std::log(std::pow(cutoff, -sharpening)));
   Delta delta(ec.n);
   for (u32 i = 0; i < ec.n; i++) {
     const double e = ec.ith(i);
@@ -477,7 +472,7 @@ Delta delta(const VectorXd& D, RangeConf<double> ec) {
       tmp.reserve(5);
       for (u32 k = 0; k < D.size(); k++) {
         if (double diff = std::abs(D(k) - e); diff < nonzero_range) {
-          tmp.push_back({std::exp(-gauss_sharpening * square(diff)), k});
+          tmp.push_back({std::exp(-sharpening * square(diff)), k});
         }
       }
       tmp.shrink_to_fit();
@@ -506,7 +501,7 @@ void autoLimits(const VectorXd& D, RangeConf<double>& rc) {
 
 std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
                          const std::vector<Point>& points, double lat_const,
-                         RangeConf<Vector2d> kc, RangeConf<double>& ec,
+                         RangeConf<Vector2d> kc, RangeConf<double>& ec, double sharpening, double cutoff,
                          bool printProgress = true) {
   const u32 its = kc.n / 10;
   std::vector<double> disp(kc.n * ec.n, 0);
@@ -517,7 +512,7 @@ std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
   if (printProgress)
     std::cout << "[";
 
-  auto del = delta(D, ec);
+  auto del = delta(D, ec, sharpening, cutoff);
   for (size_t i = 0; i < kc.n; i++) {
     const auto k = kc.ith(i) * 2 * M_PI / lat_const;
     const VectorXcd k_vec = UH * planeWave(k, points);
@@ -539,14 +534,14 @@ std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
 
 std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
                         const std::vector<Point>& points, double lat_const, RangeConf<double> kxc,
-                        RangeConf<double> kyc, RangeConf<double>& ec,
+                        RangeConf<double> kyc, RangeConf<double>& ec, double sharpening, double cutoff,
                         bool printProgress = true) {
   const u32 its = kxc.n / 10;
   std::vector<double> densities(ec.n, 0);
   if (fleq(ec.start, ec.end, 1e-16)) {
     autoLimits(D, ec);
   }
-  auto del = delta(D, ec);
+  auto del = delta(D, ec, sharpening, cutoff);
   if (printProgress)
     std::cout << "[" << std::flush;
   for (size_t i = 0; i < kxc.n; i++) {
@@ -571,10 +566,41 @@ std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
   return densities;
 }
 
+std::vector<double> Esection(const VectorXd& D, const MatrixXcd& UH,
+                            const std::vector<Point>& points, double lat_const,
+                            RangeConf<double> kxc, RangeConf<double> kyc,
+                            double e, double sharpening, double cutoff, bool printProgress = true) {
+  std::cout << "Calculating cross section of SDF at E = " << e << '\n';
+  const u32 its = kxc.n / 10;
+  std::vector<double> sdf(kyc.n * kxc.n, 0);
+  auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
+  auto del = delta(D, {e, e, 1}, sharpening, cutoff);
+  if (printProgress)
+    std::cout << "[" << std::flush;
+#pragma omp parallel for
+  for (size_t i = 0; i < kxc.n; i++) {
+    const double kx = kxc.ith(i) * 2 * M_PI / lat_const;
+    for (u64 j = 0; j < kyc.n; j++) {
+      const double ky =  kyc.ith(j) * 2 * M_PI / lat_const;
+      const VectorXcd k_vec = UH * planeWave({kx, ky}, points);
+        for (const auto& pair : del[0]) {
+          sdf_view[i, j] += pair.first * std::norm(k_vec(pair.second));
+        }
+    }
+    if (printProgress)
+      if (i % its == 0)
+        std::cout << "█|" << std::flush;
+  }
+#pragma omp barrier
+  if (printProgress)
+    std::cout << "█]\n";
+  return sdf;
+}
+
 std::vector<double> fullSDF(const VectorXd& D, const MatrixXcd& UH,
                             const std::vector<Point>& points, double lat_const,
                             RangeConf<double> kxc, RangeConf<double> kyc,
-                            RangeConf<double>& ec, bool printProgress = true) {
+                            RangeConf<double>& ec, double sharpening, double cutoff, bool printProgress = true) {
   std::cout << "Calculating full SDF\n";
   const u32 its = kxc.n / 10;
   std::vector<double> sdf(ec.n * kyc.n * kxc.n, 0);
@@ -582,7 +608,7 @@ std::vector<double> fullSDF(const VectorXd& D, const MatrixXcd& UH,
   if (fleq(ec.start, ec.end, 1e-16)) {
     autoLimits(D, ec);
   }
-  auto del = delta(D, ec);
+  auto del = delta(D, ec, sharpening, cutoff);
   if (printProgress)
     std::cout << "[" << std::flush;
 #pragma omp parallel for
@@ -663,6 +689,7 @@ struct SdfConf {
   RangeConf<double> SDFE;
   // lattice point input (could possibly take special strings to do common
   // lattices)
+  double fixed_e;
   std::string pointPath;
   // Output file name
   std::string H5Filename;
@@ -672,6 +699,7 @@ struct SdfConf {
   // Only set if you don't want to output a full sdf to disk. Will be ignored if
   // doFullSDF is set.
   bool doDOS;
+  bool doEsection;
 };
 
 RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
@@ -704,6 +732,8 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
   SET_STRUCT_FIELD(conf, preConf, H5Filename, "SDF.h5");
   SET_STRUCT_FIELD(conf, preConf, doFullSDF, true);
   SET_STRUCT_FIELD(conf, preConf, doDOS, false);
+  SET_STRUCT_FIELD(conf, preConf, doEsection, false);
+  SET_STRUCT_FIELD(conf, preConf, fixed_e, std::numeric_limits<double>::max());
   if (tbl["DispKline"].is_value()) {
     conf.DispKline = tblToVecRange(*tbl["DispKline"].as_table());
     conf.DispE = tblToRange(*tbl["DispE"].as_table());
@@ -769,11 +799,20 @@ int main(const int argc, const char* const* argv) {
     if (file.getId() == H5I_INVALID_HID) {
       std::cerr << "Failed to create file " << conf.H5Filename << std::endl;
     }
-    if (conf.doFullSDF) {
+    if (conf.doEsection) {
+      auto UH = eigsol.U.adjoint();
+      auto section = Esection(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.fixed_e, conf.sharpening, conf.cutoff);
+      hsize_t sizes[2] = {conf.SDFKx.n, conf.SDFKy.n};
+      writeArray<2>("section", file, section.data(), sizes);
+      double sdfBounds[5] = {conf.SDFKx.start, conf.SDFKx.end,
+                                         conf.SDFKy.start, conf.SDFKy.end,
+                                         conf.fixed_e};
+      hsize_t boundsize[1] = {5};
+      writeArray<1>("section_bounds", file, sdfBounds, boundsize);
+    } else if (conf.doFullSDF) {
       auto UH = eigsol.U.adjoint();
       auto sdf =
-          fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE);
-      std::cout << "dims should be: " << conf.SDFKx.n << ", " << conf.SDFKy.n << ", " <<conf.SDFE.n << '\n';
+          fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE, conf.sharpening, conf.cutoff);
       hsize_t sizes[3] = {conf.SDFKx.n, conf.SDFKy.n,
                  conf.SDFE.n};
       writeArray<3>("sdf", file, sdf.data(), sizes);
@@ -784,7 +823,7 @@ int main(const int argc, const char* const* argv) {
       writeArray<1>("sdf_bounds", file, sdfBounds, boundsize);
     } else if (conf.doDOS) {
       auto UH = eigsol.U.adjoint();
-      auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE);
+      auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE, conf.sharpening, conf.cutoff);
       writeArray<1>("dos", file, dos.data(), &conf.SDFE.n);
       double dosBounds[2] = {conf.SDFE.start, conf.SDFE.end};
       hsize_t boundsize[1] = {2};
@@ -796,7 +835,7 @@ int main(const int argc, const char* const* argv) {
         auto ec = conf.DispE.value();
         auto UH = eigsol.U.adjoint();
         auto bleh = conf.DispKline.value();
-        auto dis = disp(eigsol.D, UH, points, a, bleh, conf.DispE.value());
+        auto dis = disp(eigsol.D, UH, points, a, bleh, conf.DispE.value(), conf.sharpening, conf.cutoff);
         hsize_t sizes[2] = {kc.n, ec.n};
         writeArray<2>("disp", file, dis.data(), sizes);
         std::array<double, 6> dispBounds = {kc.start[0], kc.start[1], kc.end[0],
