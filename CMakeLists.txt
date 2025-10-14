@@ -7,6 +7,9 @@ set(CMAKE_C_STANDARD 99)
 
 set(PROJECT_SOURCES
         src/main.cpp
+        src/geometry.cpp
+        src/hermEigen.cpp
+        src/SDF.cpp
 )
 set(MAIN_TARGET disp)
 

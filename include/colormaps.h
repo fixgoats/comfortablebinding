@@ -1,5 +1,7 @@
 #pragma once
 #include "typedefs.h"
+#include <vector>
+#include <algorithm>
 #include <array>
 
 struct AlignedColor {
@@ -15,7 +17,7 @@ struct RGBA {
   u8 a;
 };
 
-static RGBA fcolor_to_ucolor(AlignedColor lhs) {
+static inline RGBA fcolor_to_ucolor(AlignedColor lhs) {
   return {
       std::min((u8)std::abs(lhs.rgb.x * 256), (u8)255),
       std::min((u8)std::abs(lhs.rgb.y * 256), (u8)255),
@@ -24,6 +26,16 @@ static RGBA fcolor_to_ucolor(AlignedColor lhs) {
   };
 }
 
+template <class IIt>
+std::vector<RGBA> valuesToColor(IIt it, IIt end,
+                                const std::array<AlignedColor, 256>& cmap) {
+  std::vector<RGBA> out(end - it);
+  auto minmax = std::ranges::minmax(it, end);
+  std::transform(it, end, out.begin(), [&](auto x) {
+    return fcolor_to_ucolor(cmap[mapToColor(x, minmax.min, minmax.max)]);
+  });
+  return out;
+}
 // magma, inferno, plasma, viridis by Nathaniel J. Smith, Stefan van der Walt
 // and Eric Firing. CC0
 constexpr std::array<AlignedColor, 256> magma = {

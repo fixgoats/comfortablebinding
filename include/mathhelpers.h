@@ -1,17 +1,9 @@
 #pragma once
-#include "betterexc.h"
-#include "colormaps.h"
-#include "metaprogramming.h"
 #include "typedefs.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
-#include <fstream>
-#include <iostream>
-#include <ranges>
-#include <span>
-#include <type_traits>
 #include <vector>
 
 constexpr f32 hbar = 6.582119569e-1;
@@ -28,60 +20,7 @@ constexpr u32 euclid_mod(T a, u32 b) {
   return a % b;
 }
 
-bool fleq(auto x, auto y, double tol) { return std::abs(y - x) < tol; }
-
-template <class T>
-constexpr auto numfmt(T x) {
-  if constexpr (std::is_same_v<T, c32> or std::is_same_v<T, c64>) {
-    return std::format("({}+{}j)", x.real(), x.imag());
-  } else {
-    return std::format("{}", x);
-  }
-}
-
-template <class T>
-void writeCsv(std::ofstream& of, const std::vector<T>& v, u32 nColumns,
-              u32 nRows = 1, u32 stride = 1, u32 offset = 0,
-              const std::vector<std::string>& heading = {}) {
-  if (offset + stride * nColumns * nRows < v.size()) {
-    runtime_exc("There aren't this many elements in the vector.");
-  }
-  std::string out;
-  if (heading.size()) {
-    for (const auto& h : heading) {
-      of << h << ' ';
-    }
-    of << '\n';
-  }
-  for (u32 j = 0; j < nRows; j++) {
-    for (u32 i = 0; i < nColumns; i += stride) {
-      of << v[j * nColumns * stride + i + offset] << ' ';
-    }
-    of << '\n';
-  }
-  of.close();
-}
-
-template <>
-void writeCsv<c32>(std::ofstream& of, const std::vector<c32>& v, u32 nColumns,
-                   u32 nRows, u32 stride, u32 offset,
-                   const std::vector<std::string>& heading);
-template <>
-void writeCsv<c64>(std::ofstream& of, const std::vector<c64>& v, u32 nColumns,
-                   u32 nRows, u32 stride, u32 offset,
-                   const std::vector<std::string>& heading);
-
-template <class T>
-void writeBinary(std::string filename, std::span<T> span) {
-  std::ofstream file(filename, std::ios::binary);
-
-  if (!file.is_open()) {
-    runtime_exc("Failed to open file: {}", filename);
-  }
-
-  file.write(reinterpret_cast<char*>(span.data()), span.size() * sizeof(T));
-  file.close();
-}
+constexpr bool fleq(auto x, auto y, double tol) { return std::abs(y - x) < tol; }
 
 // Note: only for x86. Not sure if simd friendly
 static inline u32 uintlog2(const u32 x) {
@@ -123,18 +62,6 @@ constexpr float annularProfile(float x, float y, float L, float r, float beta) {
          (square(x * x + beta * y * y - r * r) + square(square(L)));
 }
 
-template <typename T>
-u8 mapToColor(T v, T min, T max) {
-  return static_cast<u8>(256 * (v - min) / (max - min));
-}
-
-template <typename InputIt, typename OutputIt>
-void colorMap(InputIt it, InputIt end, OutputIt out) {
-  auto minmax = std::ranges::minmax(it, end);
-  std::transform(it, end, out,
-                 [&](auto x) { return mapToColor(x, minmax.min, minmax.max); });
-}
-
 constexpr auto upow(auto x, u32 N) {
   if (N == 0) {
     return 1;
@@ -145,20 +72,14 @@ constexpr auto upow(auto x, u32 N) {
   return upow(x, N / 2) * upow(x, (N + 1) / 2);
 }
 
-template <typename InputIt>
-std::vector<u8> colorMapVec(InputIt it, InputIt end) {
-  std::vector<u8> out(end - it);
-  colorMap(it, end, out.begin());
-  return out;
-}
+template <class T>
+struct RangeConf {
+  T start;
+  T end;
+  u64 n;
 
-template <class IIt>
-std::vector<RGBA> valuesToColor(IIt it, IIt end,
-                                const std::array<AlignedColor, 256>& cmap) {
-  std::vector<RGBA> out(end - it);
-  auto minmax = std::ranges::minmax(it, end);
-  std::transform(it, end, out.begin(), [&](auto x) {
-    return fcolor_to_ucolor(cmap[mapToColor(x, minmax.min, minmax.max)]);
-  });
-  return out;
-}
+  constexpr T d() const { return (end - start) / n; }
+  constexpr T ith(uint i) const { return start + i * d(); }
+};
+
+

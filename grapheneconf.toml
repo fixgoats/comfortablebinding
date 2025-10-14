@@ -6,27 +6,27 @@ pointPath = "../data/hexgrid.txt"
 H5Filename = "esection.h5"
 doEsection = true
 doFullSDF = false
-saveHamiltonian = false
-saveDiagonalisation = true
+useSavedDiag = "../data/grapheneD.h5"
+saveDiagonalisation = "../data/grapheneD.h5"
 fixed_e = -1
 
 [DispKline]
 start = [0.0, 0.0]
 end = [1.0, 0.0]
-n = 2000
+n = 100
 
 [DispE]
-n = 2000
+n = 100
 
 [SDFKx]
 start = -1.0
 end = 1.0
-n = 2000
+n = 50
 
 [SDFKy]
 start = -1.0
 end = 1.0
-n = 2000
+n = 50
 
 [SDFE]
 n = 200

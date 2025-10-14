@@ -3,6 +3,8 @@ sharpening = 1000.0
 cutoff = 0.1
 searchRadius = 2.01
 pointPath = "../data/smallermonotilepoints.txt"
+saveDiagonalisation = "../.cache/saved/graphene.h5"
+useSavedDiag = "../.cache/saved/graphene.h5"
 H5Filename = "SDF.h5"
 doEsection = true
 doFullSDF = false
@@ -30,3 +32,7 @@ n = 2000
 
 [SDFE]
 n = 200
+
+[Approximant]
+pointPath = "../data/smallermonotilepoints.txt"
+
