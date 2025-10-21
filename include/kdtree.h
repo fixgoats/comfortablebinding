@@ -333,8 +333,8 @@ private:
     const int dir = query[axis] < train[axis] ? 0 : 1;
     nnSearchRecursive(query, node->next[dir], guess, minDist);
 
-    const double diff = fabs(query[axis] - train[axis]);
-    if (diff < *minDist)
+    const double diff = query[axis] - train[axis];
+    if (diff * diff < *minDist)
       nnSearchRecursive(query, node->next[!dir], guess, minDist);
   }
 
@@ -354,8 +354,8 @@ private:
     const int dir = query[axis] < train[axis] ? 0 : 1;
     knnSearchRecursive(query, node->next[dir], queue, k);
 
-    const double diff = fabs(query[axis] - train[axis]);
-    if ((int)queue.size() < k || diff < queue.back().first)
+    const double diff = query[axis] - train[axis];
+    if ((int)queue.size() < k || diff * diff < queue.back().first)
       knnSearchRecursive(query, node->next[!dir], queue, k);
   }
 
@@ -376,8 +376,8 @@ private:
     const int dir = query[axis] < train[axis] ? 0 : 1;
     radiusSearchRecursive(query, node->next[dir], indices, radius);
 
-    const double diff = fabs(query[axis] - train[axis]);
-    if (diff < radius)
+    const double diff = query[axis] - train[axis];
+    if (diff * diff < radius)
       radiusSearchRecursive(query, node->next[!dir], indices, radius);
   }
 
@@ -397,8 +397,8 @@ private:
     const int dir = query[axis] < train[axis] ? 0 : 1;
     radiusSearchRecursive(query, node->next[dir], indices, radius);
 
-    const double diff = fabs(query[axis] - train[axis]);
-    if (diff <= radius)
+    const double diff = query[axis] - train[axis];
+    if (diff * diff <= radius)
       radiusSearchRecursive(query, node->next[!dir], indices, radius);
   }
 

@@ -1,3 +1,4 @@
+#include "Eigen/Core"
 #include "Eigen/Dense"
 #include "H5Cpp.h"
 #include "hermEigen.h"
@@ -226,6 +227,7 @@ struct SdfConf {
   std::optional<RangeConf<double>> DispE;
   std::optional<std::string> saveDiagonalisation;
   std::optional<std::string> useSavedDiag;
+  std::optional<std::string> saveHamiltonian;
   // in units of "Brillouin zone", i.e. 1 = 2pi/a where a is a lattice constant.
   // Average nearest neighbour distance is used as a proxy for a
   RangeConf<double> SDFKx;
@@ -289,6 +291,8 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
     conf.saveDiagonalisation = preConf["saveDiagonalisation"].value<std::string>();
   if (preConf.contains("useSavedDiag"))
     conf.useSavedDiag = preConf["useSavedDiag"].value<std::string>();
+  if (preConf.contains("saveHamiltonian"))
+    conf.saveHamiltonian = preConf["saveHamiltonian"].value<std::string>();
   conf.SDFKx = tblToRange(*tbl["SDFKx"].as_table());
   conf.SDFKy = tblToRange(*tbl["SDFKy"].as_table());
   conf.SDFE = tblToRange(*tbl["SDFE"].as_table());
@@ -362,7 +366,9 @@ int main(const int argc, const char* const* argv) {
       const std::string& fname = conf.useSavedDiag.value();
       if (file_exists(fname)) {
         auto flist_id = H5Pcreate(H5P_FILE_ACCESS);
+        std::cout << "Trying to open file" << fname << '\n';
         auto fid = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, flist_id);
+        std::cout << "Trying to get dataset" << fname << '\n';
         auto did = H5Dopen2(fid, "D", H5P_DEFAULT);
         auto dspace = H5Dget_space(did);
         hsize_t dims[1];
@@ -383,9 +389,14 @@ int main(const int argc, const char* const* argv) {
         H5Fclose(fid);
         H5Pclose(flist_id);
         useSavedSucceeded = true;
-      }else {
-      eigsol = pointsToDiagFormHamiltonian(points, kdtree, conf.searchRadius * a);
-    } 
+      }
+    }
+    if (!useSavedSucceeded) {
+      MatrixXd H = pointsToFiniteHamiltonian(points, kdtree, conf.searchRadius * a);
+      if (conf.saveHamiltonian.has_value()) {
+        saveEigen(conf.saveHamiltonian.value(), H);
+      }
+      eigsol = hermitianEigenSolver(H);
     }
     if (conf.saveDiagonalisation.has_value() && !useSavedSucceeded) {
       H5::H5File file = H5Fcreate(conf.saveDiagonalisation.value().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);

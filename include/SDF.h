@@ -2,7 +2,7 @@
 #include "mathhelpers.h"
 #include "geometry.h"
 #include "Eigen/Dense"
-using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd;
+using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd, Eigen::MatrixXd;
 
 typedef std::vector<std::vector<std::pair<double, u32>>> Delta;
 
@@ -28,16 +28,16 @@ std::vector<double> fullSDF(const VectorXd& D, const MatrixXcd& UH,
                             RangeConf<double>& ec, double sharpening, double cutoff, bool printProgress = true);
 
 template <class Func>
-MatrixXcd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
+MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
                              Func f) {
-  MatrixXcd H = MatrixXcd::Zero(n_points, n_points);
+  MatrixXd H = MatrixXd::Zero(n_points, n_points);
   for (const auto& nb : nbs) {
-    c64 val = f(nb.d);
+    f64 val = f(nb.d);
     H(nb.i, nb.j) = val;
-    H(nb.j, nb.i) = std::conj(val);
+    H(nb.j, nb.i) = val;
   }
   return H;
 }
-MatrixXcd pointsToFiniteHamiltonian(const std::vector<Point>& points,
+MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
                                     const kdt::KDTree<Point>& kdtree,
                                     f64 radius);

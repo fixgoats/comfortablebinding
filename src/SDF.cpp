@@ -182,7 +182,7 @@ std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
     std::cout << "█]\n";
   return disp;
 }
-MatrixXcd pointsToFiniteHamiltonian(const std::vector<Point>& points,
+MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
                                     const kdt::KDTree<Point>& kdtree,
                                     f64 radius) {
   /* This function creates a hamiltonian for a simple finite lattice.
