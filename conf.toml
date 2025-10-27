@@ -1,36 +1,36 @@
 [PreConf]
-sharpening = 1000.0
+sharpening = 100000.0
 cutoff = 0.1
 searchRadius = 2.01
-pointPath = "../data/largemonotilepoints.txt"
-saveDiagonalisation = "../.cache/saved/largemonotileD.h5"
-useSavedDiag = "../.cache/saved/largemonotileD.h5"
-H5Filename = "largemonotile.h5"
+pointPath = "../data/mediummonotilepoints.txt"
+saveDiagonalisation = "../.cache/saved/mediummonotileD.h5"
+useSavedDiag = "../.cache/saved/mediummonotileD.h5"
+H5Filename = "mediummonotile.h5"
 doEsection = true
 doFullSDF = false
 fixed_e = -1
 
-[DispKline]
-start = [0.0, 0.0]
-end = [2.5, 0.0]
-n = 2000
+# [DispKline]
+# start = [0.0, 0.0]
+# end = [2.5, 0.0]
+# n = 2000
 
 [DispE]
 n = 2000
 
 [SDFKx]
-start = -1.5
-end = 1.5
-n = 400
+start = -2.0
+end = 2.0
+n = 100
 
 [SDFKy]
-start = -1.5
-end = 1.5
-n = 400
+start = -2.0
+end = 2.0
+n = 100
 
 [SDFE]
 n = 200
 
 [Approximant]
-pointPath = "../data/largemonotilepoints.txt"
+pointPath = "../data/mediummonotilepoints.txt"
 

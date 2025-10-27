@@ -1,6 +1,10 @@
 #include "SDF.h"
+#include "Eigen/Core"
 #include <mdspan>
 #include <iostream>
+
+using namespace std::chrono;
+
 
 void autoLimits(const VectorXd& D, RangeConf<double>& rc) {
   double max = D.maxCoeff();
@@ -12,7 +16,7 @@ void autoLimits(const VectorXd& D, RangeConf<double>& rc) {
 
 Delta delta(const VectorXd& D, RangeConf<double> ec, double sharpening, double cutoff) {
   const double nonzero_range =
-    std::sqrt(std::log(std::pow(cutoff, -sharpening)));
+    std::sqrt(-std::log(cutoff) / sharpening);
   Delta delta(ec.n);
   for (u32 i = 0; i < ec.n; i++) {
     const double e = ec.ith(i);
@@ -94,16 +98,18 @@ std::vector<double> Esection(const VectorXd& D, const MatrixXcd& UH,
     }
     return tmp;
   }();
-  auto restrictedUH = UH(indices, Eigen::indexing::all);
+  MatrixXcd restrictedUH = UH(indices, Eigen::indexing::all);
 #pragma omp parallel for
   for (size_t i = 0; i < kxc.n; i++) {
     const double kx = kxc.ith(i) * 2 * M_PI / lat_const;
     for (u64 j = 0; j < kyc.n; j++) {
       const double ky =  kyc.ith(j) * 2 * M_PI / lat_const;
       const VectorXcd k_vec = restrictedUH * planeWave({kx, ky}, points);
-        for (const auto& pair : del[0]) {
-          sdf_view[i, j] += pair.first * std::norm(k_vec(pair.second));
-        }
+      u64 cur_element = 0;
+      for (const auto& pair : del[0]) {
+        sdf_view[i, j] += pair.first * std::norm(k_vec(cur_element));
+        ++cur_element;
+      }
     }
     if (printProgress)
       if (i % its == 0)
@@ -156,9 +162,13 @@ std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
   std::cout << "Calculating dispersion relation\n";
   const u32 its = kc.n / 10;
   std::vector<double> disp(kc.n * ec.n, 0);
+  std::cout << "Energy start value: " << ec.start << '\n';
+  std::cout << "Energy end value: " << ec.start << '\n';
   if (fleq(ec.start, ec.end, 1e-16)) {
     autoLimits(D, ec);
   }
+  std::cout << "Energy start value: " << ec.start << '\n';
+  std::cout << "Energy end value: " << ec.end << '\n';
   auto del = delta(D, ec, sharpening, cutoff);
   auto disp_view = std::mdspan(disp.data(), ec.n, kc.n);
   if (printProgress)

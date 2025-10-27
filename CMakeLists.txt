@@ -57,7 +57,7 @@ endif()
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 
 if(NOT OpenMP_CXX_FOUND)
-  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng)# Eigen3::Eigen)
+  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng )# Eigen3::Eigen)
 else()
   target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng OpenMP::OpenMP_CXX ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 endif()

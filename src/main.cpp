@@ -445,7 +445,7 @@ int main(const int argc, const char* const* argv) {
         auto kc = conf.DispKline.value();
         auto ec = conf.DispE.value();
         auto UH = eigsol.U.adjoint();
-        auto dis = disp(eigsol.D, UH, points, a, kc, conf.DispE.value(), conf.sharpening, conf.cutoff);
+        auto dis = disp(eigsol.D, UH, points, a, kc, ec, conf.sharpening, conf.cutoff);
         hsize_t sizes[2] = {kc.n, ec.n};
         writeArray<2>("disp", file, dis.data(), sizes);
         std::array<double, 6> dispBounds = {kc.start[0], kc.start[1], kc.end[0],

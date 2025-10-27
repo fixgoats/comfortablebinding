@@ -1,33 +1,33 @@
 [PreConf]
-sharpening = 1000.0
+sharpening = 10000.0
 cutoff = 0.5
 searchRadius = 1.05
-pointPath = "../data/smallcirchexgrid.txt"
-H5Filename = "esectioncircgraph.h5"
+pointPath = "../data/hexgrid.txt"
+H5Filename = "esectiongraph.h5"
 doEsection = true
 doFullSDF = false
 saveHamiltonian = "../data/circgrapheneH.txt"
-#useSavedDiag = "../data/smallcircgrapheneD.h5"
-saveDiagonalisation = "../data/circgrapheneD.h5"
+useSavedDiag = "../data/grapheneD.h5"
+saveDiagonalisation = "../data/grapheneD.h5"
 fixed_e = -1
 
 [DispKline]
 start = [0.0, 0.0]
 end = [1.0, 0.0]
-n = 100
+n = 600
 
 [DispE]
-n = 100
+n = 600
 
 [SDFKx]
 start = -1.0
 end = 1.0
-n = 200
+n = 400
 
 [SDFKy]
 start = -1.0
 end = 1.0
-n = 200
+n = 400
 
 [SDFE]
 n = 200
