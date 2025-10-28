@@ -1,0 +1,33 @@
+[PreConf]
+sharpening = 10000.0
+cutoff = 0.1
+searchRadius = 1.05
+pointPath = "square"
+H5Filename = "square.h5"
+doEsection = true
+doFullSDF = false
+saveHamiltonian = "../data/squareH.txt"
+useSavedDiag = "../.cache/saved/squareD.h5"
+saveDiagonalisation = "../.cache/saved/squareD.h5"
+fixed_e = -1
+
+[DispKline]
+start = [0.0, 0.0]
+end = [1.0, 0.0]
+n = 600
+
+[DispE]
+n = 600
+
+[SDFKx]
+start = -1.0
+end = 1.0
+n = 400
+
+[SDFKy]
+start = -1.0
+end = 1.0
+n = 400
+
+[SDFE]
+n = 200

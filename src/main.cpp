@@ -357,7 +357,19 @@ int main(const int argc, const char* const* argv) {
       std::cout << "No tasks selected.\n";
       return 0;
     }
-    auto points = readPoints(conf.pointPath);
+
+    std::vector<Point> points;
+    if (conf.pointPath == "square") {
+      points.resize(70*70);
+      for (u32 i = 0; i < 70; i++) {
+        for (u32 j = 0; j < 70; j++) {
+          points[i*70 + j] = {(double)i, (double)j, i*70 + j};
+        }
+      }
+    }
+    else 
+      points = readPoints(conf.pointPath);
+
     kdt::KDTree kdtree(points);
     double a = avgNNDist(kdtree, points);
     EigenSolution eigsol;
