@@ -10,7 +10,9 @@
 #include "io.h"
 #include "geometry.h"
 #include "SDF.h"
+#include <H5Fpublic.h>
 #include <H5public.h>
+#include <cstddef>
 #include <cxxopts.hpp>
 #include <exception>
 #include <iostream>
@@ -214,6 +216,39 @@ double smallestNonZeroGap(const VectorXd& vals) {
   return min_gap;
 }
 
+struct PerConf {
+  std::vector<Point> points;
+  std::vector<Neighbour> nbs;
+  u64 ksamplesx;
+  u64 ksamplesy;
+  Vector2d lat_vecs[2];
+  Vector2d dual_vecs[2];
+
+  // lat_vecs needs to be populated before running this. Should only be ran once.
+  void parseConnections(toml::array& arr) {
+    nbs.reserve(arr.size() * 3); // decent guess for number of connections
+    for (const auto& st : arr) {
+      auto tbl = *st.as_table();
+      size_t i = tbl["source"].value<size_t>().value();
+      auto dests = *tbl["destinations"].as_array();
+      for (const auto& dest : dests) {
+        const auto t = *dest.as_array();
+        s64 n0 = t[1].value<s64>().value();
+        s64 n1 = t[2].value<s64>().value();
+        size_t j = t[0].value<size_t>().value();
+        Vector2d d = points[j].asVec() + n0*lat_vecs[0] + n1*lat_vecs[1] - points[i].asVec();
+        nbs.emplace_back(i, j, d);
+      }
+    }
+    nbs.shrink_to_fit();
+  }
+  
+  void makeDuals() {
+    dual_vecs[0] = {2 * M_PI / (lat_vecs[0][0] - lat_vecs[0][1] * lat_vecs[1][0] / lat_vecs[1][1]), 2 * M_PI / (lat_vecs[0][1] - lat_vecs[0][0] * lat_vecs[1][1] / lat_vecs[1][0])};
+    dual_vecs[1] = {2 * M_PI / (lat_vecs[1][0] - lat_vecs[1][1] * lat_vecs[0][0] / lat_vecs[0][1]), 2 * M_PI / (lat_vecs[1][1] - lat_vecs[1][0] * lat_vecs[0][1] / lat_vecs[0][0])};
+  }
+};
+
 struct SdfConf {
   // sharpness of Gaussian used to approximate Delta function
   double sharpening;
@@ -260,9 +295,53 @@ RangeConf<double> tblToRange(toml::table& tbl) {
           tbl["n"].value_or<u64>(0)};
 }
 
+template<class T>
+std::vector<T> tarrayToVec(const toml::array& arr) {
+  std::vector<T> tmp(arr.size());
+  for (u64 i = 0; i < arr.size(); i++) {
+    tmp[i] = arr[i].value<T>().value();
+  }
+  return tmp;
+}
+
 #define SET_STRUCT_FIELD(c, tbl, key) \
   if (tbl.contains(#key))\
     c.key = *tbl[#key].value<decltype(c.key)>()
+
+std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
+  toml::table tbl;
+  try {
+    tbl = toml::parse_file(tomlPath);
+  } catch (const std::exception& err) {
+    std::cerr << "Parsing file " << tomlPath  << " failed with exception: " << err.what() << '\n';
+    return {};
+  }
+  if (!tbl.contains("periodic"))
+    return {};
+  toml::table perTable = *tbl["periodic"].as_table();
+  PerConf conf{};
+  auto points = *perTable["points"].as_array();
+  conf.points = [&](){
+    std::vector<Point> tmp;
+    tmp.reserve(points.size());
+    u32 i = 0;
+    for (const auto& p : points) {
+      auto x = *p.as_array();
+      tmp.emplace_back(x[0].value<double>().value(), x[1].value<double>().value(), i);
+      ++i;
+    }
+    return tmp;
+  }();
+  auto lat_vecs = *perTable["lat_vecs"].as_array();
+  auto v = *lat_vecs[0].as_array();
+  conf.lat_vecs[0] = {v[0].value<double>().value(), v[1].value<double>().value()};
+  v = *lat_vecs[1].as_array();
+  conf.lat_vecs[1] = {v[0].value<double>().value(), v[1].value<double>().value()};
+  conf.parseConnections(*perTable["connections"].as_array());
+  SET_STRUCT_FIELD(conf, perTable, ksamplesx);
+  SET_STRUCT_FIELD(conf, perTable, ksamplesy);
+  return conf;
+}
 
 std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
   toml::table tbl;
@@ -468,6 +547,46 @@ int main(const int argc, const char* const* argv) {
         std::cout << "Need to supply a non-zero number of energy samples\n";
       }
     }
+    H5Fclose(file.getId());
+  }
+  if (result["p"].count()) {
+    std::string fname = result["p"].as<std::string>();
+    PerConf conf;
+    if (auto opt = tomlToPerConf(fname); opt.has_value()) {
+      conf = opt.value();
+    } else {
+      return 1;
+    }
+    MatrixXcd hamiltonian = MatrixXcd::Zero(conf.points.size(), conf.points.size());
+
+    constexpr u32 ksamples = 20;
+    const double latconst = std::min(conf.lat_vecs[0].norm(), conf.lat_vecs[1].norm());
+    Vector2d dual1{2 * M_PI / latconst, 0};
+    Vector2d dual2{0, 2 * M_PI / latconst};
+    std::vector<double> energies(ksamples * ksamples * conf.points.size());
+    auto energy_view =
+        std::mdspan(energies.data(), ksamples, ksamples, conf.points.size());
+    for (u32 j = 0; j < ksamples; j++) {
+      double yfrac = (double)j / ksamples;
+      for (u32 i = 0; i < ksamples; i++) {
+        double xfrac = (double)i / ksamples;
+        update_hamiltonian(
+            hamiltonian, conf.nbs, xfrac * dual1 + yfrac * dual2,
+            [](Vector2d) { return c64{-1, 0}; }, i | j);
+        EigenSolution eigsol = hermitianEigenSolver(hamiltonian);
+        for (size_t k = 0; k < conf.points.size(); k++) {
+          energy_view[i, j, k] = eigsol.D(k);
+        }
+      }
+    }
+    H5::H5File file = H5Fcreate("testing.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (file.getId() == H5I_INVALID_HID) {
+      std::cerr << "Failed to create file " << "testing" << std::endl;
+      return 1;
+    }
+    hsize_t sizes[3] = {ksamples, ksamples, conf.points.size()};
+    writeArray<3>("mothergrid.h5", file, energies.data(), sizes);
+    H5Fclose(file.getId());
   }
   if (result["t"].count()) {
     MatrixXd A = MatrixXd::Ones(3, 6);

@@ -26,6 +26,10 @@ struct Point : std::array<double, 2> {
     (*this)[1] = y;
   }
 
+  constexpr Vector2d asVec() {
+    return {(*this)[0], (*this)[1]};
+  }
+
   double sqdist(const Point& p) const {
     return square((*this)[0] - p[0]) + square((*this)[1] - p[1]);
   }

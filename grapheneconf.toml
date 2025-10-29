@@ -13,7 +13,7 @@ fixed_e = -1
 
 [DispKline]
 start = [0.0, 0.0]
-end = [1.0, 0.0]
+end = [1.0, 1.0]
 n = 600
 
 [DispE]
