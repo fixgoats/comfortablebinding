@@ -178,34 +178,6 @@ void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
   dataset.write(energies.data(), H5::PredType::NATIVE_DOUBLE);
 }
 
-// array with space for at most N elements, but may have fewer
-template <class T, size_t N>
-struct MaxHeadroom {
-  T data[N];
-  size_t n;
-  void push(T x) {
-#ifndef NDEBUG
-    assert(n < N);
-#endif
-    data[n] = x;
-    n += 1;
-  }
-  void pop() {
-#ifndef NDEBUG
-    assert(n > 0);
-#endif
-    n -= 1;
-  }
-  constexpr T operator[](size_t i) const { return data[i]; }
-  T& operator[](size_t i) { return data[i]; }
-  T* begin() { return data; }
-
-  T* end() { return data + n; }
-  constexpr T* cbegin() noexcept { return data; }
-
-  constexpr T* cend() noexcept { return data + n; }
-};
-
 double smallestNonZeroGap(const VectorXd& vals) {
   double min_gap = std::numeric_limits<double>::max();
   for (int i = 1; i < vals.size(); i++) {
@@ -219,8 +191,9 @@ double smallestNonZeroGap(const VectorXd& vals) {
 struct PerConf {
   std::vector<Point> points;
   std::vector<Neighbour> nbs;
-  u64 ksamplesx;
-  u64 ksamplesy;
+  std::optional<RangeConf<double>> kxrange;
+  std::optional<RangeConf<double>> kyrange;
+  std::optional<RangeConf<Vector2d>> kpath;
   Vector2d lat_vecs[2];
   Vector2d dual_vecs[2];
 
@@ -338,8 +311,13 @@ std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
   v = *lat_vecs[1].as_array();
   conf.lat_vecs[1] = {v[0].value<double>().value(), v[1].value<double>().value()};
   conf.parseConnections(*perTable["connections"].as_array());
-  SET_STRUCT_FIELD(conf, perTable, ksamplesx);
-  SET_STRUCT_FIELD(conf, perTable, ksamplesy);
+  if (perTable.contains("kpath"))
+    conf.kpath = tblToVecRange(*perTable["kpath"].as_table());
+  if (perTable.contains("kxrange"))
+    conf.kxrange = tblToRange(*perTable["kxrange"].as_table());
+  if (perTable.contains("kyrange"))
+    conf.kyrange = tblToRange(*perTable["kyrange"].as_table());
+
   return conf;
 }
 
@@ -559,6 +537,19 @@ int main(const int argc, const char* const* argv) {
     }
     MatrixXcd hamiltonian = MatrixXcd::Zero(conf.points.size(), conf.points.size());
 
+    bool do_kx = conf.kxrange.has_value();
+    bool do_ky = conf.kyrange.has_value();
+    bool do_path = conf.kpath.has_value();
+    if (do_kx & do_ky) {
+      
+    } else if (do_kx) {
+
+    } else if (do_ky) {
+      
+    }
+    if (do_path) {
+
+    }
     constexpr u32 ksamples = 20;
     const double latconst = std::min(conf.lat_vecs[0].norm(), conf.lat_vecs[1].norm());
     Vector2d dual1{2 * M_PI / latconst, 0};
