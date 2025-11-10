@@ -31,3 +31,33 @@ n = 400
 
 [SDFE]
 n = 200
+
+[lattice]
+points = [
+  [0, -0.071],
+  [0, 0.071],
+]
+
+lat_vecs = [
+  [0.24595, 0],
+  [0.122975, 0.21299894806]
+]
+
+connections = [
+{source = 0, destinations = [ [1, 0, 0] ]},
+{source = 1, destinations = [ [0, 0, 1], [0, -1, 1] ]}
+]
+
+[grid]
+[grid.kxrange]
+start = -100
+end = 100
+n = 800
+
+[grid.kyrange]
+start = -100
+end = 100
+n = 800
+
+[calcs]
+do_2d = true

@@ -1,15 +1,14 @@
-#include "Eigen/Core"
 #include "Eigen/Dense"
 #include "H5Cpp.h"
+#include "SDF.h"
+#include "approximant.h"
+#include "geometry.h"
 #include "hermEigen.h"
+#include "io.h"
 #include "kdtree.h"
 #include "lodepng.h"
-#include "approximant.h"
 #include "mathhelpers.h"
 #include "typedefs.h"
-#include "io.h"
-#include "geometry.h"
-#include "SDF.h"
 #include <H5Fpublic.h>
 #include <H5public.h>
 #include <cstddef>
@@ -17,8 +16,8 @@
 #include <exception>
 #include <iostream>
 #include <limits>
-#include <ostream>
 #include <mdspan>
+#include <ostream>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -31,7 +30,7 @@ static Eigen::IOFormat defaultFormat(Eigen::StreamPrecision,
                                      "", "");
 
 int writeh5wexc(hid_t dataset, hid_t type, hid_t fspace, const void* data) {
-    return H5Dwrite(dataset, type, H5S_ALL, fspace, H5P_DEFAULT, data);
+  return H5Dwrite(dataset, type, H5S_ALL, fspace, H5P_DEFAULT, data);
 }
 
 template <class D>
@@ -196,8 +195,10 @@ struct PerConf {
   std::optional<RangeConf<Vector2d>> kpath;
   Vector2d lat_vecs[2];
   Vector2d dual_vecs[2];
+  bool do_2d; // combine dispersion and dos, since dos follows from 2d disp
 
-  // lat_vecs needs to be populated before running this. Should only be ran once.
+  // lat_vecs needs to be populated before running this. Should only be ran
+  // once.
   void parseConnections(toml::array& arr) {
     nbs.reserve(arr.size() * 3); // decent guess for number of connections
     for (const auto& st : arr) {
@@ -209,16 +210,27 @@ struct PerConf {
         s64 n0 = t[1].value<s64>().value();
         s64 n1 = t[2].value<s64>().value();
         size_t j = t[0].value<size_t>().value();
-        Vector2d d = points[j].asVec() + n0*lat_vecs[0] + n1*lat_vecs[1] - points[i].asVec();
+        Vector2d d = points[j].asVec() + n0 * lat_vecs[0] + n1 * lat_vecs[1] -
+                     points[i].asVec();
         nbs.emplace_back(i, j, d);
       }
     }
     nbs.shrink_to_fit();
   }
-  
+
   void makeDuals() {
-    dual_vecs[0] = {2 * M_PI / (lat_vecs[0][0] - lat_vecs[0][1] * lat_vecs[1][0] / lat_vecs[1][1]), 2 * M_PI / (lat_vecs[0][1] - lat_vecs[0][0] * lat_vecs[1][1] / lat_vecs[1][0])};
-    dual_vecs[1] = {2 * M_PI / (lat_vecs[1][0] - lat_vecs[1][1] * lat_vecs[0][0] / lat_vecs[0][1]), 2 * M_PI / (lat_vecs[1][1] - lat_vecs[1][0] * lat_vecs[0][1] / lat_vecs[0][0])};
+    dual_vecs[0] = {
+        2 * M_PI /
+            (lat_vecs[0][0] - lat_vecs[0][1] * lat_vecs[1][0] / lat_vecs[1][1]),
+        2 * M_PI /
+            (lat_vecs[0][1] -
+             lat_vecs[0][0] * lat_vecs[1][1] / lat_vecs[1][0])};
+    dual_vecs[1] = {
+        2 * M_PI /
+            (lat_vecs[1][0] - lat_vecs[1][1] * lat_vecs[0][0] / lat_vecs[0][1]),
+        2 * M_PI /
+            (lat_vecs[1][1] -
+             lat_vecs[1][0] * lat_vecs[0][1] / lat_vecs[0][0])};
   }
 };
 
@@ -260,7 +272,9 @@ struct SdfConf {
 RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
   toml::array start = *tbl["start"].as_array();
   toml::array end = *tbl["end"].as_array();
-  return {{*start[0].as_floating_point(), *start[1].as_floating_point()}, {*end[0].as_floating_point(), *end[1].as_floating_point()}, tbl["n"].value_or<u64>(0)};
+  return {{*start[0].as_floating_point(), *start[1].as_floating_point()},
+          {*end[0].as_floating_point(), *end[1].as_floating_point()},
+          tbl["n"].value_or<u64>(0)};
 }
 
 RangeConf<double> tblToRange(toml::table& tbl) {
@@ -268,7 +282,7 @@ RangeConf<double> tblToRange(toml::table& tbl) {
           tbl["n"].value_or<u64>(0)};
 }
 
-template<class T>
+template <class T>
 std::vector<T> tarrayToVec(const toml::array& arr) {
   std::vector<T> tmp(arr.size());
   for (u64 i = 0; i < arr.size(); i++) {
@@ -277,46 +291,59 @@ std::vector<T> tarrayToVec(const toml::array& arr) {
   return tmp;
 }
 
-#define SET_STRUCT_FIELD(c, tbl, key) \
-  if (tbl.contains(#key))\
-    c.key = *tbl[#key].value<decltype(c.key)>()
+#define SET_STRUCT_FIELD(c, tbl, key)                                          \
+  if (tbl.contains(#key))                                                      \
+  c.key = *tbl[#key].value<decltype(c.key)>()
 
 std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
   toml::table tbl;
   try {
     tbl = toml::parse_file(tomlPath);
   } catch (const std::exception& err) {
-    std::cerr << "Parsing file " << tomlPath  << " failed with exception: " << err.what() << '\n';
+    std::cerr << "Parsing file " << tomlPath
+              << " failed with exception: " << err.what() << '\n';
     return {};
   }
-  if (!tbl.contains("periodic"))
+  if (!tbl.contains("lattice"))
     return {};
-  toml::table perTable = *tbl["periodic"].as_table();
+  toml::table latticeTable = *tbl["lattice"].as_table();
   PerConf conf{};
-  auto points = *perTable["points"].as_array();
-  conf.points = [&](){
+  conf.do_2d = tbl["calcs"]["do_2d"].value_or(false);
+  if (!conf.do_2d) {
+    std::cout << "No calculation specified." << std::endl;
+    return {};
+  }
+  auto points = *latticeTable["points"].as_array();
+  conf.points = [&]() {
     std::vector<Point> tmp;
     tmp.reserve(points.size());
     u32 i = 0;
     for (const auto& p : points) {
       auto x = *p.as_array();
-      tmp.emplace_back(x[0].value<double>().value(), x[1].value<double>().value(), i);
+      tmp.emplace_back(x[0].value<double>().value(),
+                       x[1].value<double>().value(), i);
       ++i;
     }
     return tmp;
   }();
-  auto lat_vecs = *perTable["lat_vecs"].as_array();
+  auto lat_vecs = *latticeTable["lat_vecs"].as_array();
   auto v = *lat_vecs[0].as_array();
-  conf.lat_vecs[0] = {v[0].value<double>().value(), v[1].value<double>().value()};
+  conf.lat_vecs[0] = {v[0].value<double>().value(),
+                      v[1].value<double>().value()};
   v = *lat_vecs[1].as_array();
-  conf.lat_vecs[1] = {v[0].value<double>().value(), v[1].value<double>().value()};
-  conf.parseConnections(*perTable["connections"].as_array());
-  if (perTable.contains("kpath"))
-    conf.kpath = tblToVecRange(*perTable["kpath"].as_table());
-  if (perTable.contains("kxrange"))
-    conf.kxrange = tblToRange(*perTable["kxrange"].as_table());
-  if (perTable.contains("kyrange"))
-    conf.kyrange = tblToRange(*perTable["kyrange"].as_table());
+  conf.lat_vecs[1] = {v[0].value<double>().value(),
+                      v[1].value<double>().value()};
+  conf.parseConnections(*latticeTable["connections"].as_array());
+  if (conf.do_2d) {
+    try {
+      toml::table gridSpec = *tbl["grid"].as_table();
+      conf.kxrange = tblToRange(*gridSpec["kxrange"].as_table());
+      conf.kyrange = tblToRange(*gridSpec["kyrange"].as_table());
+    } catch (std::errc) {
+      std::cerr << "2D calculation requested but no grid specified";
+      return {};
+    }
+  }
 
   return conf;
 }
@@ -326,7 +353,8 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
   try {
     tbl = toml::parse_file(tomlPath);
   } catch (const std::exception& err) {
-    std::cerr << "Parsing file " << tomlPath  << " failed with exception: " << err.what() << '\n';
+    std::cerr << "Parsing file " << tomlPath
+              << " failed with exception: " << err.what() << '\n';
     return {};
   }
   SdfConf conf{};
@@ -345,7 +373,8 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
     conf.DispE = tblToRange(*tbl["DispE"].as_table());
   }
   if (preConf.contains("saveDiagonalisation"))
-    conf.saveDiagonalisation = preConf["saveDiagonalisation"].value<std::string>();
+    conf.saveDiagonalisation =
+        preConf["saveDiagonalisation"].value<std::string>();
   if (preConf.contains("useSavedDiag"))
     conf.useSavedDiag = preConf["useSavedDiag"].value<std::string>();
   if (preConf.contains("saveHamiltonian"))
@@ -366,26 +395,28 @@ EigenSolution pointsToDiagFormHamiltonian(const std::vector<Point>& points,
 }
 
 template <size_t n>
-void writeArray(std::string s, H5::H5File& file, void* data, hsize_t sizes[n]) {
+void writeArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
   // std::array<hsize_t, sizeof(sizes)> dims{sizes};
   hid_t space = H5Screate_simple(n, sizes, nullptr);
   // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
-  hid_t set = H5Dcreate2(file.getId(), s.c_str(), H5T_NATIVE_DOUBLE_g, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-      // file.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
-  hid_t res = H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
+  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_DOUBLE_g, space,
+                         H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
+  hid_t res =
+      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
   if (res < 0) {
-    std::cout << "Failed to write HDF5 file\n";
-  } 
+    std::cout << "Failed to write HDF5 fid\n";
+  }
   // writeh5wexc(set, data, H5T_STD_B64LE_g);
 }
 
 bool file_exists(const std::string& name) {
-  if (FILE *file = fopen(name.c_str(), "r")) {
-        fclose(file);
-        return true;
-    } else {
-        return false;
-    }
+  if (FILE* file = fopen(name.c_str(), "r")) {
+    fclose(file);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 int main(const int argc, const char* const* argv) {
@@ -410,21 +441,21 @@ int main(const int argc, const char* const* argv) {
     } else {
       return 1;
     }
-    if (!(conf.DispKline.has_value() || conf.doEsection || conf.doDOS || conf.doFullSDF)) {
+    if (!(conf.DispKline.has_value() || conf.doEsection || conf.doDOS ||
+          conf.doFullSDF)) {
       std::cout << "No tasks selected.\n";
       return 0;
     }
 
     std::vector<Point> points;
     if (conf.pointPath == "square") {
-      points.resize(70*70);
+      points.resize(70 * 70);
       for (u32 i = 0; i < 70; i++) {
         for (u32 j = 0; j < 70; j++) {
-          points[i*70 + j] = {(double)i, (double)j, i*70 + j};
+          points[i * 70 + j] = {(double)i, (double)j, i * 70 + j};
         }
       }
-    }
-    else 
+    } else
       points = readPoints(conf.pointPath);
 
     kdt::KDTree kdtree(points);
@@ -445,14 +476,16 @@ int main(const int argc, const char* const* argv) {
         eigsol.D.resize(dims[0]);
         eigsol.U.resize(dims[0], dims[0]);
         H5Sselect_all(dspace);
-        
-        H5Dread(did, H5T_NATIVE_DOUBLE, H5S_ALL, dspace, H5P_DEFAULT, eigsol.D.data());
+
+        H5Dread(did, H5T_NATIVE_DOUBLE, H5S_ALL, dspace, H5P_DEFAULT,
+                eigsol.D.data());
         H5Sclose(dspace);
         H5Dclose(did);
         auto uid = H5Dopen2(fid, "U", H5P_DEFAULT);
         auto uspace = H5Dget_space(uid);
         H5Sselect_all(uspace);
-        H5Dread(uid, H5T_NATIVE_DOUBLE, H5S_ALL, uspace, H5P_DEFAULT, eigsol.U.data());
+        H5Dread(uid, H5T_NATIVE_DOUBLE, H5S_ALL, uspace, H5P_DEFAULT,
+                eigsol.U.data());
         H5Sclose(uspace);
         H5Dclose(uid);
         H5Fclose(fid);
@@ -461,60 +494,65 @@ int main(const int argc, const char* const* argv) {
       }
     }
     if (!useSavedSucceeded) {
-      MatrixXd H = pointsToFiniteHamiltonian(points, kdtree, conf.searchRadius * a);
+      MatrixXd H =
+          pointsToFiniteHamiltonian(points, kdtree, conf.searchRadius * a);
       if (conf.saveHamiltonian.has_value()) {
         saveEigen(conf.saveHamiltonian.value(), H);
       }
       eigsol = hermitianEigenSolver(H);
     }
     if (conf.saveDiagonalisation.has_value() && !useSavedSucceeded) {
-      H5::H5File file = H5Fcreate(conf.saveDiagonalisation.value().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-      hsize_t sizes[2] = {static_cast<hsize_t>(eigsol.D.size()), static_cast<hsize_t>(2 * eigsol.D.size())};
+      hid_t file = H5Fcreate(conf.saveDiagonalisation.value().c_str(),
+                             H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      hsize_t sizes[2] = {static_cast<hsize_t>(eigsol.D.size()),
+                          static_cast<hsize_t>(2 * eigsol.D.size())};
       writeArray<1>("D", file, eigsol.D.data(), sizes);
       writeArray<2>("U", file, eigsol.U.data(), sizes);
-      file.close();
+      H5Fclose(file);
     }
-    H5::H5File file = H5Fcreate(conf.H5Filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    if (file.getId() == H5I_INVALID_HID) {
+    hid_t file = H5Fcreate(conf.H5Filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                           H5P_DEFAULT);
+    if (file == H5I_INVALID_HID) {
       std::cerr << "Failed to create file " << conf.H5Filename << std::endl;
       return 1;
     }
     if (conf.doEsection) {
       auto UH = eigsol.U.adjoint();
-      auto section = Esection(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.fixed_e, conf.sharpening, conf.cutoff);
+      auto section = Esection(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy,
+                              conf.fixed_e, conf.sharpening, conf.cutoff);
       hsize_t sizes[2] = {conf.SDFKx.n, conf.SDFKy.n};
       writeArray<2>("section", file, section.data(), sizes);
-      double sdfBounds[5] = {conf.SDFKx.start, conf.SDFKx.end,
-                                         conf.SDFKy.start, conf.SDFKy.end,
-                                         conf.fixed_e};
+      double sdfBounds[5] = {conf.SDFKx.start, conf.SDFKx.end, conf.SDFKy.start,
+                             conf.SDFKy.end, conf.fixed_e};
       hsize_t boundsize[1] = {5};
       writeArray<1>("section_bounds", file, sdfBounds, boundsize);
     } else if (conf.doFullSDF) {
       auto UH = eigsol.U.adjoint();
-      auto sdf =
-          fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE, conf.sharpening, conf.cutoff);
-      hsize_t sizes[3] = {conf.SDFKx.n, conf.SDFKy.n,
-                 conf.SDFE.n};
+      auto sdf = fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy,
+                         conf.SDFE, conf.sharpening, conf.cutoff);
+      hsize_t sizes[3] = {conf.SDFKx.n, conf.SDFKy.n, conf.SDFE.n};
       writeArray<3>("sdf", file, sdf.data(), sizes);
       double sdfBounds[6] = {conf.SDFKx.start, conf.SDFKx.end,
-                                         conf.SDFKy.start, conf.SDFKy.end,
-                                         conf.SDFE.start,  conf.SDFE.end};
+                             conf.SDFKy.start, conf.SDFKy.end,
+                             conf.SDFE.start,  conf.SDFE.end};
       hsize_t boundsize[1] = {6};
       writeArray<1>("sdf_bounds", file, sdfBounds, boundsize);
     } else if (conf.doDOS) {
       auto UH = eigsol.U.adjoint();
-      auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE, conf.sharpening, conf.cutoff);
+      auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE,
+                     conf.sharpening, conf.cutoff);
       writeArray<1>("dos", file, dos.data(), &conf.SDFE.n);
       double dosBounds[2] = {conf.SDFE.start, conf.SDFE.end};
       hsize_t boundsize[1] = {2};
-      writeArray<1>("dos_bounds", file, dosBounds, boundsize); 
+      writeArray<1>("dos_bounds", file, dosBounds, boundsize);
     }
     if (conf.DispKline.has_value()) {
       if (conf.DispE.has_value()) {
         auto kc = conf.DispKline.value();
         auto ec = conf.DispE.value();
         auto UH = eigsol.U.adjoint();
-        auto dis = disp(eigsol.D, UH, points, a, kc, ec, conf.sharpening, conf.cutoff);
+        auto dis =
+            disp(eigsol.D, UH, points, a, kc, ec, conf.sharpening, conf.cutoff);
         hsize_t sizes[2] = {kc.n, ec.n};
         writeArray<2>("disp", file, dis.data(), sizes);
         std::array<double, 6> dispBounds = {kc.start[0], kc.start[1], kc.end[0],
@@ -525,7 +563,7 @@ int main(const int argc, const char* const* argv) {
         std::cout << "Need to supply a non-zero number of energy samples\n";
       }
     }
-    H5Fclose(file.getId());
+    H5Fclose(file);
   }
   if (result["p"].count()) {
     std::string fname = result["p"].as<std::string>();
@@ -533,56 +571,51 @@ int main(const int argc, const char* const* argv) {
     if (auto opt = tomlToPerConf(fname); opt.has_value()) {
       conf = opt.value();
     } else {
+      std::cerr << "Couldn't parse file: " << fname << std::endl;
       return 1;
     }
-    MatrixXcd hamiltonian = MatrixXcd::Zero(conf.points.size(), conf.points.size());
 
-    bool do_kx = conf.kxrange.has_value();
-    bool do_ky = conf.kyrange.has_value();
-    bool do_path = conf.kpath.has_value();
-    if (do_kx & do_ky) {
-      
-    } else if (do_kx) {
-
-    } else if (do_ky) {
-      
-    }
-    if (do_path) {
-
-    }
-    constexpr u32 ksamples = 20;
-    const double latconst = std::min(conf.lat_vecs[0].norm(), conf.lat_vecs[1].norm());
-    Vector2d dual1{2 * M_PI / latconst, 0};
-    Vector2d dual2{0, 2 * M_PI / latconst};
-    std::vector<double> energies(ksamples * ksamples * conf.points.size());
-    auto energy_view =
-        std::mdspan(energies.data(), ksamples, ksamples, conf.points.size());
-    for (u32 j = 0; j < ksamples; j++) {
-      double yfrac = (double)j / ksamples;
-      for (u32 i = 0; i < ksamples; i++) {
-        double xfrac = (double)i / ksamples;
-        update_hamiltonian(
-            hamiltonian, conf.nbs, xfrac * dual1 + yfrac * dual2,
-            [](Vector2d) { return c64{-1, 0}; }, i | j);
-        EigenSolution eigsol = hermitianEigenSolver(hamiltonian);
-        for (size_t k = 0; k < conf.points.size(); k++) {
-          energy_view[i, j, k] = eigsol.D(k);
+    if (conf.do_2d) {
+      RangeConf<f64> kxrange = conf.kxrange.value();
+      RangeConf<f64> kyrange = conf.kxrange.value();
+      MatrixXcd hamiltonian =
+          MatrixXcd::Zero(conf.points.size(), conf.points.size());
+      std::vector<f64> energies(kxrange.n * kyrange.n * conf.points.size());
+      auto energy_view = std::mdspan(energies.data(), kyrange.n, kxrange.n,
+                                     conf.points.size());
+      for (u32 j = 0; j < kyrange.n; j++) {
+        double ky = kyrange.ith(j);
+        for (u32 i = 0; i < kxrange.n; i++) {
+          double kx = kxrange.ith(i);
+          update_hamiltonian(
+              hamiltonian, conf.nbs, {kx, ky}, [](auto) { return f64{1}; },
+              i | j);
+          EigenSolution eigsol = hermitianEigenSolver(hamiltonian);
+          for (u32 k = 0; k < conf.points.size(); k++) {
+            energy_view[j, i, k] = eigsol.D(k);
+          }
         }
       }
+      hid_t file =
+          H5Fcreate("testing.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      if (file == H5I_INVALID_HID) {
+        std::cerr << "Failed to create file " << "testing.h5" << std::endl;
+        return 1;
+      }
+      hsize_t sizes[3] = {kyrange.n, kxrange.n, conf.points.size()};
+      writeArray<3>("energies", file, energies.data(), sizes);
+      hsize_t boundsizes[1] = {4};
+      writeArray<1>(
+          "energies_bounds", file,
+          (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end},
+          boundsizes);
+      H5Fclose(file);
     }
-    H5::H5File file = H5Fcreate("testing.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    if (file.getId() == H5I_INVALID_HID) {
-      std::cerr << "Failed to create file " << "testing" << std::endl;
-      return 1;
-    }
-    hsize_t sizes[3] = {ksamples, ksamples, conf.points.size()};
-    writeArray<3>("mothergrid.h5", file, energies.data(), sizes);
-    H5Fclose(file.getId());
   }
   if (result["t"].count()) {
     MatrixXd A = MatrixXd::Ones(3, 6);
     MatrixXd B = MatrixXd::Ones(6, 1);
-    std::cout << A*B << '\n';
+    std::cout << A * B << '\n';
     // auto vec = readPoints(result["t"].as<std::string>());
     // constexpr size_t N = 40;
     // std::vector<Point> vec(N * N);
