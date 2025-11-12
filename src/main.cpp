@@ -192,10 +192,11 @@ struct PerConf {
   std::vector<Neighbour> nbs;
   std::optional<RangeConf<double>> kxrange;
   std::optional<RangeConf<double>> kyrange;
-  std::optional<RangeConf<Vector2d>> kpath;
+  std::vector<RangeConf<Vector2d>> kpath;
   Vector2d lat_vecs[2];
   Vector2d dual_vecs[2];
-  bool do_2d; // combine dispersion and dos, since dos follows from 2d disp
+  bool do2D; // combine dispersion and dos, since dos follows from 2d disp
+  bool doPath;
 
   // lat_vecs needs to be populated before running this. Should only be ran
   // once.
@@ -242,7 +243,7 @@ struct SdfConf {
   // In units of average nearest neighbour distance.
   double searchRadius;
   // if hasValue, do a dispersion relation with the line given by this range.
-  std::optional<RangeConf<Vector2d>> DispKline;
+  std::vector<RangeConf<Vector2d>> kpath;
   // Set Emin=Emax to automatically set E range
   std::optional<RangeConf<double>> DispE;
   std::optional<std::string> saveDiagonalisation;
@@ -267,13 +268,14 @@ struct SdfConf {
   // doFullSDF is set.
   bool doDOS;
   bool doEsection;
+  bool doPath;
 };
 
 RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
   toml::array start = *tbl["start"].as_array();
   toml::array end = *tbl["end"].as_array();
-  return {{*start[0].as_floating_point(), *start[1].as_floating_point()},
-          {*end[0].as_floating_point(), *end[1].as_floating_point()},
+  return {{start[0].value<f64>().value(), start[1].value<f64>().value()},
+          {end[0].value<f64>().value(), end[1].value<f64>().value()},
           tbl["n"].value_or<u64>(0)};
 }
 
@@ -308,8 +310,9 @@ std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
     return {};
   toml::table latticeTable = *tbl["lattice"].as_table();
   PerConf conf{};
-  conf.do_2d = tbl["calcs"]["do_2d"].value_or(false);
-  if (!conf.do_2d) {
+  conf.do2D = tbl["calcs"]["do2D"].value_or(false);
+  conf.doPath = tbl["calcs"]["doPath"].value_or(false);
+  if (!conf.do2D & !conf.doPath) {
     std::cout << "No calculation specified." << std::endl;
     return {};
   }
@@ -334,17 +337,17 @@ std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
   conf.lat_vecs[1] = {v[0].value<double>().value(),
                       v[1].value<double>().value()};
   conf.parseConnections(*latticeTable["connections"].as_array());
-  if (conf.do_2d) {
+  if (conf.do2D) {
     try {
       toml::table gridSpec = *tbl["grid"].as_table();
       conf.kxrange = tblToRange(*gridSpec["kxrange"].as_table());
       conf.kyrange = tblToRange(*gridSpec["kyrange"].as_table());
-    } catch (std::errc) {
-      std::cerr << "2D calculation requested but no grid specified";
+    } catch (const std::exception& exc) {
+      std::cerr << "2D calculation requested but no grid specified: "
+                << exc.what() << std::endl;
       return {};
     }
   }
-
   return conf;
 }
 
@@ -368,6 +371,20 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
   SET_STRUCT_FIELD(conf, preConf, doDOS);
   SET_STRUCT_FIELD(conf, preConf, doEsection);
   SET_STRUCT_FIELD(conf, preConf, fixed_e);
+  if (conf.doPath) {
+    try {
+      toml::table pathSpec = *tbl["path"].as_table();
+      toml::array ranges = *pathSpec["ranges"].as_array();
+      for (const auto& range : ranges) {
+        toml::table r = *range.as_table();
+        conf.kpath.push_back(tblToVecRange(r));
+      }
+    } catch (const std::exception& exc) {
+      std::cerr << "Path dispersion requested but no ranges specified: "
+                << exc.what() << std::endl;
+    }
+  }
+
   if (tbl.contains("DispKline")) {
     conf.DispKline = tblToVecRange(*tbl["DispKline"].as_table());
     conf.DispE = tblToRange(*tbl["DispE"].as_table());
@@ -575,7 +592,7 @@ int main(const int argc, const char* const* argv) {
       return 1;
     }
 
-    if (conf.do_2d) {
+    if (conf.do2D) {
       RangeConf<f64> kxrange = conf.kxrange.value();
       RangeConf<f64> kyrange = conf.kxrange.value();
       MatrixXcd hamiltonian =
@@ -583,6 +600,7 @@ int main(const int argc, const char* const* argv) {
       std::vector<f64> energies(kxrange.n * kyrange.n * conf.points.size());
       auto energy_view = std::mdspan(energies.data(), kyrange.n, kxrange.n,
                                      conf.points.size());
+#pragma omp parallel for
       for (u32 j = 0; j < kyrange.n; j++) {
         double ky = kyrange.ith(j);
         for (u32 i = 0; i < kxrange.n; i++) {
@@ -596,6 +614,7 @@ int main(const int argc, const char* const* argv) {
           }
         }
       }
+#pragma omp barrier
       hid_t file =
           H5Fcreate("testing.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
       if (file == H5I_INVALID_HID) {
@@ -609,6 +628,42 @@ int main(const int argc, const char* const* argv) {
           "energies_bounds", file,
           (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end},
           boundsizes);
+      H5Fclose(file);
+    }
+    if (conf.doPath) {
+      MatrixXcd H = MatrixXcd::Zero(conf.points.size(), conf.points.size());
+      u32 npoints = 0;
+      for (const auto& r : conf.kpath) {
+        npoints += r.n;
+      }
+      std::vector<f64> energies;
+      energies.reserve(npoints * conf.points.size());
+      for (const auto& r : conf.kpath) {
+        for (u32 i = 0; i < r.n; i++) {
+          Vector2d k = r.ith(i);
+          update_hamiltonian(H, conf.nbs, k, [](auto) { return f64{1}; });
+          EigenSolution eigsol = hermitianEigenSolver(H);
+          for (const auto& e : eigsol.D) {
+            energies.push_back(e);
+          }
+        }
+      }
+      hid_t file =
+          H5Fcreate("testing_disp.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      if (file == H5I_INVALID_HID) {
+        std::cerr << "Failed to create file " << "testing.h5" << std::endl;
+        return 1;
+      }
+      hsize_t sizes[2] = {npoints, conf.points.size()};
+      writeArray<2>("disp", file, energies.data(), sizes);
+      hsize_t boundsizes[1] = {conf.kpath.size() * 2 * 2};
+      std::vector<Vector2d> bounds;
+      bounds.reserve(conf.kpath.size());
+      for (const auto& r : conf.kpath) {
+        bounds.push_back(r.start);
+        bounds.push_back(r.end);
+      }
+      writeArray<1>("disp_bounds", file, bounds.data(), boundsizes);
       H5Fclose(file);
     }
   }

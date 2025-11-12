@@ -5,6 +5,9 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#ifndef NDE
+#include <cassert>
+#endif // !DEBUG
 
 constexpr f32 hbar = 6.582119569e-1;
 constexpr f32 muB = 5.7883818060e-2;
@@ -20,7 +23,9 @@ constexpr u32 euclid_mod(T a, u32 b) {
   return a % b;
 }
 
-constexpr bool fleq(auto x, auto y, double tol) { return std::abs(y - x) < tol; }
+constexpr bool fleq(auto x, auto y, double tol) {
+  return std::abs(y - x) < tol;
+}
 
 // Note: only for x86. Not sure if simd friendly
 static inline u32 uintlog2(const u32 x) {
@@ -81,5 +86,3 @@ struct RangeConf {
   constexpr T d() const { return (end - start) / n; }
   constexpr T ith(uint i) const { return start + i * d(); }
 };
-
-
