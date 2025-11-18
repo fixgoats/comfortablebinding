@@ -1,6 +1,6 @@
 [calcs]
-do2D = false
-doPath = true 
+do2D = true
+doPath = false
 
 [lattice]
 points = [
@@ -38,7 +38,10 @@ n = 800
 
 [path]
 ranges = [
-  {start = [0, 0], end = [0, 0.5], n = 100},
-  {start = [0, 0.5], end = [1, 0.5], n = 100},
-  {start = [1, 0.5], end = [1, 1], n = 100},
+  {start = [0, 0], end = [0, 6.28318530718], n = 400},
+  # {start = [0, 0.5], end = [1, 0.5], n = 10},
+  # {start = [1, 0.5], end = [1, 1], n = 10},
 ]
+
+[filename]
+fname = "kitegriddosexp.h5"

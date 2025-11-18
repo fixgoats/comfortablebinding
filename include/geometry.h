@@ -1,10 +1,10 @@
 #pragma once
-#include "mathhelpers.h"
-#include "kdtree.h"
-#include <format>
 #include "Eigen/Dense"
+#include "kdtree.h"
+#include "mathhelpers.h"
+#include <format>
 
-using Eigen::Vector2d;
+using Eigen::Vector2d, Eigen::Vector2f;
 
 struct Neighbour {
   size_t i;
@@ -26,9 +26,8 @@ struct Point : std::array<double, 2> {
     (*this)[1] = y;
   }
 
-  constexpr Vector2d asVec() {
-    return {(*this)[0], (*this)[1]};
-  }
+  constexpr Vector2d asVec() const { return {(*this)[0], (*this)[1]}; }
+  constexpr Vector2f asfVec() const { return {(*this)[0], (*this)[1]}; }
 
   double sqdist(const Point& p) const {
     return square((*this)[0] - p[0]) + square((*this)[1] - p[1]);
@@ -80,4 +79,3 @@ double avgNNDist(kdt::KDTree<PointT>& kdtree,
   // }
   return totalnndist / (double)nn_dist.size();
 }
-

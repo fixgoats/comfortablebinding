@@ -1,0 +1,47 @@
+[PreConf]
+sharpening = 10000.0
+cutoff = 0.1
+searchRadius = 1.01
+pointPath = "../data/smallerhexgrid.txt"
+saveDiagonalisation = "../.cache/saved/smallerhexgridD.h5"
+useSavedDiag = "../.cache/saved/smallerhexgridD.h5"
+H5Filename = "hexgriddisp.h5"
+saveHamiltonian = "../data/largerhexgridH.txt"
+doEsection = false
+doFullSDF = false
+doPath = true
+doDOS = false
+fixed_e = -1
+
+[path]
+ranges = [
+  {start = [-2, 0], end = [2, 0], n = 256}
+]
+
+[dispE]
+n = 256
+
+[sectionKx]
+start = -2.0
+end = 2.0
+n = 256
+
+[sectionKy]
+start = -2.0
+end = 2.0
+n = 256
+
+[SDFKx]
+start = -160.0
+end = 160.0
+n = 160
+
+[SDFKy]
+start = -160.0
+end = 160.0
+n = 1920
+
+[SDFE]
+n = 100
+
+

@@ -1,35 +1,44 @@
 #pragma once
-#include "mathhelpers.h"
-#include "geometry.h"
 #include "Eigen/Dense"
-using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd, Eigen::MatrixXd;
+#include "geometry.h"
+#include "mathhelpers.h"
+#include "vkcore.h"
 
-typedef std::vector<std::vector<std::pair<double, u32>>> Delta;
+using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd,
+    Eigen::MatrixXd;
 
-Delta delta(const VectorXd& D, RangeConf<double> ec, double sharpening, double cutoff);
+typedef std::vector<std::vector<std::pair<f64, u32>>> Delta;
+
+Delta delta(const VectorXd& D, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
 
 VectorXcd planeWave(Vector2d k, const std::vector<Point>& points);
-std::vector<double> disp(const VectorXd& D, const MatrixXcd& UH,
-                         const std::vector<Point>& points, double lat_const,
-                         RangeConf<Vector2d> kc, RangeConf<double>& ec, double sharpening, double cutoff,
-                         bool printProgress = true);
-std::vector<double> DOS(const VectorXd& D, const MatrixXcd& UH,
-                        const std::vector<Point>& points, double lat_const, RangeConf<double> kxc,
-                        RangeConf<double> kyc, RangeConf<double>& ec, double sharpening, double cutoff,
-                        bool printProgress = true);
+std::vector<f64> disp(const VectorXd& D, const MatrixXcd& UH,
+                      const std::vector<Point>& points, f64 lat_const,
+                      std::vector<RangeConf<Vector2d>> kc, RangeConf<f64>& ec,
+                      f64 sharpening, f64 cutoff, bool printProgress = true);
+std::vector<f64> DOS(const VectorXd& D, const MatrixXcd& UH,
+                     const std::vector<Point>& points, f64 lat_const,
+                     RangeConf<f64> kxc, RangeConf<f64> kyc, RangeConf<f64>& ec,
+                     f64 sharpening, f64 cutoff, bool printProgress = true);
 
-std::vector<double> Esection(const VectorXd& D, const MatrixXcd& UH,
-                            const std::vector<Point>& points, double lat_const,
-                            RangeConf<double> kxc, RangeConf<double> kyc,
-                            double e, double sharpening, double cutoff, bool printProgress = true);
-std::vector<double> fullSDF(const VectorXd& D, const MatrixXcd& UH,
-                            const std::vector<Point>& points, double lat_const,
-                            RangeConf<double> kxc, RangeConf<double> kyc,
-                            RangeConf<double>& ec, double sharpening, double cutoff, bool printProgress = true);
+std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd& UH,
+                             const std::vector<Point>& points, f64 lat_const,
+                             RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+                             f64 sharpening, f64 cutoff);
+std::vector<f64> Esection(const VectorXd& D, const MatrixXcd& UH,
+                          const std::vector<Point>& points, f64 lat_const,
+                          RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+                          f64 sharpening, f64 cutoff,
+                          bool printProgress = true);
+std::vector<f64> fullSDF(const VectorXd& D, const MatrixXcd& UH,
+                         const std::vector<Point>& points, f64 lat_const,
+                         RangeConf<f64> kxc, RangeConf<f64> kyc,
+                         RangeConf<f64>& ec, f64 sharpening, f64 cutoff,
+                         bool printProgress = true);
 
 template <class Func>
 MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
-                             Func f) {
+                            Func f) {
   MatrixXd H = MatrixXd::Zero(n_points, n_points);
   for (const auto& nb : nbs) {
     f64 val = f(nb.d);
@@ -39,5 +48,5 @@ MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
   return H;
 }
 MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
-                                    const kdt::KDTree<Point>& kdtree,
-                                    f64 radius);
+                                   const kdt::KDTree<Point>& kdtree,
+                                   f64 radius);

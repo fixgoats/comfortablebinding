@@ -6,7 +6,8 @@
 #include "hermEigen.h"
 #include "io.h"
 #include "kdtree.h"
-#include "lodepng.h"
+#include "vkcore.h"
+// #include "lodepng.h"
 #include "mathhelpers.h"
 #include "typedefs.h"
 #include <H5Fpublic.h>
@@ -160,9 +161,8 @@ void pointsToPeriodicCouplings(std::vector<Point>& points, f64 rsq,
     double yfrac = (double)j / ksamples;
     for (u32 i = 0; i < ksamples; i++) {
       double xfrac = (double)i / ksamples;
-      update_hamiltonian(
-          hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
-          [](Vector2d) { return c64{-1, 0}; }, i | j);
+      update_hamiltonian(hamiltonian, nb_info, xfrac * dual1 + yfrac * dual2,
+                         expCoupling, i | j);
       EigenSolution eigsol = hermitianEigenSolver(hamiltonian);
       for (size_t k = 0; k < points.size(); k++) {
         energy_view[i, j, k] = eigsol.D(k);
@@ -188,6 +188,7 @@ double smallestNonZeroGap(const VectorXd& vals) {
 }
 
 struct PerConf {
+  std::string fname;
   std::vector<Point> points;
   std::vector<Neighbour> nbs;
   std::optional<RangeConf<double>> kxrange;
@@ -245,12 +246,14 @@ struct SdfConf {
   // if hasValue, do a dispersion relation with the line given by this range.
   std::vector<RangeConf<Vector2d>> kpath;
   // Set Emin=Emax to automatically set E range
-  std::optional<RangeConf<double>> DispE;
+  std::optional<RangeConf<double>> dispE;
   std::optional<std::string> saveDiagonalisation;
   std::optional<std::string> useSavedDiag;
   std::optional<std::string> saveHamiltonian;
   // in units of "Brillouin zone", i.e. 1 = 2pi/a where a is a lattice constant.
   // Average nearest neighbour distance is used as a proxy for a
+  RangeConf<double> sectionKx;
+  RangeConf<double> sectionKy;
   RangeConf<double> SDFKx;
   RangeConf<double> SDFKy;
   // Set Emin=Emax to automatically set E range
@@ -308,8 +311,11 @@ std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
   }
   if (!tbl.contains("lattice"))
     return {};
-  toml::table latticeTable = *tbl["lattice"].as_table();
   PerConf conf{};
+  std::cout << "Got here\n";
+  toml::table latticeTable = *tbl["lattice"].as_table();
+  toml::table& fnameTable = *tbl["filename"].as_table();
+  SET_STRUCT_FIELD(conf, fnameTable, fname);
   conf.do2D = tbl["calcs"]["do2D"].value_or(false);
   conf.doPath = tbl["calcs"]["doPath"].value_or(false);
   if (!conf.do2D & !conf.doPath) {
@@ -348,6 +354,19 @@ std::optional<PerConf> tomlToPerConf(std::string tomlPath) {
       return {};
     }
   }
+  if (conf.doPath) {
+    try {
+      toml::table pathSpec = *tbl["path"].as_table();
+      toml::array ranges = *pathSpec["ranges"].as_array();
+      for (const auto& range : ranges) {
+        toml::table r = *range.as_table();
+        conf.kpath.push_back(tblToVecRange(r));
+      }
+    } catch (const std::exception& exc) {
+      std::cerr << "Path dispersion requested but no ranges specified: "
+                << exc.what() << std::endl;
+    }
+  }
   return conf;
 }
 
@@ -370,6 +389,7 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
   SET_STRUCT_FIELD(conf, preConf, doFullSDF);
   SET_STRUCT_FIELD(conf, preConf, doDOS);
   SET_STRUCT_FIELD(conf, preConf, doEsection);
+  SET_STRUCT_FIELD(conf, preConf, doPath);
   SET_STRUCT_FIELD(conf, preConf, fixed_e);
   if (conf.doPath) {
     try {
@@ -379,16 +399,13 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
         toml::table r = *range.as_table();
         conf.kpath.push_back(tblToVecRange(r));
       }
+      conf.dispE = tblToRange(*tbl["dispE"].as_table());
     } catch (const std::exception& exc) {
       std::cerr << "Path dispersion requested but no ranges specified: "
                 << exc.what() << std::endl;
     }
   }
 
-  if (tbl.contains("DispKline")) {
-    conf.DispKline = tblToVecRange(*tbl["DispKline"].as_table());
-    conf.DispE = tblToRange(*tbl["DispE"].as_table());
-  }
   if (preConf.contains("saveDiagonalisation"))
     conf.saveDiagonalisation =
         preConf["saveDiagonalisation"].value<std::string>();
@@ -396,6 +413,8 @@ std::optional<SdfConf> tomlToSDFConf(std::string tomlPath) {
     conf.useSavedDiag = preConf["useSavedDiag"].value<std::string>();
   if (preConf.contains("saveHamiltonian"))
     conf.saveHamiltonian = preConf["saveHamiltonian"].value<std::string>();
+  conf.sectionKx = tblToRange(*tbl["sectionKx"].as_table());
+  conf.sectionKy = tblToRange(*tbl["sectionKy"].as_table());
   conf.SDFKx = tblToRange(*tbl["SDFKx"].as_table());
   conf.SDFKy = tblToRange(*tbl["SDFKy"].as_table());
   conf.SDFE = tblToRange(*tbl["SDFE"].as_table());
@@ -421,6 +440,22 @@ void writeArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
   // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
   hid_t res =
       H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
+  if (res < 0) {
+    std::cout << "Failed to write HDF5 fid\n";
+  }
+  // writeh5wexc(set, data, H5T_STD_B64LE_g);
+}
+
+template <size_t n>
+void writeSingleArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
+  // std::array<hsize_t, sizeof(sizes)> dims{sizes};
+  hid_t space = H5Screate_simple(n, sizes, nullptr);
+  // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
+  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_FLOAT_g, space, H5P_DEFAULT,
+                         H5P_DEFAULT, H5P_DEFAULT);
+  // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
+  hid_t res =
+      H5Dwrite(set, H5T_NATIVE_FLOAT_g, H5S_ALL, space, H5P_DEFAULT, data);
   if (res < 0) {
     std::cout << "Failed to write HDF5 fid\n";
   }
@@ -458,8 +493,7 @@ int main(const int argc, const char* const* argv) {
     } else {
       return 1;
     }
-    if (!(conf.DispKline.has_value() || conf.doEsection || conf.doDOS ||
-          conf.doFullSDF)) {
+    if (!(conf.doPath || conf.doEsection || conf.doDOS || conf.doFullSDF)) {
       std::cout << "No tasks selected.\n";
       return 0;
     }
@@ -535,12 +569,14 @@ int main(const int argc, const char* const* argv) {
     }
     if (conf.doEsection) {
       auto UH = eigsol.U.adjoint();
-      auto section = Esection(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy,
-                              conf.fixed_e, conf.sharpening, conf.cutoff);
-      hsize_t sizes[2] = {conf.SDFKx.n, conf.SDFKy.n};
+      auto section =
+          Esection(eigsol.D, UH, points, a, conf.sectionKx, conf.sectionKy,
+                   conf.fixed_e, conf.sharpening, conf.cutoff);
+      hsize_t sizes[2] = {conf.sectionKx.n, conf.sectionKy.n};
       writeArray<2>("section", file, section.data(), sizes);
-      double sdfBounds[5] = {conf.SDFKx.start, conf.SDFKx.end, conf.SDFKy.start,
-                             conf.SDFKy.end, conf.fixed_e};
+      double sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
+                             conf.sectionKy.start, conf.sectionKy.end,
+                             conf.fixed_e};
       hsize_t boundsize[1] = {5};
       writeArray<1>("section_bounds", file, sdfBounds, boundsize);
     } else if (conf.doFullSDF) {
@@ -554,7 +590,8 @@ int main(const int argc, const char* const* argv) {
                              conf.SDFE.start,  conf.SDFE.end};
       hsize_t boundsize[1] = {6};
       writeArray<1>("sdf_bounds", file, sdfBounds, boundsize);
-    } else if (conf.doDOS) {
+    }
+    if (conf.doDOS) {
       auto UH = eigsol.U.adjoint();
       auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE,
                      conf.sharpening, conf.cutoff);
@@ -563,18 +600,27 @@ int main(const int argc, const char* const* argv) {
       hsize_t boundsize[1] = {2};
       writeArray<1>("dos_bounds", file, dosBounds, boundsize);
     }
-    if (conf.DispKline.has_value()) {
-      if (conf.DispE.has_value()) {
-        auto kc = conf.DispKline.value();
-        auto ec = conf.DispE.value();
+    if (conf.doPath) {
+      std::cout << "Doing path\n";
+      if (conf.dispE.has_value()) {
+        auto kc = conf.kpath;
+        auto ec = conf.dispE.value();
         auto UH = eigsol.U.adjoint();
         auto dis =
             disp(eigsol.D, UH, points, a, kc, ec, conf.sharpening, conf.cutoff);
-        hsize_t sizes[2] = {kc.n, ec.n};
+        u32 nsamples = 0;
+        for (const auto& rc : kc) {
+          nsamples += rc.n;
+        }
+        hsize_t sizes[2] = {nsamples, ec.n};
         writeArray<2>("disp", file, dis.data(), sizes);
-        std::array<double, 6> dispBounds = {kc.start[0], kc.start[1], kc.end[0],
-                                            kc.end[1],   ec.start,    ec.end};
-        hsize_t boundsizes[1] = {6};
+        std::vector<f64> dispBounds;
+        for (const auto& rc : kc) {
+          dispBounds.insert(dispBounds.end(),
+                            {rc.start[0], rc.start[1], rc.end[0], rc.end[1]});
+        }
+        dispBounds.insert(dispBounds.end(), {ec.start, ec.end});
+        hsize_t boundsizes[1] = {dispBounds.size()};
         writeArray<1>("disp_bounds", file, dispBounds.data(), boundsizes);
       } else {
         std::cout << "Need to supply a non-zero number of energy samples\n";
@@ -602,12 +648,11 @@ int main(const int argc, const char* const* argv) {
                                      conf.points.size());
 #pragma omp parallel for
       for (u32 j = 0; j < kyrange.n; j++) {
-        double ky = kyrange.ith(j);
+        f64 ky = kyrange.ith(j);
         for (u32 i = 0; i < kxrange.n; i++) {
-          double kx = kxrange.ith(i);
-          update_hamiltonian(
-              hamiltonian, conf.nbs, {kx, ky}, [](auto) { return f64{1}; },
-              i | j);
+          f64 kx = kxrange.ith(i);
+          update_hamiltonian(hamiltonian, conf.nbs, {kx, ky}, expCoupling,
+                             i | j);
           EigenSolution eigsol = hermitianEigenSolver(hamiltonian);
           for (u32 k = 0; k < conf.points.size(); k++) {
             energy_view[j, i, k] = eigsol.D(k);
@@ -615,10 +660,10 @@ int main(const int argc, const char* const* argv) {
         }
       }
 #pragma omp barrier
-      hid_t file =
-          H5Fcreate("testing.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t file = H5Fcreate(conf.fname.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                             H5P_DEFAULT);
       if (file == H5I_INVALID_HID) {
-        std::cerr << "Failed to create file " << "testing.h5" << std::endl;
+        std::cerr << "Failed to create file " << conf.fname << std::endl;
         return 1;
       }
       hsize_t sizes[3] = {kyrange.n, kxrange.n, conf.points.size()};
@@ -638,22 +683,26 @@ int main(const int argc, const char* const* argv) {
       }
       std::vector<f64> energies;
       energies.reserve(npoints * conf.points.size());
+      std::cout << "Number of path segments: " << conf.kpath.size() << '\n';
+      bool reuse = false;
       for (const auto& r : conf.kpath) {
         for (u32 i = 0; i < r.n; i++) {
           Vector2d k = r.ith(i);
-          update_hamiltonian(H, conf.nbs, k, [](auto) { return f64{1}; });
+          update_hamiltonian(H, conf.nbs, k, expCoupling, reuse);
           EigenSolution eigsol = hermitianEigenSolver(H);
           for (const auto& e : eigsol.D) {
             energies.push_back(e);
           }
+          reuse = true;
         }
       }
-      hid_t file =
-          H5Fcreate("testing_disp.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t file = H5Fcreate(conf.fname.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                             H5P_DEFAULT);
       if (file == H5I_INVALID_HID) {
         std::cerr << "Failed to create file " << "testing.h5" << std::endl;
         return 1;
       }
+      std::cout << "Energy size should be: " << energies.size() << '\n';
       hsize_t sizes[2] = {npoints, conf.points.size()};
       writeArray<2>("disp", file, energies.data(), sizes);
       hsize_t boundsizes[1] = {conf.kpath.size() * 2 * 2};
@@ -668,9 +717,111 @@ int main(const int argc, const char* const* argv) {
     }
   }
   if (result["t"].count()) {
-    MatrixXd A = MatrixXd::Ones(3, 6);
-    MatrixXd B = MatrixXd::Ones(6, 1);
-    std::cout << A * B << '\n';
+    Manager m(1024);
+    std::string fname = result["t"].as<std::string>();
+    SdfConf conf;
+    if (auto opt = tomlToSDFConf(fname); opt.has_value()) {
+      conf = opt.value();
+    } else {
+      return 1;
+    }
+    if (!(conf.doPath || conf.doEsection || conf.doDOS || conf.doFullSDF)) {
+      std::cout << "No tasks selected.\n";
+      return 0;
+    }
+
+    std::vector<Point> points;
+    if (conf.pointPath == "square") {
+      points.resize(70 * 70);
+      for (u32 i = 0; i < 70; i++) {
+        for (u32 j = 0; j < 70; j++) {
+          points[i * 70 + j] = {(double)i, (double)j, i * 70 + j};
+        }
+      }
+    } else
+      points = readPoints(conf.pointPath);
+
+    kdt::KDTree kdtree(points);
+    double a = avgNNDist(kdtree, points);
+    EigenSolution eigsol;
+    bool useSavedSucceeded = false;
+    if (conf.useSavedDiag.has_value()) {
+      const std::string& fname = conf.useSavedDiag.value();
+      if (file_exists(fname)) {
+        auto flist_id = H5Pcreate(H5P_FILE_ACCESS);
+        std::cout << "Trying to open file" << fname << '\n';
+        auto fid = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, flist_id);
+        std::cout << "Trying to get dataset" << fname << '\n';
+        auto did = H5Dopen2(fid, "D", H5P_DEFAULT);
+        auto dspace = H5Dget_space(did);
+        hsize_t dims[1];
+        H5Sget_simple_extent_dims(dspace, dims, nullptr);
+        eigsol.D.resize(dims[0]);
+        eigsol.U.resize(dims[0], dims[0]);
+        H5Sselect_all(dspace);
+
+        H5Dread(did, H5T_NATIVE_DOUBLE, H5S_ALL, dspace, H5P_DEFAULT,
+                eigsol.D.data());
+        H5Sclose(dspace);
+        H5Dclose(did);
+        auto uid = H5Dopen2(fid, "U", H5P_DEFAULT);
+        auto uspace = H5Dget_space(uid);
+        H5Sselect_all(uspace);
+        H5Dread(uid, H5T_NATIVE_DOUBLE, H5S_ALL, uspace, H5P_DEFAULT,
+                eigsol.U.data());
+        H5Sclose(uspace);
+        H5Dclose(uid);
+        H5Fclose(fid);
+        H5Pclose(flist_id);
+        useSavedSucceeded = true;
+      }
+    }
+    if (!useSavedSucceeded) {
+      MatrixXd H =
+          pointsToFiniteHamiltonian(points, kdtree, conf.searchRadius * a);
+      if (conf.saveHamiltonian.has_value()) {
+        saveEigen(conf.saveHamiltonian.value(), H);
+      }
+      eigsol = hermitianEigenSolver(H);
+    }
+    if (conf.saveDiagonalisation.has_value() && !useSavedSucceeded) {
+      hid_t file = H5Fcreate(conf.saveDiagonalisation.value().c_str(),
+                             H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+      hsize_t sizes[2] = {static_cast<hsize_t>(eigsol.D.size()),
+                          static_cast<hsize_t>(2 * eigsol.D.size())};
+      writeArray<1>("D", file, eigsol.D.data(), sizes);
+      writeArray<2>("U", file, eigsol.U.data(), sizes);
+      H5Fclose(file);
+    }
+    hid_t file = H5Fcreate(conf.H5Filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                           H5P_DEFAULT);
+    if (file == H5I_INVALID_HID) {
+      std::cerr << "Failed to create file " << conf.H5Filename << std::endl;
+      return 1;
+    }
+    if (conf.doEsection) {
+      const auto UH = eigsol.U.adjoint();
+      auto section = GPUEsection(m, eigsol.D, UH, points, a, conf.sectionKx,
+                                 conf.sectionKy, conf.fixed_e, conf.sharpening,
+                                 conf.cutoff);
+      hsize_t sizes[2] = {conf.sectionKx.n, conf.sectionKy.n};
+      writeSingleArray<2>("section", file, section.data(), sizes);
+      double sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
+                             conf.sectionKy.start, conf.sectionKy.end,
+                             conf.fixed_e};
+      hsize_t boundsize[1] = {5};
+      writeArray<1>("section_bounds", file, sdfBounds, boundsize);
+    }
+    H5Fclose(file);
+    // auto alg = m.makeAlgorithm("Shaders/test.spv", {}, {&gpua, &gpub}, none);
+    // auto buffer = m.beginRecord();
+    // appendOp(buffer, alg, 1024, 1, 1);
+    // buffer.end();
+    // m.execute(buffer);
+    // m.writeFromBuffer(gpub, b);
+    // for (const auto& x : b) {
+    //   std::cout << x << '\n';
+    // }
     // auto vec = readPoints(result["t"].as<std::string>());
     // constexpr size_t N = 40;
     // std::vector<Point> vec(N * N);

@@ -6,6 +6,9 @@
 template <typename T, typename U, typename = void>
 struct is_safely_castable : std::false_type {};
 
+struct None {};
+static const None none{};
+
 template <typename T, typename U>
 struct is_safely_castable<
     T, U, std::void_t<decltype(static_cast<U>(std::declval<T>()))>>

@@ -10,6 +10,8 @@ set(PROJECT_SOURCES
         src/geometry.cpp
         src/hermEigen.cpp
         src/SDF.cpp
+        src/vkcore.cpp
+        #src/vkhelpers.cpp
 )
 set(MAIN_TARGET disp)
 
@@ -20,6 +22,8 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 find_package(OpenMP REQUIRED)
 find_package(BLAS REQUIRED COMPONENTS openmp)
 find_package(LAPACK REQUIRED)
+find_package(Vulkan REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 set(EIGEN_USE_BLAS)
 message("Found BLAS libraries ${BLAS_LIBRARIES}")
 message("Found LAPACK libraries ${BLAS_LIBRARIES}")
@@ -56,8 +60,9 @@ endif()
 # find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 
+target_precompile_headers(${MAIN_TARGET} PRIVATE include/hack.h)
 if(NOT OpenMP_CXX_FOUND)
-  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng )# Eigen3::Eigen)
+  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)# Eigen3::Eigen)
 else()
-  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng OpenMP::OpenMP_CXX ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+  target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng OpenMP::OpenMP_CXX Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 endif()

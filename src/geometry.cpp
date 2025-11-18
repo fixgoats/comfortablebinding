@@ -5,6 +5,9 @@
 std::vector<Point> readPoints(const std::string& fname) {
   u32 m = 0;
   std::ifstream f(fname);
+  if (!f.good()) {
+    runtime_exc("File {} doesn't exist", fname);
+  }
   std::vector<std::string> allLines{std::istream_iterator<Line>(f),
                                     std::istream_iterator<Line>()};
   m = allLines.size();
@@ -58,4 +61,3 @@ void standardise(std::vector<Point>& points) {
     p[1] -= miny;
   });
 }
-

@@ -1,4 +1,5 @@
 #pragma once
+#include "Eigen/Dense"
 #include "typedefs.h"
 #include <algorithm>
 #include <bit>
@@ -13,7 +14,10 @@ constexpr f32 hbar = 6.582119569e-1;
 constexpr f32 muB = 5.7883818060e-2;
 constexpr f32 echarge = 1e3;
 
+using Eigen::Vector2d;
 using std::bit_cast;
+
+static constexpr f64 expCoupling(Vector2d v) { return std::exp(-v.norm()); }
 
 template <typename T>
 constexpr u32 euclid_mod(T a, u32 b) {

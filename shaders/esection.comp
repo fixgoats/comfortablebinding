@@ -1,0 +1,123 @@
+#version 450
+layout(row_major) uniform;
+layout(row_major) buffer;
+
+#line 4 0
+layout(std430, binding = 1) readonly buffer StructuredBuffer_vectorx3Cfloatx2C2x3E_t_0 {
+    vec2 _data[];
+} points_0;
+
+#line 6
+layout(std430, binding = 3) buffer StructuredBuffer_float_t_0 {
+    float _data[];
+} density_0;
+
+#line 5
+layout(std430, binding = 2) readonly buffer StructuredBuffer_float_t_1 {
+    float _data[];
+} delta_0;
+
+#line 13
+layout(constant_id = 2)
+const uint XGROUPSIZE_0 = 1U;
+
+
+#line 15
+layout(constant_id = 3)
+const uint YGROUPSIZE_0 = 1U;
+
+
+#line 17
+layout(constant_id = 4)
+const uint DELTASIZE_0 = 1U;
+
+
+#line 19
+layout(constant_id = 5)
+const float dk_0 = 0.0;
+
+
+#line 9
+layout(constant_id = 0)
+const uint NX_0 = 1U;
+
+
+#line 23
+layout(local_size_x_id = 2, local_size_y_id = 3, local_size_z = 1) in;
+void main()
+{
+
+#line 24
+    uvec2 _S1 = gl_GlobalInvocationID.xy;
+
+
+    uvec2 _S2 = uvec2(points_0._data.length(), 8);
+
+#line 27
+    uint _S3 = _S2.x;
+
+#line 27
+    uint i_0 = 0U;
+    for(;;)
+    {
+
+#line 28
+        if(i_0 < DELTASIZE_0)
+        {
+        }
+        else
+        {
+
+#line 28
+            break;
+        }
+
+#line 28
+        vec2 kvec_0 = vec2(0.0, 0.0);
+
+#line 28
+        uint j_0 = 0U;
+
+        for(;;)
+        {
+
+#line 30
+            if(j_0 < _S3)
+            {
+            }
+            else
+            {
+
+#line 30
+                break;
+            }
+
+#line 31
+            float phase_0 = dot(points_0._data[uint(j_0)], vec2(dk_0 * float(_S1.x), dk_0 * float(_S1.y)));
+            vec2 bleh_0 = vec2(cos(phase_0), sin(phase_0));
+
+#line 30
+            uint j_1 = j_0 + 1U;
+
+#line 30
+            kvec_0 = bleh_0;
+
+#line 30
+            j_0 = j_1;
+
+#line 30
+        }
+
+#line 35
+        density_0._data[uint(_S1.y * NX_0 + _S1.x)] = density_0._data[uint(_S1.y * NX_0 + _S1.x)] + delta_0._data[uint(i_0)] * dot(kvec_0, kvec_0);
+
+#line 28
+        i_0 = i_0 + 1U;
+
+#line 28
+    }
+
+#line 37
+    return;
+}
+

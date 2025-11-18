@@ -1,14 +1,17 @@
 import complex;
 
+struct Pair {
+  float f;
+  uint idx;
+}
+
 StructuredBuffer<float2> uh;
 StructuredBuffer<float2> points;
-StructuredBuffer<float> delta;
+StructuredBuffer<Pair> delta;
+StructuredBuffer<uint> indices;
+StructuredBuffer<float2> 
 RWStructuredBuffer<float> density;
 
-[SpecializationConstant]
-const uint NX = 1;
-[SpecializationConstant]
-const uint NY = 1;
 [SpecializationConstant]
 const uint XGROUPSIZE = 1;
 [SpecializationConstant]
@@ -17,6 +20,12 @@ const uint YGROUPSIZE = 1;
 const uint DELTASIZE = 1;
 [SpecializationConstant]
 const float dk = 0.0;
+[SpecializationConstant]
+const float de = 0.0;
+[SpecializationConstant]
+const float kstart = 0.0;
+[SpecializationConstant]
+const float estart = 0.0;
 
 [shader("compute")]
 [numthreads(XGROUPSIZE, YGROUPSIZE, 1)]
@@ -25,13 +34,8 @@ void section(uint3 threadId: SV_DispatchThreadID) {
   uint npoints;
   uint stride;
   points.GetDimensions(npoints, stride);
-  for (uint i = 0; i < DELTASIZE; ++i) {
-    float2 kvec = { 0, 0 };
-    for (uint j = 0; j < npoints; ++j) {
-      float phase = dot(points[j], float2(dk * idx.x, dk * idx.y));
-      float2 bleh = float2(cos(phase), sin(phase));
-      kvec += c_mul(uh[j * DELTASIZE + i], bleh);
-    }
-    density[idx.y * NX + idx.x] += delta[i] * dot(kvec, kvec);
-  }
+  float e = estart + idx.y * de;
+  float k = kstart + idx.x * dk;
+  for ()
+
 }

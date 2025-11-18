@@ -2,35 +2,47 @@
 sharpening = 100000.0
 cutoff = 0.1
 searchRadius = 2.01
-pointPath = "../data/smallmonotilepoints.txt"
-saveDiagonalisation = "../.cache/saved/smallmonotileD.h5"
-useSavedDiag = "../.cache/saved/smallmonotileD.h5"
-H5Filename = "smallmonotile.h5"
-saveHamiltonian = "../data/smallmonotileH.txt"
-doEsection = true
+pointPath = "../data/smallermonotilegrid.txt"
+saveDiagonalisation = "../.cache/saved/smallermonotileDexp.h5"
+useSavedDiag = "../.cache/saved/smallermonotileDexp.h5"
+H5Filename = "monotilediagdisp.h5"
+saveHamiltonian = "../data/smallermonotileHexp.txt"
+doEsection = false
 doFullSDF = false
+doPath = true
+doDOS = false
 fixed_e = -1
 
-[DispKline]
-start = [0.0, 0.0]
-end = [1.5, 1.5]
-n = 1000
+[path]
+ranges = [
+  {start = [-20, 0], end = [20, 0], n = 1024}
+]
 
-[DispE]
-n = 1000
+[dispE]
+n = 1024
+
+[sectionKx]
+start = -2.0
+end = 2.0
+n = 1024
+
+[sectionKy]
+start = -2.0
+end = 2.0
+n = 1024
 
 [SDFKx]
-start = -2.0
-end = 2.0
-n = 2000
+start = -50.0
+end = 50.0
+n = 10
 
 [SDFKy]
-start = -2.0
-end = 2.0
-n = 2000
+start = -50.0
+end = 50.0
+n = 10
 
 [SDFE]
-n = 200
+n = 10
 
 [Approximant]
 pointPath = "../data/largemonotilepoints.txt"
