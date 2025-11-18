@@ -4,7 +4,6 @@
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
-#include "vkFFT.h"
 #include "vk_mem_alloc.h"
 #include <boost/pfr/core.hpp>
 #include <chrono>
@@ -159,16 +158,6 @@ struct Algorithm {
   ~Algorithm();
 };
 
-struct RaiiVkFFTApp {
-  VkFFTApplication app;
-  ~RaiiVkFFTApp() { deleteVkFFT(&app); }
-};
-
-struct RaiiVkFFTConf {
-  std::vector<u64> bufferSizes;
-  VkFFTConfiguration conf;
-};
-
 static const std::vector<std::string> deviceExtensions = {
     vk::KHRSwapchainExtensionName};
 
@@ -300,24 +289,6 @@ struct Manager {
     return makeAlgorithmRaw(spirvname, {}, buffers,
                             bit_cast<const u8*>(&specConsts), sizes.data(),
                             sizes.size(), pushSizes.data(), pushSizes.size());
-  }
-  RaiiVkFFTConf makeFFTConf(const MetaBuffer& buffer, std::array<u32, 3> dims,
-                            u32 numberBatches = 1) {
-    RaiiVkFFTConf ret{};
-    ret.conf.device = ((VkDevice*)&device);
-    ret.conf.FFTdim = 1 + dims[1] > 1 ? 1 : 0 + dims[2] > 1 ? 1 : 0;
-    ret.conf.size[0] = dims[0];
-    ret.conf.size[1] = dims[1];
-    ret.conf.size[2] = dims[2];
-    ret.conf.numberBatches = numberBatches;
-    ret.conf.physicalDevice = (VkPhysicalDevice*)&physicalDevice;
-    ret.conf.queue = (VkQueue*)&queue;
-    ret.conf.commandPool = (VkCommandPool*)&commandPool;
-    ret.conf.fence = (VkFence*)&fence;
-    ret.conf.buffer = (VkBuffer*)&buffer.buffer;
-    ret.bufferSizes = {buffer.aInfo.size};
-    ret.conf.bufferSize = ret.bufferSizes.data();
-    return ret;
   }
   ~Manager();
 };
