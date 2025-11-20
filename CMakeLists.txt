@@ -11,6 +11,8 @@ set(PROJECT_SOURCES
         src/hermEigen.cpp
         src/SDF.cpp
         src/vkcore.cpp
+        src/io.cpp
+        src/periodic.cpp
         #src/vkhelpers.cpp
 )
 set(MAIN_TARGET disp)
@@ -47,7 +49,7 @@ include(CheckIPOSupported)
 check_ipo_supported(RESULT ipoSupported OUTPUT output)
 target_compile_options(${MAIN_TARGET} PRIVATE -Wall )
 
-target_include_directories(${MAIN_TARGET} PRIVATE include deps/eigen-5.0.0)
+target_include_directories(${MAIN_TARGET} PRIVATE include deps/eigen-5.0.1)
 
 if(ipoSupported AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO")
@@ -60,7 +62,6 @@ endif()
 # find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 
-target_precompile_headers(${MAIN_TARGET} PRIVATE include/hack.h)
 if(NOT OpenMP_CXX_FOUND)
   target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)# Eigen3::Eigen)
 else()

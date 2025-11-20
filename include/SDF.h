@@ -3,11 +3,50 @@
 #include "geometry.h"
 #include "mathhelpers.h"
 #include "vkcore.h"
+#include <toml++/toml.hpp>
 
 using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd,
     Eigen::MatrixXd;
 
 typedef std::vector<std::vector<std::pair<f64, u32>>> Delta;
+
+struct SdfConf {
+  // sharpness of Gaussian used to approximate Delta function
+  double sharpening;
+  // values below this will be removed from the Delta function.
+  double cutoff;
+  // In units of average nearest neighbour distance.
+  double searchRadius;
+  // if hasValue, do a dispersion relation with the line given by this range.
+  std::vector<RangeConf<Vector2d>> kpath;
+  // Set Emin=Emax to automatically set E range
+  std::optional<RangeConf<double>> dispE;
+  std::optional<std::string> saveDiagonalisation;
+  std::optional<std::string> useSavedDiag;
+  std::optional<std::string> saveHamiltonian;
+  // in units of "Brillouin zone", i.e. 1 = 2pi/a where a is a lattice constant.
+  // Average nearest neighbour distance is used as a proxy for a
+  RangeConf<double> sectionKx;
+  RangeConf<double> sectionKy;
+  RangeConf<double> SDFKx;
+  RangeConf<double> SDFKy;
+  // Set Emin=Emax to automatically set E range
+  RangeConf<double> SDFE;
+  // lattice point input (could possibly take special strings to do common
+  // lattices)
+  double fixed_e;
+  std::string pointPath;
+  // Output file name
+  std::string H5Filename;
+  // Generally what I want. Not any more expensive than computing DOS and the
+  // rest can be obtained by slicing this dataset.
+  bool doFullSDF;
+  // Only set if you don't want to output a full sdf to disk. Will be ignored if
+  // doFullSDF is set.
+  bool doDOS;
+  bool doEsection;
+  bool doPath;
+};
 
 Delta delta(const VectorXd& D, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
 
@@ -50,3 +89,6 @@ MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
 MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
                                    const kdt::KDTree<Point>& kdtree,
                                    f64 radius);
+
+std::optional<SdfConf> tomlToSdfConf(const std::string& tbl);
+int doSDFcalcs(SdfConf& conf);

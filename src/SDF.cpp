@@ -1,5 +1,6 @@
 #include "SDF.h"
 #include "Eigen/Core"
+#include "io.h"
 #include "vkcore.h"
 #include <chrono>
 #include <iostream>
@@ -300,4 +301,175 @@ MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
   }
   std::cout << "got here\n";
   return finite_hamiltonian(points.size(), nb_info, &expCoupling);
+}
+
+#define SET_STRUCT_FIELD(c, tbl, key)                                          \
+  if (tbl.contains(#key))                                                      \
+  c.key = *tbl[#key].value<decltype(c.key)>()
+
+std::optional<SdfConf> tomlToSdfConf(const std::string& tomlPath) {
+  toml::table tbl;
+  try {
+    tbl = toml::parse_file(tomlPath);
+  } catch (const std::exception& err) {
+    std::cerr << "Parsing file " << tomlPath
+              << " failed with exception: " << err.what() << '\n';
+    return {};
+  }
+  SdfConf conf{};
+  toml::table& preConf = *tbl["PreConf"].as_table();
+  SET_STRUCT_FIELD(conf, preConf, sharpening);
+  SET_STRUCT_FIELD(conf, preConf, cutoff);
+  SET_STRUCT_FIELD(conf, preConf, searchRadius);
+  SET_STRUCT_FIELD(conf, preConf, pointPath);
+  SET_STRUCT_FIELD(conf, preConf, H5Filename);
+  SET_STRUCT_FIELD(conf, preConf, doFullSDF);
+  SET_STRUCT_FIELD(conf, preConf, doDOS);
+  SET_STRUCT_FIELD(conf, preConf, doEsection);
+  SET_STRUCT_FIELD(conf, preConf, doPath);
+  SET_STRUCT_FIELD(conf, preConf, fixed_e);
+  if (conf.doPath) {
+    try {
+      toml::table pathSpec = *tbl["path"].as_table();
+      toml::array ranges = *pathSpec["ranges"].as_array();
+      for (const auto& range : ranges) {
+        toml::table r = *range.as_table();
+        conf.kpath.push_back(tblToVecRange(r));
+      }
+      conf.dispE = tblToRange(*tbl["dispE"].as_table());
+    } catch (const std::exception& exc) {
+      std::cerr << "Path dispersion requested but no ranges specified: "
+                << exc.what() << std::endl;
+    }
+  }
+
+  if (preConf.contains("saveDiagonalisation"))
+    conf.saveDiagonalisation =
+        preConf["saveDiagonalisation"].value<std::string>();
+  if (preConf.contains("useSavedDiag"))
+    conf.useSavedDiag = preConf["useSavedDiag"].value<std::string>();
+  if (preConf.contains("saveHamiltonian"))
+    conf.saveHamiltonian = preConf["saveHamiltonian"].value<std::string>();
+  conf.sectionKx = tblToRange(*tbl["sectionKx"].as_table());
+  conf.sectionKy = tblToRange(*tbl["sectionKy"].as_table());
+  conf.SDFKx = tblToRange(*tbl["SDFKx"].as_table());
+  conf.SDFKy = tblToRange(*tbl["SDFKy"].as_table());
+  conf.SDFE = tblToRange(*tbl["SDFE"].as_table());
+  return conf;
+}
+#undef SET_STRUCT_FIELD
+
+int doSDFcalcs(SdfConf& conf) {
+  if (!(conf.doPath || conf.doEsection || conf.doDOS || conf.doFullSDF)) {
+    std::cout << "No tasks selected.\n";
+    return 0;
+  }
+
+  std::vector<Point> points;
+  if (conf.pointPath == "square") {
+    points.resize(70 * 70);
+    for (u32 i = 0; i < 70; i++) {
+      for (u32 j = 0; j < 70; j++) {
+        points[i * 70 + j] = {(double)i, (double)j, i * 70 + j};
+      }
+    }
+  } else
+    points = readPoints(conf.pointPath);
+
+  kdt::KDTree kdtree(points);
+  double a = avgNNDist(kdtree, points);
+  EigenSolution eigsol;
+  bool useSavedSucceeded = false;
+  if (conf.useSavedDiag.has_value()) {
+    const std::string& fname = conf.useSavedDiag.value();
+    if (file_exists(fname)) {
+      auto result = loadDiag(fname);
+      useSavedSucceeded = result.has_value();
+      if (useSavedSucceeded)
+        eigsol = result.value();
+    }
+  }
+  if (!useSavedSucceeded) {
+    MatrixXd H =
+        pointsToFiniteHamiltonian(points, kdtree, conf.searchRadius * a);
+    if (conf.saveHamiltonian.has_value()) {
+      saveEigen(conf.saveHamiltonian.value(), H);
+    }
+    eigsol = hermitianEigenSolver(H);
+  }
+  if (conf.saveDiagonalisation.has_value() && !useSavedSucceeded) {
+    hid_t file = H5Fcreate(conf.saveDiagonalisation.value().c_str(),
+                           H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    hsize_t sizes[2] = {static_cast<hsize_t>(eigsol.D.size()),
+                        static_cast<hsize_t>(2 * eigsol.D.size())};
+    writeArray<1>("D", file, eigsol.D.data(), sizes);
+    writeArray<2>("U", file, eigsol.U.data(), sizes);
+    H5Fclose(file);
+  }
+  hid_t file = H5Fcreate(conf.H5Filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                         H5P_DEFAULT);
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.H5Filename << std::endl;
+    return 1;
+  }
+  if (conf.doEsection) {
+    auto UH = eigsol.U.adjoint();
+    auto section =
+        Esection(eigsol.D, UH, points, a, conf.sectionKx, conf.sectionKy,
+                 conf.fixed_e, conf.sharpening, conf.cutoff);
+    hsize_t sizes[2] = {conf.sectionKx.n, conf.sectionKy.n};
+    writeArray<2>("section", file, section.data(), sizes);
+    double sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
+                           conf.sectionKy.start, conf.sectionKy.end,
+                           conf.fixed_e};
+    hsize_t boundsize[1] = {5};
+    writeArray<1>("section_bounds", file, sdfBounds, boundsize);
+  } else if (conf.doFullSDF) {
+    auto UH = eigsol.U.adjoint();
+    auto sdf = fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy,
+                       conf.SDFE, conf.sharpening, conf.cutoff);
+    hsize_t sizes[3] = {conf.SDFKx.n, conf.SDFKy.n, conf.SDFE.n};
+    writeArray<3>("sdf", file, sdf.data(), sizes);
+    double sdfBounds[6] = {conf.SDFKx.start, conf.SDFKx.end,  conf.SDFKy.start,
+                           conf.SDFKy.end,   conf.SDFE.start, conf.SDFE.end};
+    hsize_t boundsize[1] = {6};
+    writeArray<1>("sdf_bounds", file, sdfBounds, boundsize);
+  }
+  if (conf.doDOS) {
+    auto UH = eigsol.U.adjoint();
+    auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE,
+                   conf.sharpening, conf.cutoff);
+    writeArray<1>("dos", file, dos.data(), &conf.SDFE.n);
+    double dosBounds[2] = {conf.SDFE.start, conf.SDFE.end};
+    hsize_t boundsize[1] = {2};
+    writeArray<1>("dos_bounds", file, dosBounds, boundsize);
+  }
+  if (conf.doPath) {
+    std::cout << "Doing path\n";
+    if (conf.dispE.has_value()) {
+      auto kc = conf.kpath;
+      auto ec = conf.dispE.value();
+      auto UH = eigsol.U.adjoint();
+      auto dis =
+          disp(eigsol.D, UH, points, a, kc, ec, conf.sharpening, conf.cutoff);
+      u32 nsamples = 0;
+      for (const auto& rc : kc) {
+        nsamples += rc.n;
+      }
+      hsize_t sizes[2] = {nsamples, ec.n};
+      writeArray<2>("disp", file, dis.data(), sizes);
+      std::vector<f64> dispBounds;
+      for (const auto& rc : kc) {
+        dispBounds.insert(dispBounds.end(),
+                          {rc.start[0], rc.start[1], rc.end[0], rc.end[1]});
+      }
+      dispBounds.insert(dispBounds.end(), {ec.start, ec.end});
+      hsize_t boundsizes[1] = {dispBounds.size()};
+      writeArray<1>("disp_bounds", file, dispBounds.data(), boundsizes);
+    } else {
+      std::cout << "Need to supply a non-zero number of energy samples\n";
+    }
+  }
+  H5Fclose(file);
+  return 0;
 }

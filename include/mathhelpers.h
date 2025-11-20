@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
-#ifndef NDE
+#ifndef NDEBUG
 #include <cassert>
 #endif // !DEBUG
 
