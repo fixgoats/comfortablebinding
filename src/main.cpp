@@ -1,6 +1,7 @@
 #include "Eigen/Dense"
 #include "SDF.h"
 #include "approximant.h"
+#include "dynamic.h"
 #include "geometry.h"
 #include "hermEigen.h"
 #include "io.h"
@@ -47,7 +48,14 @@ int main(const int argc, const char* const* argv) {
   }
   if (result["d"].count()) {
     std::string fname = result["d"].as<std::string>();
-    std::vector<Point> points;
+    DynConf conf;
+    if (auto opt = tomlToDynConf(fname); opt.has_value()) {
+      conf = opt.value();
+    } else {
+      return 1;
+    }
+    doDynamic(conf);
+    doExactBasic(conf);
   }
   if (result["c"].count()) {
     std::string fname = result["c"].as<std::string>();

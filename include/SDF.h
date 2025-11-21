@@ -1,14 +1,42 @@
 #pragma once
 #include "Eigen/Dense"
+#include "Eigen/Sparse"
 #include "geometry.h"
 #include "mathhelpers.h"
 #include "vkcore.h"
-#include <toml++/toml.hpp>
 
 using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd,
-    Eigen::MatrixXd;
+    Eigen::MatrixXd, Eigen::SparseMatrix;
 
 typedef std::vector<std::vector<std::pair<f64, u32>>> Delta;
+
+inline MatrixXd DenseH(const std::vector<Point>& points,
+                       const kdt::KDTree<Point>& kdtree, double radius,
+                       f64 (*f)(Vector2d)) {
+
+  std::vector<Neighbour> nb_info = pointsToNbs(points, kdtree, radius);
+  MatrixXd H = MatrixXd::Zero(points.size(), points.size());
+  for (const auto& nb : nb_info) {
+    f64 val = f(nb.d);
+    H(nb.i, nb.j) = val;
+    H(nb.j, nb.i) = val;
+  }
+  return H;
+}
+
+inline SparseMatrix<double> SparseH(const std::vector<Point>& points,
+                                    const kdt::KDTree<Point>& kdtree,
+                                    f64 radius, f64 (*f)(Vector2d)) {
+
+  std::vector<Neighbour> nb_info = pointsToNbs(points, kdtree, radius);
+  SparseMatrix<double> H(points.size(), points.size());
+  for (const auto& nb : nb_info) {
+    f64 val = f(nb.d);
+    H.insert(nb.i, nb.j) = val;
+    H.insert(nb.j, nb.i) = val;
+  }
+  return H;
+}
 
 struct SdfConf {
   // sharpness of Gaussian used to approximate Delta function

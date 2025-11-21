@@ -1,0 +1,4 @@
+pointPath = "../data/squarepoints.txt"
+t0 = 0
+t1 = 100.0
+searchRadius = 1.1

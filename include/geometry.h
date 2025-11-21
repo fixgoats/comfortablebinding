@@ -43,6 +43,23 @@ struct Point : std::array<double, 2> {
 };
 
 std::vector<Point> readPoints(const std::string& fname);
+inline std::vector<Neighbour> pointsToNbs(const std::vector<Point>& points,
+                                          const kdt::KDTree<Point>& kdtree,
+                                          f64 radius) {
+  std::vector<Neighbour> nb_info;
+  for (size_t i = 0; i < points.size(); i++) {
+    auto q = points[i];
+    auto nbs = kdtree.radiusSearch(q, radius);
+    for (const auto idx : nbs) {
+      if ((size_t)idx > i) {
+        auto p = points[idx];
+        Vector2d d = {p[0] - q[0], p[1] - q[1]};
+        nb_info.emplace_back(i, p.idx, d);
+      }
+    }
+  }
+  return nb_info;
+}
 
 std::vector<Point> extended_grid(const std::vector<Point>& base,
                                  const std::vector<int>& x_edge,

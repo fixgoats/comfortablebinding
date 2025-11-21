@@ -13,6 +13,7 @@ set(PROJECT_SOURCES
         src/vkcore.cpp
         src/io.cpp
         src/periodic.cpp
+        src/dynamic.cpp
         #src/vkhelpers.cpp
 )
 set(MAIN_TARGET disp)

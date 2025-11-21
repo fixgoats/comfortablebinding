@@ -1,10 +1,11 @@
 #include "SDF.h"
-#include "Eigen/Core"
+#include "Eigen/Dense"
 #include "io.h"
 #include "vkcore.h"
 #include <chrono>
 #include <iostream>
 #include <mdspan>
+#include <toml++/toml.hpp>
 
 using namespace std::chrono;
 using Eigen::MatrixXcf;
@@ -299,7 +300,6 @@ MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
       }
     }
   }
-  std::cout << "got here\n";
   return finite_hamiltonian(points.size(), nb_info, &expCoupling);
 }
 
