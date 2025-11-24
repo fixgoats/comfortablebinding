@@ -25,7 +25,7 @@ using Eigen::MatrixX2d, Eigen::MatrixXd;
 
 EigenSolution pointsToDiagFormHamiltonian(const std::vector<Point>& points,
                                           const kdt::KDTree<Point>& kdtree,
-                                          double rad) {
+                                          f64 rad) {
   auto H = pointsToFiniteHamiltonian(points, kdtree, rad);
   EigenSolution eig = hermitianEigenSolver(H);
   return eig;
@@ -97,14 +97,14 @@ int main(const int argc, const char* const* argv) {
       points.resize(70 * 70);
       for (u32 i = 0; i < 70; i++) {
         for (u32 j = 0; j < 70; j++) {
-          points[i * 70 + j] = {(double)i, (double)j, i * 70 + j};
+          points[i * 70 + j] = {(f64)i, (f64)j, i * 70 + j};
         }
       }
     } else
       points = readPoints(conf.pointPath);
 
     kdt::KDTree kdtree(points);
-    double a = avgNNDist(kdtree, points);
+    f64 a = avgNNDist(kdtree, points);
     EigenSolution eigsol;
     bool useSavedSucceeded = false;
     if (conf.useSavedDiag.has_value()) {
@@ -146,9 +146,9 @@ int main(const int argc, const char* const* argv) {
                                  conf.cutoff);
       hsize_t sizes[2] = {conf.sectionKx.n, conf.sectionKy.n};
       writeSingleArray<2>("section", file, section.data(), sizes);
-      double sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
-                             conf.sectionKy.start, conf.sectionKy.end,
-                             conf.fixed_e};
+      f64 sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
+                          conf.sectionKy.start, conf.sectionKy.end,
+                          conf.fixed_e};
       hsize_t boundsize[1] = {5};
       writeArray<1>("section_bounds", file, sdfBounds, boundsize);
     }
