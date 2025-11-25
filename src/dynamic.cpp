@@ -48,7 +48,7 @@ static Eigen::IOFormat oneliner(Eigen::StreamPrecision, Eigen::DontAlignCols,
                                 " ", " ", "", "", "", "");
 auto basicNonLin(const SparseMatrix<c64>& iH, f64 alpha) {
   return [&iH, alpha](const VectorXcd& x) {
-    return iH * x + alpha * x.cwiseAbs2();
+    return VectorXcd(iH * x + alpha * x.cwiseAbs2());
   };
 }
 
@@ -71,18 +71,35 @@ auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
   };
 }
 
-auto kuramoto(const SparseMatrix<f64>& K, const VectorXd& omega) {
+auto kuramoto(f64 K, const VectorXd& omega) {
+  return [=](const VectorXd& theta) {
+    std::cout << "Theta shape: (" << theta.cols() << ", " << theta.rows()
+              << ")\n";
+    MatrixXd sins = (theta * VectorXd::Ones(theta.size()).transpose() -
+                     VectorXd::Ones(theta.size()) * theta.transpose())
+                        .array()
+                        .sin();
+    std::cout << "omega shape: (" << omega.cols() << ", " << omega.rows()
+              << ")\n";
+    std::cout << "sins sum shape: (" << sins.rowwise().sum().cols() << ", "
+              << sins.rowwise().sum().rows() << ")\n";
+    return VectorXd(omega + (K / theta.size()) * (sins).rowwise().sum());
+  };
+}
+
+auto advancedKuramoto(f64 K, const VectorXd& omega) {
   return [=](const VectorXd& theta) {
     MatrixXd sins = (theta * VectorXd::Ones(theta.size()).transpose() -
                      VectorXd::Ones(theta.size()) * theta.transpose())
                         .array()
                         .sin();
-    return omega + (1 / (theta.size())) * (K * sins).rowwise().sum();
+    return VectorXd(omega +
+                    (1.0 / (theta.size())) * (K * sins).rowwise().sum());
   };
 }
 
 auto basic(const SparseMatrix<c64>& iH) {
-  return [&iH](const VectorXcd& x) { return iH * x; };
+  return [&iH](const VectorXcd& x) { return VectorXcd(iH * x); };
 }
 
 int doDynamic(const DynConf& conf) {
@@ -107,7 +124,30 @@ int doDynamic(const DynConf& conf) {
   }
 
   fout.close();
-  std::cout << "got here\n";
+  return 0;
+}
+
+int doKuramoto() {
+  VectorXd theta(100);
+  VectorXd omega(100);
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0, 2 * M_PI);
+  for (auto& e : theta) {
+    e = dis(gen);
+  }
+  for (auto& e : omega) {
+    e = 2 * dis(gen);
+  }
+  std::ofstream fout("dynamic.txt");
+  fout << theta.format(oneliner) << '\n';
+  auto rhs = kuramoto(1, omega);
+  for (u32 i = 0; i < 10; i++) {
+    theta = rk4step(theta, 0.01, rhs);
+    fout << theta.format(oneliner) << '\n';
+  }
+
+  fout.close();
   return 0;
 }
 

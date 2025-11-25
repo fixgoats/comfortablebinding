@@ -1,7 +1,9 @@
 #include "Eigen/Dense"
-#include "io.h"
-#include <iostream>
+#include "Eigen/Sparse"
+#include "typedefs.h"
 #include <toml++/toml.hpp>
+
+using Eigen::SparseMatrix, Eigen::VectorXcd;
 
 struct DynConf {
   std::string pointPath;
@@ -11,5 +13,8 @@ struct DynConf {
 };
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname);
+
+auto basic(const SparseMatrix<c64>& iH);
 int doDynamic(const DynConf& conf);
 int doExactBasic(const DynConf& conf);
+int doKuramoto();
