@@ -54,7 +54,15 @@ int main(const int argc, const char* const* argv) {
     } else {
       return 1;
     }
-    doKuramoto();
+    if (conf.kuramoto.has_value()) {
+      doKuramoto(conf.kuramoto.value());
+    }
+    if (conf.basic.has_value()) {
+      doBasic(conf.basic.value());
+    }
+    if (conf.basicnlin.has_value()) {
+      doBasicNLin(conf.basicnlin.value());
+    }
     // doExactBasic(conf);
   }
   if (result["c"].count()) {

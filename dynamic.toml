@@ -2,3 +2,10 @@ pointPath = "../data/squarepoints.txt"
 t0 = 0
 t1 = 100.0
 searchRadius = 1.1
+
+[kuramoto]
+outfile = "kuramoto.txt"
+K = 1.01
+N = 10
+t = {start = 0, end = 100, n = 10000}
+

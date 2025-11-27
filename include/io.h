@@ -182,6 +182,6 @@ std::vector<T> tarrayToVec(const toml::array& arr) {
 }
 
 RangeConf<Vector2d> tblToVecRange(const toml::table& tbl);
-RangeConf<double> tblToRange(toml::table& tbl);
+RangeConf<f64> tblToRange(toml::table& tbl);
 
 std::optional<EigenSolution> loadDiag(std::string fname);
