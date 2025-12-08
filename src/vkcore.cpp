@@ -2,7 +2,6 @@
 #include "vkcore.h"
 #include "colormaps.h"
 #include "mathhelpers.h"
-#include "vk_mem_alloc.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>

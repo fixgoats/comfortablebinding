@@ -4,13 +4,13 @@
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
-#include "vk_mem_alloc.h"
 #include <boost/pfr/core.hpp>
 #include <chrono>
 #include <cstddef>
 #include <format>
 #include <fstream>
 #include <span>
+#include <vma/vk_mem_alloc.h>
 
 using std::bit_cast;
 
