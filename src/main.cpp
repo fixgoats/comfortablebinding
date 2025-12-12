@@ -23,14 +23,6 @@
 
 using Eigen::MatrixX2d, Eigen::MatrixXd;
 
-EigenSolution pointsToDiagFormHamiltonian(const std::vector<Point>& points,
-                                          const kdt::KDTree<Point>& kdtree,
-                                          f64 rad) {
-  auto H = pointsToFiniteHamiltonian(points, kdtree, rad);
-  EigenSolution eig = hermitianEigenSolver(H);
-  return eig;
-}
-
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(

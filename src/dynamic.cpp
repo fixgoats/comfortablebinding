@@ -28,7 +28,9 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     toml::table btbl = *tbl["basic"].as_table();
     SET_STRUCT_FIELD(bc, btbl, outfile);
     SET_STRUCT_FIELD(bc, btbl, pointPath);
-    SET_STRUCT_FIELD(bc, btbl, searchRadius);
+    if (btbl.contains("searchRadius")) {
+      bc.searchRadius = btbl["searchRadius"].value<f64>().value();
+    }
     bc.t = tblToRange(*btbl["t"].as_table());
     conf.basic = bc;
   }
@@ -37,7 +39,9 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     toml::table btbl = *tbl["basicNonLin"].as_table();
     SET_STRUCT_FIELD(bc, btbl, outfile);
     SET_STRUCT_FIELD(bc, btbl, pointPath);
-    SET_STRUCT_FIELD(bc, btbl, searchRadius);
+    if (btbl.contains("searchRadius")) {
+      bc.searchRadius = btbl["searchRadius"].value<f64>().value();
+    }
     SET_STRUCT_FIELD(bc, btbl, alpha);
     bc.t = tblToRange(*btbl["t"].as_table());
     conf.basicnlin = bc;
@@ -82,21 +86,37 @@ struct StateAndReservoir {
   VectorXd n;
 
   // StateAndReservoir operator*(const f64& b) const;
-  Self operator*(const f64& b) const { return {b * x, b * n}; }
-  Self operator+(const Self& b) const { return {x + b.x, n + b.n}; }
+  Self& operator*=(f64 b) {
+    x *= b;
+    n *= b;
+    return *this;
+  }
+  friend Self operator*(Self lhs, f64 b) { return lhs *= b; }
+  Self& operator+=(const Self& rhs) {
+    x += rhs.x;
+    n += rhs.n;
+    return *this;
+  }
+  friend Self operator+(Self lhs, const Self& b) { return lhs += b; }
+  Self& operator-=(const Self& rhs) {
+    x -= rhs.x;
+    n -= rhs.n;
+    return *this;
+  }
+  friend Self operator-(Self lhs, const Self& rhs) { return lhs -= rhs; }
 };
 
 auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
                    f64 R, f64 gamma, f64 Gamma) {
-  return [=](const StateAndReservoir& x) {
+  return [&, alpha, R, gamma, Gamma](const StateAndReservoir& x) {
     return StateAndReservoir{iH * x.x + alpha * x.x.cwiseAbs2() + R * x.n -
                                  gamma * x.x,
                              P - Gamma * x.n};
   };
 }
 
-auto kuramoto(f64 K, u32 N, VectorXd omega) {
-  return [=](const VectorXd& theta) {
+auto kuramoto(f64 K, u32 N, const VectorXd& omega) {
+  return [&, K, N](const VectorXd& theta) {
     MatrixXd sins = (VectorXd::Ones(N) * theta.transpose() -
                      theta * VectorXd::Ones(N).transpose())
                         .array()
@@ -106,7 +126,7 @@ auto kuramoto(f64 K, u32 N, VectorXd omega) {
 }
 
 auto advancedKuramoto(f64 K, const VectorXd& omega) {
-  return [=](const VectorXd& theta) {
+  return [&, K](const VectorXd& theta) {
     MatrixXd sins = (VectorXd::Ones(theta.size()) * theta.transpose() -
                      theta * VectorXd::Ones(theta.size()).transpose())
                         .array()
@@ -117,14 +137,16 @@ auto advancedKuramoto(f64 K, const VectorXd& omega) {
 }
 
 auto basic(const SparseMatrix<c64>& iH) {
-  return [&iH](const VectorXcd& x) { return VectorXcd(iH * x); };
+  return [&](const VectorXcd& x) { return VectorXcd(iH * x); };
 }
 
 int doBasic(const BasicConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
   kdt::KDTree<Point> kdtree(points);
+  f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                             : 1.01 * avgNNDist(kdtree, points);
   SparseMatrix<c64> iH =
-      c64{0, -1} * SparseH(points, kdtree, conf.searchRadius,
+      c64{0, -1} * SparseH(points, kdtree, radius,
                            [](Vector2d d) { return std::exp(-d.norm()); });
   std::random_device dev;
   std::mt19937 gen(dev());
@@ -148,8 +170,10 @@ int doBasic(const BasicConf& conf) {
 int doBasicNLin(const BasicNLinConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
   kdt::KDTree<Point> kdtree(points);
+  f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                             : 1.01 * avgNNDist(kdtree, points);
   SparseMatrix<c64> iH =
-      c64{0, -1} * SparseH(points, kdtree, conf.searchRadius,
+      c64{0, -1} * SparseH(points, kdtree, radius,
                            [](Vector2d d) { return std::exp(-d.norm()); });
   std::random_device dev;
   std::mt19937 gen(dev());
@@ -197,7 +221,9 @@ int doKuramoto(const KuramotoConf& conf) {
 int doExactBasic(const BasicConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
   kdt::KDTree<Point> kdtree(points);
-  auto iH = c64{0, -1} * DenseH(points, kdtree, conf.searchRadius,
+  f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                             : 1.01 * avgNNDist(kdtree, points);
+  auto iH = c64{0, -1} * DenseH(points, kdtree, radius,
                                 [](Vector2d d) { return std::exp(-d.norm()); });
   std::random_device dev;
   std::mt19937 gen(dev());

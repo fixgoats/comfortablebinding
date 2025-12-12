@@ -16,14 +16,14 @@ struct KuramotoConf {
 struct BasicConf {
   std::string outfile;
   std::string pointPath;
-  f64 searchRadius;
+  std::optional<f64> searchRadius;
   RangeConf<f64> t;
 };
 
 struct BasicNLinConf {
   std::string outfile;
   std::string pointPath;
-  f64 searchRadius;
+  std::optional<f64> searchRadius;
   f64 alpha;
   RangeConf<f64> t;
 };

@@ -46,6 +46,21 @@ void writeArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
 }
 
 template <size_t n>
+void writeComplexArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
+  // std::array<hsize_t, sizeof(sizes)> dims{sizes};
+  hid_t space = H5Screate_simple(n, sizes, nullptr);
+  // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
+  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_DOUBLE_g, space,
+                         H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
+  hid_t res =
+      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
+  if (res < 0) {
+    std::cout << "Failed to write HDF5 fid\n";
+  }
+}
+
+template <size_t n>
 void writeSingleArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
   // std::array<hsize_t, sizeof(sizes)> dims{sizes};
   hid_t space = H5Screate_simple(n, sizes, nullptr);
