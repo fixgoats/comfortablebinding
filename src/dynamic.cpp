@@ -2,7 +2,7 @@
 #include "SDF.h"
 #include "geometry.h"
 #include "io.h"
-#include "unsupported/Eigen/src/MatrixFunctions/MatrixExponential.h"
+#include "unsupported/Eigen/MatrixFunctions"
 #include <boost/numeric/odeint.hpp>
 #include <random>
 #include <toml++/toml.hpp>
@@ -145,34 +145,41 @@ int doBasic(const BasicConf& conf) {
   kdt::KDTree<Point> kdtree(points);
   f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
                                              : 1.01 * avgNNDist(kdtree, points);
+  if (!conf.searchRadius.has_value()) {
+    std::cout << "Automatically determined search radius: " << radius << '\n';
+  }
   SparseMatrix<c64> iH =
       c64{0, -1} * SparseH(points, kdtree, radius,
                            [](Vector2d d) { return std::exp(-d.norm()); });
   std::random_device dev;
   std::mt19937 gen(dev());
-  std::uniform_real_distribution<> dis(-1.0, 1.0);
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
   VectorXcd psi(points.size());
   for (auto& e : psi) {
-    e = {dis(gen), dis(gen)};
+    e = {cosf(dis(gen)), sinf(dis(gen))};
   }
   std::ofstream fout(conf.outfile);
   auto rhs = basic(iH);
 
-  std::vector<c64> outdata(conf.t.n * points.size());
+  std::vector<c64> orderparam(conf.t.n);
   for (u32 i = 0; i < conf.t.n; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
-    memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
+    orderparam[i] =
+        (c64{0, 1} * psi.array().arg()).exp().sum() / (f64)points.size();
+    // memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
   }
-  H5File file(conf.outfile.c_str());
+  // H5File file(conf.outfile.c_str());
+  hid_t file =
+      H5Fcreate(conf.outfile.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  writeArray<2>(
-      "data", file, c_double_id, outdata.data(),
-      {static_cast<hid_t>(conf.t.n), static_cast<hid_t>(points.size())});
-  writeArray<1>("time", file, c_double_id, outdata.data(),
-                {static_cast<hid_t>(conf.t.n)});
+  std::cout << "Writing full data\n";
+  writeArray<1>("data", file, c_double_id, orderparam.data(), {conf.t.n});
+  std::cout << "Writing corresponding times\n";
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
+                {conf.t.n});
 
   return 0;
 }
@@ -187,10 +194,10 @@ int doBasicNLin(const BasicNLinConf& conf) {
                            [](Vector2d d) { return std::exp(-d.norm()); });
   std::random_device dev;
   std::mt19937 gen(dev());
-  std::uniform_real_distribution<> dis(-1.0, 1.0);
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
   VectorXcd psi(points.size());
   for (auto& e : psi) {
-    e = {dis(gen), dis(gen)};
+    e = {cosf(dis(gen)), sinf(dis(gen))};
   }
   std::vector<c64> outdata(conf.t.n * points.size());
   auto rhs = basicNonLin(iH, conf.alpha);
@@ -204,9 +211,10 @@ int doBasicNLin(const BasicNLinConf& conf) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  writeArray<2>(
-      "data", file, c_double_id, outdata.data(),
-      {static_cast<hid_t>(conf.t.n), static_cast<hid_t>(points.size())});
+  writeArray<2>("data", file, c_double_id, outdata.data(),
+                {conf.t.n, points.size()});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
+                {conf.t.n});
   return 0;
 }
 

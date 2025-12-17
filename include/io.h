@@ -32,36 +32,35 @@ struct Line {
 
 template <size_t n>
 void writeArray(const std::string& s, hid_t fid, hid_t type_id, void* data,
-                std::array<hid_t, n> sizes) {
+                std::array<hsize_t, n> sizes) {
   // std::array<hsize_t, sizeof(sizes)> dims{sizes};
-  hid_t space = H5Screate_simple(n, sizes, nullptr);
+  hid_t space = H5Screate_simple(n, sizes.data(), nullptr);
   // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
   hid_t set = H5Dcreate2(fid, s.c_str(), type_id, space, H5P_DEFAULT,
                          H5P_DEFAULT, H5P_DEFAULT);
   // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
-  hid_t res =
-      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
+  hid_t res = H5Dwrite(set, type_id, H5S_ALL, space, H5P_DEFAULT, data);
   if (res < 0) {
     std::cout << "Failed to write HDF5 fid\n";
   }
 }
 
-static hid_t make_complex_single_id() {
-  hid_t c_single = H5Tcreate(H5T_COMPOUND, sizeof(std::complex<f32>));
-  H5Tinsert(c_single, "real", 0, H5T_NATIVE_FLOAT_g);
-  H5Tinsert(c_single, "imag", 4, H5T_NATIVE_FLOAT_g);
+inline hid_t make_c_single_id() {
+  hid_t c_single = H5Tcreate(H5T_COMPOUND, sizeof(c32));
+  H5Tinsert(c_single, "r", 0, H5T_NATIVE_FLOAT_g);
+  H5Tinsert(c_single, "i", 4, H5T_NATIVE_FLOAT_g);
   return c_single;
 }
 
-static hid_t make_complex_double_id() {
-  hid_t c_double = H5Tcreate(H5T_COMPOUND, sizeof(std::complex<f64>));
-  H5Tinsert(c_double, "real", 0, H5T_NATIVE_DOUBLE_g);
-  H5Tinsert(c_double, "imag", 8, H5T_NATIVE_DOUBLE_g);
+inline hid_t make_c_double_id() {
+  hid_t c_double = H5Tcreate(H5T_COMPOUND, sizeof(c64));
+  H5Tinsert(c_double, "r", 0, H5T_NATIVE_DOUBLE_g);
+  H5Tinsert(c_double, "i", 8, H5T_NATIVE_DOUBLE_g);
   return c_double;
 }
 
-static const hid_t c_single_id = make_complex_single_id();
-static const hid_t c_double_id = make_complex_double_id();
+static const hid_t c_single_id = make_c_single_id();
+static const hid_t c_double_id = make_c_double_id();
 
 inline bool file_exists(const std::string& name) {
   if (FILE* file = fopen(name.c_str(), "r")) {

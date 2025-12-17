@@ -400,10 +400,11 @@ int doSDFcalcs(SdfConf& conf) {
   if (conf.saveDiagonalisation.has_value() && !useSavedSucceeded) {
     hid_t file = H5Fcreate(conf.saveDiagonalisation.value().c_str(),
                            H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    hsize_t sizes[2] = {static_cast<hsize_t>(eigsol.D.size()),
-                        static_cast<hsize_t>(2 * eigsol.D.size())};
-    writeArray<1>("D", file, eigsol.D.data(), sizes);
-    writeArray<2>("U", file, eigsol.U.data(), sizes);
+    std::array<hsize_t, 2> sizes = {static_cast<hsize_t>(eigsol.D.size()),
+                                    static_cast<hsize_t>(eigsol.D.size())};
+    writeArray<1>("D", file, H5T_NATIVE_DOUBLE_g, eigsol.D.data(),
+                  {static_cast<hsize_t>(eigsol.D.size())});
+    writeArray<2>("U", file, c_double_id, eigsol.U.data(), sizes);
     H5Fclose(file);
   }
   hid_t file = H5Fcreate(conf.H5Filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
@@ -417,32 +418,29 @@ int doSDFcalcs(SdfConf& conf) {
     auto section =
         Esection(eigsol.D, UH, points, a, conf.sectionKx, conf.sectionKy,
                  conf.fixed_e, conf.sharpening, conf.cutoff);
-    hsize_t sizes[2] = {conf.sectionKx.n, conf.sectionKy.n};
-    writeArray<2>("section", file, section.data(), sizes);
+    writeArray<2>("section", file, H5T_NATIVE_DOUBLE_g, section.data(),
+                  {conf.sectionKx.n, conf.sectionKy.n});
     double sdfBounds[5] = {conf.sectionKx.start, conf.sectionKx.end,
                            conf.sectionKy.start, conf.sectionKy.end,
                            conf.fixed_e};
-    hsize_t boundsize[1] = {5};
-    writeArray<1>("section_bounds", file, sdfBounds, boundsize);
+    writeArray<1>("section_bounds", file, H5T_NATIVE_DOUBLE_g, sdfBounds, {5});
   } else if (conf.doFullSDF) {
     auto UH = eigsol.U.adjoint();
     auto sdf = fullSDF(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy,
                        conf.SDFE, conf.sharpening, conf.cutoff);
-    hsize_t sizes[3] = {conf.SDFKx.n, conf.SDFKy.n, conf.SDFE.n};
-    writeArray<3>("sdf", file, sdf.data(), sizes);
+    writeArray<3>("sdf", file, H5T_NATIVE_DOUBLE_g, sdf.data(),
+                  {conf.SDFKx.n, conf.SDFKy.n, conf.SDFE.n});
     double sdfBounds[6] = {conf.SDFKx.start, conf.SDFKx.end,  conf.SDFKy.start,
                            conf.SDFKy.end,   conf.SDFE.start, conf.SDFE.end};
-    hsize_t boundsize[1] = {6};
-    writeArray<1>("sdf_bounds", file, sdfBounds, boundsize);
+    writeArray<1>("sdf_bounds", file, H5T_NATIVE_DOUBLE_g, sdfBounds, {6});
   }
   if (conf.doDOS) {
     auto UH = eigsol.U.adjoint();
     auto dos = DOS(eigsol.D, UH, points, a, conf.SDFKx, conf.SDFKy, conf.SDFE,
                    conf.sharpening, conf.cutoff);
-    writeArray<1>("dos", file, dos.data(), &conf.SDFE.n);
+    writeArray<1>("dos", file, H5T_NATIVE_DOUBLE_g, dos.data(), {conf.SDFE.n});
     double dosBounds[2] = {conf.SDFE.start, conf.SDFE.end};
-    hsize_t boundsize[1] = {2};
-    writeArray<1>("dos_bounds", file, dosBounds, boundsize);
+    writeArray<1>("dos_bounds", file, H5T_NATIVE_DOUBLE_g, dosBounds, {2});
   }
   if (conf.doPath) {
     std::cout << "Doing path\n";
@@ -456,16 +454,16 @@ int doSDFcalcs(SdfConf& conf) {
       for (const auto& rc : kc) {
         nsamples += rc.n;
       }
-      hsize_t sizes[2] = {nsamples, ec.n};
-      writeArray<2>("disp", file, dis.data(), sizes);
+      writeArray<2>("disp", file, H5T_NATIVE_DOUBLE_g, dis.data(),
+                    {nsamples, ec.n});
       std::vector<f64> dispBounds;
       for (const auto& rc : kc) {
         dispBounds.insert(dispBounds.end(),
                           {rc.start[0], rc.start[1], rc.end[0], rc.end[1]});
       }
       dispBounds.insert(dispBounds.end(), {ec.start, ec.end});
-      hsize_t boundsizes[1] = {dispBounds.size()};
-      writeArray<1>("disp_bounds", file, dispBounds.data(), boundsizes);
+      writeArray<1>("disp_bounds", file, H5T_NATIVE_DOUBLE_g, dispBounds.data(),
+                    {dispBounds.size()});
     } else {
       std::cout << "Need to supply a non-zero number of energy samples\n";
     }

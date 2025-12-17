@@ -107,8 +107,7 @@ int doPeriodicModel(const PerConf& conf) {
       return 1;
     }
     writeArray<3>("energies", *file, H5T_NATIVE_DOUBLE_g, energies.data(),
-                  {static_cast<hid_t>(kyrange.n), static_cast<hid_t>(kxrange.n),
-                   static_cast<hid_t>(conf.points.size())});
+                  {kyrange.n, kxrange.n, conf.points.size()});
     writeArray<1>(
         "energies_bounds", *file, H5T_NATIVE_DOUBLE_g,
         (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end}, {4});
@@ -140,9 +139,8 @@ int doPeriodicModel(const PerConf& conf) {
       return 1;
     }
     std::cout << "Energy size should be: " << energies.size() << '\n';
-    writeArray<2>(
-        "disp", file, H5T_NATIVE_DOUBLE_g, energies.data(),
-        {static_cast<hid_t>(npoints), static_cast<hid_t>(conf.points.size())});
+    writeArray<2>("disp", file, H5T_NATIVE_DOUBLE_g, energies.data(),
+                  {npoints, conf.points.size()});
     std::vector<Vector2d> bounds;
     bounds.reserve(conf.kpath.size());
     for (const auto& r : conf.kpath) {
@@ -150,7 +148,7 @@ int doPeriodicModel(const PerConf& conf) {
       bounds.push_back(r.end);
     }
     writeArray<1>("disp_bounds", file, H5T_NATIVE_DOUBLE_g, bounds.data(),
-                  {static_cast<hid_t>(conf.kpath.size() * 2 * 2)});
+                  {conf.kpath.size() * 2 * 2});
   }
   return 0;
 }
