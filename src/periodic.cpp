@@ -101,20 +101,17 @@ int doPeriodicModel(const PerConf& conf) {
       }
     }
 #pragma omp barrier
-    hid_t file =
-        H5Fcreate(conf.fname.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    H5File file(conf.fname.c_str());
     if (file == H5I_INVALID_HID) {
       std::cerr << "Failed to create file " << conf.fname << std::endl;
       return 1;
     }
-    hsize_t sizes[3] = {kyrange.n, kxrange.n, conf.points.size()};
-    writeArray<3>("energies", file, energies.data(), sizes);
-    hsize_t boundsizes[1] = {4};
+    writeArray<3>("energies", *file, H5T_NATIVE_DOUBLE_g, energies.data(),
+                  {static_cast<hid_t>(kyrange.n), static_cast<hid_t>(kxrange.n),
+                   static_cast<hid_t>(conf.points.size())});
     writeArray<1>(
-        "energies_bounds", file,
-        (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end},
-        boundsizes);
-    H5Fclose(file);
+        "energies_bounds", *file, H5T_NATIVE_DOUBLE_g,
+        (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end}, {4});
   }
   if (conf.doPath) {
     MatrixXcd H = MatrixXcd::Zero(conf.points.size(), conf.points.size());
@@ -137,24 +134,23 @@ int doPeriodicModel(const PerConf& conf) {
         reuse = true;
       }
     }
-    hid_t file =
-        H5Fcreate(conf.fname.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    H5File file(conf.fname.c_str());
     if (file == H5I_INVALID_HID) {
       std::cerr << "Failed to create file " << "testing.h5" << std::endl;
       return 1;
     }
     std::cout << "Energy size should be: " << energies.size() << '\n';
-    hsize_t sizes[2] = {npoints, conf.points.size()};
-    writeArray<2>("disp", file, energies.data(), sizes);
-    hsize_t boundsizes[1] = {conf.kpath.size() * 2 * 2};
+    writeArray<2>(
+        "disp", file, H5T_NATIVE_DOUBLE_g, energies.data(),
+        {static_cast<hid_t>(npoints), static_cast<hid_t>(conf.points.size())});
     std::vector<Vector2d> bounds;
     bounds.reserve(conf.kpath.size());
     for (const auto& r : conf.kpath) {
       bounds.push_back(r.start);
       bounds.push_back(r.end);
     }
-    writeArray<1>("disp_bounds", file, bounds.data(), boundsizes);
-    H5Fclose(file);
+    writeArray<1>("disp_bounds", file, H5T_NATIVE_DOUBLE_g, bounds.data(),
+                  {static_cast<hid_t>(conf.kpath.size() * 2 * 2)});
   }
   return 0;
 }

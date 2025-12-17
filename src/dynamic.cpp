@@ -2,7 +2,7 @@
 #include "SDF.h"
 #include "geometry.h"
 #include "io.h"
-#include "unsupported/Eigen/MatrixFunctions"
+#include "unsupported/Eigen/src/MatrixFunctions/MatrixExponential.h"
 #include <boost/numeric/odeint.hpp>
 #include <random>
 #include <toml++/toml.hpp>
@@ -156,14 +156,24 @@ int doBasic(const BasicConf& conf) {
     e = {dis(gen), dis(gen)};
   }
   std::ofstream fout(conf.outfile);
-  fout << psi.format(oneliner) << '\n';
   auto rhs = basic(iH);
+
+  std::vector<c64> outdata(conf.t.n * points.size());
   for (u32 i = 0; i < conf.t.n; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
-    fout << psi.format(oneliner) << '\n';
+    memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
   }
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  writeArray<2>(
+      "data", file, c_double_id, outdata.data(),
+      {static_cast<hid_t>(conf.t.n), static_cast<hid_t>(points.size())});
+  writeArray<1>("time", file, c_double_id, outdata.data(),
+                {static_cast<hid_t>(conf.t.n)});
 
-  fout.close();
   return 0;
 }
 
@@ -182,15 +192,21 @@ int doBasicNLin(const BasicNLinConf& conf) {
   for (auto& e : psi) {
     e = {dis(gen), dis(gen)};
   }
-  std::ofstream fout(conf.outfile);
-  fout << psi.format(oneliner) << '\n';
+  std::vector<c64> outdata(conf.t.n * points.size());
   auto rhs = basicNonLin(iH, conf.alpha);
   for (u32 i = 0; i < conf.t.n; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
-    fout << psi.format(oneliner) << '\n';
+    memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
   }
 
-  fout.close();
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  writeArray<2>(
+      "data", file, c_double_id, outdata.data(),
+      {static_cast<hid_t>(conf.t.n), static_cast<hid_t>(points.size())});
   return 0;
 }
 

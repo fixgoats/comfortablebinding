@@ -10,7 +10,8 @@ N = 10
 t = {start = 0, end = 100, n = 10000}
 
 [basic]
-pointPath = "../data/mediummonotilepoints.txt"
-outfile = "basic.txt"
+# pointPath = "../data/mediummonotilepoints.txt"
+pointPath = "../data/smallermonotilepoints.txt"
+outfile = "basic.h5"
 t = {start = 0, end = 100, n = 10000}
 # searchRadius = "auto"

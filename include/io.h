@@ -31,49 +31,37 @@ struct Line {
 };
 
 template <size_t n>
-void writeArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
+void writeArray(const std::string& s, hid_t fid, hid_t type_id, void* data,
+                std::array<hid_t, n> sizes) {
   // std::array<hsize_t, sizeof(sizes)> dims{sizes};
   hid_t space = H5Screate_simple(n, sizes, nullptr);
   // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
-  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_DOUBLE_g, space,
-                         H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
-  hid_t res =
-      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
-  if (res < 0) {
-    std::cout << "Failed to write HDF5 fid\n";
-  }
-}
-
-template <size_t n>
-void writeComplexArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
-  // std::array<hsize_t, sizeof(sizes)> dims{sizes};
-  hid_t space = H5Screate_simple(n, sizes, nullptr);
-  // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
-  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_DOUBLE_g, space,
-                         H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
-  hid_t res =
-      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
-  if (res < 0) {
-    std::cout << "Failed to write HDF5 fid\n";
-  }
-}
-
-template <size_t n>
-void writeSingleArray(std::string s, hid_t fid, void* data, hsize_t sizes[n]) {
-  // std::array<hsize_t, sizeof(sizes)> dims{sizes};
-  hid_t space = H5Screate_simple(n, sizes, nullptr);
-  // hid_t lcpl = H5Pcreate(H5P_LINK_CREATE);
-  hid_t set = H5Dcreate2(fid, s.c_str(), H5T_NATIVE_FLOAT_g, space, H5P_DEFAULT,
+  hid_t set = H5Dcreate2(fid, s.c_str(), type_id, space, H5P_DEFAULT,
                          H5P_DEFAULT, H5P_DEFAULT);
   // fid.createDataSet(s, H5::PredType::NATIVE_DOUBLE, space);
   hid_t res =
-      H5Dwrite(set, H5T_NATIVE_FLOAT_g, H5S_ALL, space, H5P_DEFAULT, data);
+      H5Dwrite(set, H5T_NATIVE_DOUBLE_g, H5S_ALL, space, H5P_DEFAULT, data);
   if (res < 0) {
     std::cout << "Failed to write HDF5 fid\n";
   }
 }
+
+static hid_t make_complex_single_id() {
+  hid_t c_single = H5Tcreate(H5T_COMPOUND, sizeof(std::complex<f32>));
+  H5Tinsert(c_single, "real", 0, H5T_NATIVE_FLOAT_g);
+  H5Tinsert(c_single, "imag", 4, H5T_NATIVE_FLOAT_g);
+  return c_single;
+}
+
+static hid_t make_complex_double_id() {
+  hid_t c_double = H5Tcreate(H5T_COMPOUND, sizeof(std::complex<f64>));
+  H5Tinsert(c_double, "real", 0, H5T_NATIVE_DOUBLE_g);
+  H5Tinsert(c_double, "imag", 8, H5T_NATIVE_DOUBLE_g);
+  return c_double;
+}
+
+static const hid_t c_single_id = make_complex_single_id();
+static const hid_t c_double_id = make_complex_double_id();
 
 inline bool file_exists(const std::string& name) {
   if (FILE* file = fopen(name.c_str(), "r")) {
@@ -87,7 +75,7 @@ inline bool file_exists(const std::string& name) {
 template <class T>
 constexpr auto numfmt(T x) {
   if constexpr (std::is_same_v<T, c32> or std::is_same_v<T, c64>) {
-    return std::format("({}+{}j)", x.real(), x.imag());
+    return std::format("{}+{}j", x.real(), x.imag());
   } else {
     return std::format("{}", x);
   }
@@ -200,3 +188,12 @@ RangeConf<Vector2d> tblToVecRange(const toml::table& tbl);
 RangeConf<f64> tblToRange(toml::table& tbl);
 
 std::optional<EigenSolution> loadDiag(std::string fname);
+struct H5File {
+  hid_t file;
+  H5File(const char* fname) {
+    file = H5Fcreate(fname, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  }
+  operator hid_t() const { return file; }
+  hid_t operator*() const { return file; }
+  ~H5File() { H5Fclose(file); }
+};
