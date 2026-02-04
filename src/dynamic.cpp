@@ -140,6 +140,43 @@ auto basic(const SparseMatrix<c64>& iH) {
   return [&](const VectorXcd& x) { return VectorXcd(iH * x); };
 }
 
+auto Lorenz(f64 sigma, f64 R, f64 b) {
+  return [=](Eigen::Vector3d x) {
+    return Eigen::Vector3d(sigma * (x[1] - x[0]), R * x[0] - x[1] - x[0] * x[2],
+                           -b * x[2] + x[0] * x[1]);
+  };
+}
+
+auto LorenzDiff(f64 sigma, f64 R, f64 b) {
+  return [=](Eigen::Vector3d x, Eigen::Vector3d p) {
+    return Eigen::Vector3d(sigma * (p[1] - p[0]),
+                           (R - x[2]) * p[0] - p[1] - x[0] * p[2],
+                           -b * p[2] + p[0] * x[1] + x[0] * p[1]);
+  };
+}
+
+int doLorenz(const BasicConf&) {
+  const f64 sigma = 10.0;
+  const f64 R = 28.0;
+  const f64 b = 8.0 / 3.0;
+
+  const auto rhs = Lorenz(sigma, R, b);
+
+  Eigen::Vector3d init{10.0, 10.0, 5.0};
+
+  for (u64 i = 0; i < 1000; ++i) {
+    init = rk4step(init, 0.01, rhs);
+  }
+
+  std::vector<Eigen::Vector3d> states(4, init);
+  std::vector<Eigen::Vector3d> perturbations{
+      {0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+
+  for (u64 i = 0; i < 100; ++i) {
+  }
+  return 0;
+}
+
 int doBasic(const BasicConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
   kdt::KDTree<Point> kdtree(points);
@@ -158,7 +195,6 @@ int doBasic(const BasicConf& conf) {
   for (auto& e : psi) {
     e = {cosf(dis(gen)), sinf(dis(gen))};
   }
-  std::ofstream fout(conf.outfile);
   auto rhs = basic(iH);
 
   std::vector<c64> orderparam(conf.t.n);
