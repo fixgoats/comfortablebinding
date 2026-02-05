@@ -1,7 +1,7 @@
 #include "SDF.h"
 #include "Eigen/Dense"
 #include "io.h"
-#include "vkcore.h"
+// #include "vkcore.h"
 #include <chrono>
 #include <iostream>
 #include <mdspan>
@@ -93,53 +93,55 @@ struct SpecConsts {
   f32 dk;
 };
 
-std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd& UH,
-                             const std::vector<Point>& points, f64 lat_const,
-                             RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-                             f64 sharpening, f64 cutoff) {
-
-  std::cout << "Calculating cross section of SDF at E = " << e << '\n';
-  // const u32 its = kxc.n / 10;
-  std::vector<f32> sdf(kyc.n * kxc.n, 0);
-  auto del = delta(D, {e, e, 1}, sharpening, cutoff);
-  const std::vector<size_t> indices = [&]() {
-    std::vector<size_t> tmp;
-    for (const auto pair : del[0]) {
-      tmp.push_back(pair.second);
-    }
-    return tmp;
-  }();
-  const std::vector<f32> deltaCoeffs = [&]() {
-    std::vector<f32> tmp;
-    for (const auto c : del[0]) {
-      tmp.push_back(c.first);
-    }
-    return tmp;
-  }();
-  std::vector<Vector2f> realpoints = [&]() {
-    std::vector<Vector2f> tmp(points.size());
-    for (u32 i = 0; i < points.size(); i++) {
-      tmp[i] = points[i].asfVec();
-    }
-    return tmp;
-  }();
-  MatrixXcf floatUH = UH.cast<std::complex<f32>>();
-  MatrixXcf restrictedUH = floatUH(indices, Eigen::indexing::all);
-  SpecConsts sc{(u32)kxc.n, (u32)kyc.n,          32,
-                32,         (u32)indices.size(), (f32)kxc.d()};
-  auto gpuUH = m.makeRawBuffer<std::complex<f32>>(restrictedUH.size());
-  auto gpuPoints = m.vecToBuffer(realpoints);
-  auto gpuDelta = m.vecToBuffer(deltaCoeffs);
-  auto gpuDensity = m.vecToBuffer(sdf);
-  auto alg = m.makeAlgorithm("Shaders/esection.spv", {},
-                             {&gpuUH, &gpuPoints, &gpuDelta, &gpuDensity}, sc);
-  auto cb = m.beginRecord();
-  appendOp(cb, alg, kxc.n / 32, kyc.n / 32, 1);
-  cb.end();
-  m.execute(cb);
-  m.writeFromBuffer(gpuDensity, sdf);
-  return sdf;
-}
+// std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd&
+// UH,
+//                              const std::vector<Point>& points, f64 lat_const,
+//                              RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+//                              f64 sharpening, f64 cutoff) {
+//
+//   std::cout << "Calculating cross section of SDF at E = " << e << '\n';
+//   // const u32 its = kxc.n / 10;
+//   std::vector<f32> sdf(kyc.n * kxc.n, 0);
+//   auto del = delta(D, {e, e, 1}, sharpening, cutoff);
+//   const std::vector<size_t> indices = [&]() {
+//     std::vector<size_t> tmp;
+//     for (const auto pair : del[0]) {
+//       tmp.push_back(pair.second);
+//     }
+//     return tmp;
+//   }();
+//   const std::vector<f32> deltaCoeffs = [&]() {
+//     std::vector<f32> tmp;
+//     for (const auto c : del[0]) {
+//       tmp.push_back(c.first);
+//     }
+//     return tmp;
+//   }();
+//   std::vector<Vector2f> realpoints = [&]() {
+//     std::vector<Vector2f> tmp(points.size());
+//     for (u32 i = 0; i < points.size(); i++) {
+//       tmp[i] = points[i].asfVec();
+//     }
+//     return tmp;
+//   }();
+//   MatrixXcf floatUH = UH.cast<std::complex<f32>>();
+//   MatrixXcf restrictedUH = floatUH(indices, Eigen::indexing::all);
+//   SpecConsts sc{(u32)kxc.n, (u32)kyc.n,          32,
+//                 32,         (u32)indices.size(), (f32)kxc.d()};
+//   auto gpuUH = m.makeRawBuffer<std::complex<f32>>(restrictedUH.size());
+//   auto gpuPoints = m.vecToBuffer(realpoints);
+//   auto gpuDelta = m.vecToBuffer(deltaCoeffs);
+//   auto gpuDensity = m.vecToBuffer(sdf);
+//   auto alg = m.makeAlgorithm("Shaders/esection.spv", {},
+//                              {&gpuUH, &gpuPoints, &gpuDelta, &gpuDensity},
+//                              sc);
+//   auto cb = m.beginRecord();
+//   appendOp(cb, alg, kxc.n / 32, kyc.n / 32, 1);
+//   cb.end();
+//   m.execute(cb);
+//   m.writeFromBuffer(gpuDensity, sdf);
+//   return sdf;
+// }
 
 std::vector<f64> Esection(const VectorXd& D, const MatrixXcd& UH,
                           const std::vector<Point>& points, f64 lat_const,

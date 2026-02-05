@@ -92,6 +92,11 @@ struct RangeConf {
 };
 
 template <class T>
+constexpr size_t vecBytes(std::vector<T>& v) {
+  return v.size() * sizeof(T);
+}
+
+template <class T>
 Eigen::VectorX<T> linspace(RangeConf<T> rc) {
   Eigen::VectorX<T> lin(rc.n);
   for (u64 i = 0; i < rc.n; ++i) {

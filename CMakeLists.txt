@@ -67,3 +67,6 @@ if(NOT OpenMP_CXX_FOUND)
 else()
   target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5_cpp hdf5::hdf5 lodepng OpenMP::OpenMP_CXX Vulkan::Vulkan ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 endif()
+
+
+add_executable(test src/test.cpp)

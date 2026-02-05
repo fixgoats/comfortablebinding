@@ -7,7 +7,7 @@
 #include <random>
 #include <toml++/toml.hpp>
 
-using Eigen::MatrixXd, Eigen::VectorXcd;
+using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd;
 
 #define SET_STRUCT_FIELD(c, tbl, key)                                          \
   if (tbl.contains(#key))                                                      \
@@ -33,6 +33,20 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     }
     bc.t = tblToRange(*btbl["t"].as_table());
     conf.basic = bc;
+  }
+  if (tbl.contains("tetm")) {
+    TETMConf tc;
+    toml::table ttbl = *tbl["tetm"].as_table();
+    SET_STRUCT_FIELD(tc, ttbl, outfile);
+    SET_STRUCT_FIELD(tc, ttbl, pointPath);
+    SET_STRUCT_FIELD(tc, ttbl, alpha);
+    SET_STRUCT_FIELD(tc, ttbl, p);
+    if (ttbl.contains("searchRadius")) {
+      tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
+    }
+    tc.t = tblToRange(*ttbl["t"].as_table());
+
+    conf.tetm = tc;
   }
   if (tbl.contains("basicNonLin")) {
     BasicNLinConf bc{};
@@ -112,6 +126,44 @@ auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
     return StateAndReservoir{iH * x.x + alpha * x.x.cwiseAbs2() + R * x.n -
                                  gamma * x.x,
                              P - Gamma * x.n};
+  };
+}
+
+struct TETM {
+  typedef TETM Self;
+
+  VectorXcd psip;
+  VectorXcd psim;
+
+  TETM(u64 n) : psip{n}, psim{n} {}
+  TETM(VectorXcd psip, VectorXcd psim) : psip{psip}, psim{psip} {}
+  size_t byteSize() { return 2 * psip.size() * sizeof(c64); }
+  Self& operator*=(f64 b) {
+    psip *= b;
+    psim *= b;
+    return *this;
+  }
+  friend Self operator*(Self lhs, f64 b) { return lhs *= b; }
+  Self& operator+=(const Self& rhs) {
+    psip += rhs.psip;
+    psim += rhs.psim;
+    return *this;
+  }
+  friend Self operator+(Self lhs, const Self& b) { return lhs += b; }
+  Self& operator-=(const Self& rhs) {
+    psip -= rhs.psip;
+    psim -= rhs.psim;
+    return *this;
+  }
+  friend Self operator-(Self lhs, const Self& rhs) { return lhs -= rhs; }
+};
+
+auto tetmNonLin(const SparseMatrix<c64>& iJ, const SparseMatrix<c64>& iL, f64 p,
+                f64 alpha) {
+  return [&, p, alpha](const MatrixX2cd& psi) {
+    return MatrixX2cd{
+        (p - 1) * psi - c64{0, alpha} * psi.cwiseAbs2() * psi + iJ * psi +
+        iL * psi(Eigen::indexing::all, Eigen::indexing::lastN(2).reverse())};
   };
 }
 
@@ -220,6 +272,47 @@ int doBasic(const BasicConf& conf) {
   return 0;
 }
 
+int doTETM(const TETMConf& conf) {
+  std::vector<Point> points = readPoints(conf.pointPath);
+  kdt::KDTree<Point> kdtree(points);
+  f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                             : 1.01 * avgNNDist(kdtree, points);
+  SparseMatrix<c64> iJ = SparseHC(points, kdtree, radius, [](Vector2d d) {
+    return c64{0, -1} * std::exp(-d.norm());
+  });
+  auto iL =
+      c64{0, -1} * SparseHC(points, kdtree, radius, [](Vector2d d) {
+        return std::exp(-d.norm()) * c64{1 - 2 * d(1) * d(1) / d.squaredNorm(),
+                                         2 * d(0) * d(1) / d.squaredNorm()};
+      });
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  MatrixX2cd psi(points.size());
+  for (u64 i = 0; i < psi.size(); i++) {
+    *(psi.data() + i) = {cos(dis(gen)), sin(dis(gen))};
+  }
+  std::vector<c64> psipdata(conf.t.n * points.size());
+  std::vector<c64> psimdata(conf.t.n * points.size());
+  auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
+  for (u32 i = 0; i < conf.t.n; i++) {
+    psi = rk4step(psi, conf.t.d(), rhs);
+    size_t byteSize = psi.size() * sizeof(c64);
+    memcpy(psipdata.data() + i * byteSize, psi.data(), byteSize);
+  }
+
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  writeArray<2>("psi", file, c_double_id, psipdata.data(),
+                {conf.t.n, 2 * points.size()});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
+                {conf.t.n});
+  return 0;
+}
+
 int doBasicNLin(const BasicNLinConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
   kdt::KDTree<Point> kdtree(points);
@@ -239,7 +332,8 @@ int doBasicNLin(const BasicNLinConf& conf) {
   auto rhs = basicNonLin(iH, conf.alpha);
   for (u32 i = 0; i < conf.t.n; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
-    memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
+    memcpy(outdata.data() + i * psi.size() * sizeof(c64), psi.data(),
+           psi.size() * sizeof(c64));
   }
 
   H5File file(conf.outfile.c_str());

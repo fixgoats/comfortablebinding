@@ -28,10 +28,20 @@ struct BasicNLinConf {
   RangeConf<f64> t;
 };
 
+struct TETMConf {
+  std::string outfile;
+  std::string pointPath;
+  std::optional<f64> searchRadius;
+  f64 p;
+  f64 alpha;
+  RangeConf<f64> t;
+};
+
 struct DynConf {
   std::optional<KuramotoConf> kuramoto;
   std::optional<BasicConf> basic;
   std::optional<BasicNLinConf> basicnlin;
+  std::optional<TETMConf> tetm;
 };
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname);
@@ -41,3 +51,4 @@ int doBasic(const BasicConf& conf);
 int doBasicNLin(const BasicNLinConf& conf);
 int doExactBasic(const BasicConf& conf);
 int doKuramoto(const KuramotoConf& conf);
+int doTETM(const TETMConf& conf);

@@ -3,7 +3,7 @@
 #include "Eigen/Sparse"
 #include "geometry.h"
 #include "mathhelpers.h"
-#include "vkcore.h"
+// #include "vkcore.h"
 
 using Eigen::VectorXcd, Eigen::VectorXd, Eigen::Vector2d, Eigen::MatrixXcd,
     Eigen::MatrixXd, Eigen::SparseMatrix;
@@ -24,9 +24,22 @@ inline MatrixXd DenseH(const std::vector<Point>& points,
   return H;
 }
 
-inline SparseMatrix<double> SparseH(const std::vector<Point>& points,
-                                    const kdt::KDTree<Point>& kdtree,
-                                    f64 radius, f64 (*f)(Vector2d)) {
+inline SparseMatrix<c64> SparseHC(const std::vector<Point>& points,
+                                  const kdt::KDTree<Point>& kdtree, f64 radius,
+                                  c64 (*f)(Vector2d)) {
+
+  std::vector<Neighbour> nb_info = pointsToNbs(points, kdtree, radius);
+  SparseMatrix<c64> H(points.size(), points.size());
+  for (const auto& nb : nb_info) {
+    c64 val = f(nb.d);
+    H.insert(nb.i, nb.j) = val;
+    H.insert(nb.j, nb.i) = std::conj(val);
+  }
+  return H;
+}
+inline SparseMatrix<f64> SparseH(const std::vector<Point>& points,
+                                 const kdt::KDTree<Point>& kdtree, f64 radius,
+                                 f64 (*f)(Vector2d)) {
 
   std::vector<Neighbour> nb_info = pointsToNbs(points, kdtree, radius);
   SparseMatrix<double> H(points.size(), points.size());
@@ -88,10 +101,11 @@ std::vector<f64> DOS(const VectorXd& D, const MatrixXcd& UH,
                      RangeConf<f64> kxc, RangeConf<f64> kyc, RangeConf<f64>& ec,
                      f64 sharpening, f64 cutoff, bool printProgress = true);
 
-std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd& UH,
-                             const std::vector<Point>& points, f64 lat_const,
-                             RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-                             f64 sharpening, f64 cutoff);
+// std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd&
+// UH,
+//                              const std::vector<Point>& points, f64 lat_const,
+//                              RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+//                              f64 sharpening, f64 cutoff);
 std::vector<f64> Esection(const VectorXd& D, const MatrixXcd& UH,
                           const std::vector<Point>& points, f64 lat_const,
                           RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
