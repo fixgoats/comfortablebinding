@@ -163,7 +163,8 @@ auto tetmNonLin(const SparseMatrix<c64>& iJ, const SparseMatrix<c64>& iL, f64 p,
   return [&, p, alpha](const MatrixX2cd& psi) {
     return MatrixX2cd{
         (p - 1) * psi - c64{0, alpha} * psi.cwiseAbs2() * psi + iJ * psi +
-        iL * psi(Eigen::indexing::all, Eigen::indexing::lastN(2).reverse())};
+        MatrixX2cd{iL * psi(Eigen::indexing::all, 1),
+                   -iL.conjugate() * psi(Eigen::indexing::all, 0)}};
   };
 }
 
@@ -256,9 +257,10 @@ int doBasic(const BasicConf& conf) {
         (c64{0, 1} * psi.array().arg()).exp().sum() / (f64)points.size();
     // memcpy(outdata.data() + i * points.size(), psi.data(), points.size());
   }
-  // H5File file(conf.outfile.c_str());
-  hid_t file =
-      H5Fcreate(conf.outfile.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  H5File file(conf.outfile.c_str());
+  // hid_t file =
+  //     H5Fcreate(conf.outfile.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+  //     H5P_DEFAULT);
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
@@ -288,7 +290,7 @@ int doTETM(const TETMConf& conf) {
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
-  MatrixX2cd psi(points.size());
+  MatrixX2cd psi(points.size(), 2);
   for (u64 i = 0; i < psi.size(); i++) {
     *(psi.data() + i) = {cos(dis(gen)), sin(dis(gen))};
   }
