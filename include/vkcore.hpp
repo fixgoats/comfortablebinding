@@ -1,6 +1,6 @@
 #pragma once
 #include "betterexc.h"
-#include "hack.h"
+#include "hack.hpp"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"

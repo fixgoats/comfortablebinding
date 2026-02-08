@@ -41,5 +41,8 @@ int main(const int argc, const char* const* argv) {
     if (conf.basicnlin.has_value()) {
       doBasicNLin(conf.basicnlin.value());
     }
+    if (conf.tetm.has_value()) {
+      doTETM(conf.tetm.value());
+    }
   }
 }

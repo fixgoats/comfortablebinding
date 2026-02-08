@@ -7,7 +7,6 @@
 #include "io.h"
 #include "kdtree.h"
 #include "periodic.h"
-#include "vkcore.h"
 // #include "lodepng.h"
 #include "mathhelpers.h"
 #include "typedefs.h"

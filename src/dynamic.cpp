@@ -2,8 +2,10 @@
 #include "SDF.h"
 #include "geometry.h"
 #include "io.h"
+#include "logging.hpp"
 #include "unsupported/Eigen/MatrixFunctions"
-#include <boost/numeric/odeint.hpp>
+// #include "vkcore.hpp"
+#include <print>
 #include <random>
 #include <toml++/toml.hpp>
 
@@ -14,6 +16,8 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd;
   c.key = *tbl[#key].value<decltype(c.key)>()
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname) {
+  std::print("afhjsd {}", 3 * 4);
+  logDebug("Function: tomlToDynConf.");
   toml::table tbl;
   try {
     tbl = toml::parse_file(fname);
@@ -69,6 +73,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     kc.t = tblToRange(*ktbl["t"].as_table());
     conf.kuramoto = kc;
   }
+  logDebug("Exiting tomlToDynConf.");
   return conf;
 }
 
@@ -79,11 +84,14 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
 
 template <class F, class State>
 State rk4step(const State& x, f64 dt, F rhs) {
+  logDebug("Function: rk4step.");
   State k1 = rhs(x);
   State k2 = rhs(x + 0.5 * dt * k1);
   State k3 = rhs(x + 0.5 * dt * k2);
   State k4 = rhs(x + dt * k3);
-  return x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
+  State ret = x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
+  logDebug("Exiting rk4step.");
+  return ret;
 }
 
 static Eigen::IOFormat oneliner(Eigen::StreamPrecision, Eigen::DontAlignCols,
@@ -161,11 +169,52 @@ struct TETM {
 auto tetmNonLin(const SparseMatrix<c64>& iJ, const SparseMatrix<c64>& iL, f64 p,
                 f64 alpha) {
   return [&, p, alpha](const MatrixX2cd& psi) {
-    return MatrixX2cd{
-        (p - 1) * psi - c64{0, alpha} * psi.cwiseAbs2() * psi + iJ * psi +
-        MatrixX2cd{iL * psi(Eigen::indexing::all, 1),
-                   -iL.conjugate() * psi(Eigen::indexing::all, 0)}};
+    logDebug("Function: tetmNonLin.");
+    logDebug("Making first matrix");
+    MatrixX2cd first = (p - 1) * psi;
+    u32 n = first.rows();
+    u32 m = first.cols();
+    logDebug("First matrix has dims {}x{}", n, m);
+    logDebug("Making second matrix");
+    MatrixX2cd second = -c64{0, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
+    n = second.rows();
+    m = second.cols();
+    logDebug("Second matrix has dims {}x{}", n, m);
+    logDebug("Making third matrix");
+    MatrixX2cd third = iJ * psi;
+    n = third.rows();
+    m = third.cols();
+    logDebug("Third matrix has dims {}x{}", n, m);
+    logDebug("Making fourth matrix");
+    MatrixX2cd fourth(psi.rows(), 2);
+    fourth.col(0) = iL * psi.col(1);
+    fourth.col(1) = -iL.conjugate() * psi.col(0);
+    n = fourth.rows();
+    m = fourth.cols();
+    logDebug("Fourth matrix has dims {}x{}", n, m);
+    logDebug("Exiting tetmNonLin.");
+    return first + second + third + fourth;
   };
+}
+
+MatrixX2cd explTETM(MatrixX2cd psi, const SparseMatrix<c64>& iJ,
+                    const SparseMatrix<c64>& iL, f64 p, f64 alpha) {
+  MatrixX2cd first = (p - 1) * psi;
+  MatrixX2cd second = -c64{0, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
+  MatrixX2cd third = iJ * psi;
+  MatrixX2cd fourth(psi.rows(), 2);
+  return first + second + third + fourth;
+}
+
+MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& iJ,
+                       const SparseMatrix<c64>& iL, f64 p, f64 alpha, f64 dt) {
+
+  MatrixX2cd k1 = explTETM(psi, iJ, iL, p, alpha);
+  MatrixX2cd k2 = explTETM(psi + 0.5 * dt * k1, iJ, iL, p, alpha);
+  MatrixX2cd k3 = explTETM(psi + 0.5 * dt * k2, iJ, iL, p, alpha);
+  MatrixX2cd k4 = explTETM(psi + dt * k3, iJ, iL, p, alpha);
+  MatrixX2cd ret = psi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
+  return ret;
 }
 
 auto kuramoto(f64 K, u32 N, const VectorXd& omega) {
@@ -275,45 +324,128 @@ int doBasic(const BasicConf& conf) {
 }
 
 int doTETM(const TETMConf& conf) {
+  logDebug("Function: doTETM.");
   std::vector<Point> points = readPoints(conf.pointPath);
+  logDebug("Read points.");
   kdt::KDTree<Point> kdtree(points);
+  logDebug("Built kdtree");
   f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
                                              : 1.01 * avgNNDist(kdtree, points);
+  logDebug("Using search radius: {}", radius);
   SparseMatrix<c64> iJ = SparseHC(points, kdtree, radius, [](Vector2d d) {
     return c64{0, -1} * std::exp(-d.norm());
   });
-  auto iL =
+  logDebug("Made sparse matrix iJ.");
+  SparseMatrix<c64> iL =
       c64{0, -1} * SparseHC(points, kdtree, radius, [](Vector2d d) {
-        return std::exp(-d.norm()) * c64{1 - 2 * d(1) * d(1) / d.squaredNorm(),
-                                         2 * d(0) * d(1) / d.squaredNorm()};
+        return 0.5 * std::exp(-d.norm()) *
+               c64{1 - 2 * d(1) * d(1) / d.squaredNorm(),
+                   2 * d(0) * d(1) / d.squaredNorm()};
       });
+  logDebug("Made sparse matrix iL.");
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  logDebug("Allocating psi.");
   MatrixX2cd psi(points.size(), 2);
+  u32 psin = psi.rows();
+  u32 psim = psi.cols();
+  logDebug("Allocated psi with dims {}x{}", psin, psim);
+  logDebug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
     *(psi.data() + i) = {cos(dis(gen)), sin(dis(gen))};
   }
-  std::vector<c64> psipdata(conf.t.n * points.size());
-  std::vector<c64> psimdata(conf.t.n * points.size());
-  auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
+  u32 overallSize = conf.t.n * points.size();
+  logDebug("Allocating psipdata with {} elements.", overallSize);
+  std::vector<c64> psidata(conf.t.n * points.size() * 2);
+  // logDebug("Allocating psimdata with {} elements.", overallSize);
+  // std::vector<c64> psimdata(conf.t.n * points.size());
+  logDebug("Testing allocation first");
+  MatrixX2cd first = (conf.p - 1) * psi;
+  logDebug("Testing allocation second");
+  MatrixX2cd second = -c64{0, conf.alpha} * psi.cwiseAbs2().transpose() * psi;
+  logDebug("Testing allocation third");
+  MatrixX2cd third = iJ * psi;
+  logDebug("Testing allocation fourth");
+  MatrixX2cd fourth(psi.rows(), 2);
+  logDebug("Testing spm v multiplication");
+  MatrixXcd b = iL * psi.col(1);
+  logDebug("Setting other fourth values");
+  fourth.col(1) = -iL.conjugate() * psi.col(0);
+  // auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
+  logDebug("Created rhs function.");
+  size_t byteSize = psi.size() * sizeof(c64);
   for (u32 i = 0; i < conf.t.n; i++) {
-    psi = rk4step(psi, conf.t.d(), rhs);
-    size_t byteSize = psi.size() * sizeof(c64);
-    memcpy(psipdata.data() + i * byteSize, psi.data(), byteSize);
+    psi = tetmRK4Step(psi, iJ, iL, conf.p, conf.alpha, conf.t.d());
+    u32 n = psi.rows();
+    u32 m = psi.cols();
+    logDebug("Return psiish with dims {}x{}", n, m);
+    logDebug("Copying to psipdata.");
+    memcpy(psidata.data() + i * byteSize, psi.data(), byteSize);
+    // logDebug("Copying to psimdata.");
+    // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
   }
+  logDebug("Finished calculating.");
 
   H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  writeArray<2>("psi", file, c_double_id, psipdata.data(),
-                {conf.t.n, 2 * points.size()});
+  logDebug("Writing psip to file.");
+  writeArray<3>("psi", file, c_double_id, psidata.data(),
+                {conf.t.n, points.size(), 2});
+  // logDebug("Writing psim to file.");
+  // writeArray<2>("psip", file, c_double_id, psipdata.data(),
+  //               {conf.t.n, points.size()});
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
                 {conf.t.n});
+  logDebug("Exiting doTETM.");
   return 0;
 }
+
+// int GPUTETM(const TETMConf& conf) {
+//   std::vector<Point> points = readPoints(conf.pointPath);
+//   kdt::KDTree<Point> kdtree(points);
+//   f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+//                                              : 1.01 * avgNNDist(kdtree,
+//                                              points);
+//   SparseMatrix<c64> iJ = SparseHC(points, kdtree, radius, [](Vector2d d) {
+//     return c64{0, -1} * std::exp(-d.norm());
+//   });
+//   auto iL =
+//       c64{0, -1} * SparseHC(points, kdtree, radius, [](Vector2d d) {
+//         return std::exp(-d.norm()) * c64{1 - 2 * d(1) * d(1) /
+//         d.squaredNorm(),
+//                                          2 * d(0) * d(1) / d.squaredNorm()};
+//       });
+//   std::random_device dev;
+//   std::mt19937 gen(dev());
+//   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+//   MatrixX2cd psi(points.size(), 2);
+//   for (u64 i = 0; i < psi.size(); i++) {
+//     *(psi.data() + i) = {cos(dis(gen)), sin(dis(gen))};
+//   }
+//   std::vector<c64> psipdata(conf.t.n * points.size());
+//   std::vector<c64> psimdata(conf.t.n * points.size());
+//   auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
+//   for (u32 i = 0; i < conf.t.n; i++) {
+//     psi = rk4step(psi, conf.t.d(), rhs);
+//     size_t byteSize = psi.size() * sizeof(c64);
+//     memcpy(psipdata.data() + i * byteSize, psi.data(), byteSize);
+//   }
+//
+//   H5File file(conf.outfile.c_str());
+//   if (file == H5I_INVALID_HID) {
+//     std::cerr << "Failed to create file " << conf.outfile << std::endl;
+//     return 1;
+//   }
+//   writeArray<2>("psi", file, c_double_id, psipdata.data(),
+//                 {conf.t.n, 2 * points.size()});
+//   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
+//                 {conf.t.n});
+//   return 0;
+// }
 
 int doBasicNLin(const BasicNLinConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
