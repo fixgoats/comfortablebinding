@@ -16,7 +16,6 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd;
   c.key = *tbl[#key].value<decltype(c.key)>()
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname) {
-  std::print("afhjsd {}", 3 * 4);
   logDebug("Function: tomlToDynConf.");
   toml::table tbl;
   try {

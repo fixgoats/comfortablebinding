@@ -1,6 +1,7 @@
 build/
 debug-build/
 debug/
+release/
 .cache/
 compile_commands.json
 log.txt
