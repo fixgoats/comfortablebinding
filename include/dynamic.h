@@ -34,6 +34,7 @@ struct TETMConf {
   std::optional<f64> searchRadius;
   f64 p;
   f64 alpha;
+  f64 j;
   RangeConf<f64> t;
 };
 

@@ -44,6 +44,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     SET_STRUCT_FIELD(tc, ttbl, pointPath);
     SET_STRUCT_FIELD(tc, ttbl, alpha);
     SET_STRUCT_FIELD(tc, ttbl, p);
+    SET_STRUCT_FIELD(tc, ttbl, j);
     if (ttbl.contains("searchRadius")) {
       tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
     }
@@ -136,36 +137,7 @@ auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
   };
 }
 
-struct TETM {
-  typedef TETM Self;
-
-  VectorXcd psip;
-  VectorXcd psim;
-
-  TETM(u64 n) : psip{n}, psim{n} {}
-  TETM(VectorXcd psip, VectorXcd psim) : psip{psip}, psim{psip} {}
-  size_t byteSize() { return 2 * psip.size() * sizeof(c64); }
-  Self& operator*=(f64 b) {
-    psip *= b;
-    psim *= b;
-    return *this;
-  }
-  friend Self operator*(Self lhs, f64 b) { return lhs *= b; }
-  Self& operator+=(const Self& rhs) {
-    psip += rhs.psip;
-    psim += rhs.psim;
-    return *this;
-  }
-  friend Self operator+(Self lhs, const Self& b) { return lhs += b; }
-  Self& operator-=(const Self& rhs) {
-    psip -= rhs.psip;
-    psim -= rhs.psim;
-    return *this;
-  }
-  friend Self operator-(Self lhs, const Self& rhs) { return lhs -= rhs; }
-};
-
-auto tetmNonLin(const SparseMatrix<c64>& iJ, const SparseMatrix<c64>& iL, f64 p,
+auto tetmNonLin(const SparseMatrix<f64>& iJ, const SparseMatrix<c64>& iL, f64 p,
                 f64 alpha) {
   return [&, p, alpha](const MatrixX2cd& psi) {
     logDebug("Function: tetmNonLin.");
@@ -196,22 +168,26 @@ auto tetmNonLin(const SparseMatrix<c64>& iJ, const SparseMatrix<c64>& iL, f64 p,
   };
 }
 
-MatrixX2cd explTETM(MatrixX2cd psi, const SparseMatrix<c64>& iJ,
-                    const SparseMatrix<c64>& iL, f64 p, f64 alpha) {
-  MatrixX2cd first = (p - 1) * psi;
-  MatrixX2cd second = -c64{0, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
-  MatrixX2cd third = iJ * psi;
-  MatrixX2cd fourth(psi.rows(), 2);
-  return first + second + third + fourth;
+MatrixX2cd explTETM(MatrixX2cd psi, const SparseMatrix<c64>& J,
+                    const SparseMatrix<c64>& L, f64 p, f64 alpha) {
+  MatrixX2cd complicated(psi.rows(), 2);
+  complicated.col(0) = L * psi.col(1);
+  complicated.col(1) = -L.conjugate() * psi.col(0);
+  return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) + J * psi +
+         complicated;
+  // +complicated;
+  // iJ * psi;
+  // - c64{0, alpha} *  +
+  //        iJ * psi + complicated;
 }
 
-MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& iJ,
-                       const SparseMatrix<c64>& iL, f64 p, f64 alpha, f64 dt) {
+MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& J,
+                       const SparseMatrix<c64>& L, f64 p, f64 alpha, f64 dt) {
 
-  MatrixX2cd k1 = explTETM(psi, iJ, iL, p, alpha);
-  MatrixX2cd k2 = explTETM(psi + 0.5 * dt * k1, iJ, iL, p, alpha);
-  MatrixX2cd k3 = explTETM(psi + 0.5 * dt * k2, iJ, iL, p, alpha);
-  MatrixX2cd k4 = explTETM(psi + dt * k3, iJ, iL, p, alpha);
+  MatrixX2cd k1 = explTETM(psi, J, L, p, alpha);
+  MatrixX2cd k2 = explTETM(psi + 0.5 * dt * k1, J, L, p, alpha);
+  MatrixX2cd k3 = explTETM(psi + 0.5 * dt * k2, J, L, p, alpha);
+  MatrixX2cd k4 = explTETM(psi + dt * k3, J, L, p, alpha);
   MatrixX2cd ret = psi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
   return ret;
 }
@@ -298,8 +274,10 @@ int doBasic(const BasicConf& conf) {
   }
   auto rhs = basic(iH);
 
-  std::vector<c64> orderparam(conf.t.n);
-  for (u32 i = 0; i < conf.t.n; i++) {
+  std::vector<c64> orderparam(conf.t.n + 1);
+  orderparam[0] =
+      (c64{0, 1} * psi.array().arg()).exp().sum() / (f64)points.size();
+  for (u32 i = 1; i < conf.t.n + 1; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
     orderparam[i] =
         (c64{0, 1} * psi.array().arg()).exp().sum() / (f64)points.size();
@@ -314,33 +292,39 @@ int doBasic(const BasicConf& conf) {
     return 1;
   }
   std::cout << "Writing full data\n";
-  writeArray<1>("data", file, c_double_id, orderparam.data(), {conf.t.n});
+  writeArray<1>("data", file, c_double_id, orderparam.data(), {conf.t.n + 1});
   std::cout << "Writing corresponding times\n";
-  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
-                {conf.t.n});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
+                linspace(conf.t, true).data(), {conf.t.n});
 
   return 0;
 }
 
 int doTETM(const TETMConf& conf) {
   logDebug("Function: doTETM.");
-  std::vector<Point> points = readPoints(conf.pointPath);
+  const std::vector<Point> points = readPoints(conf.pointPath);
   logDebug("Read points.");
   kdt::KDTree<Point> kdtree(points);
   logDebug("Built kdtree");
-  f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
-                                             : 1.01 * avgNNDist(kdtree, points);
+  const f64 avgradius = avgNNDist(kdtree, points);
+  const f64 radius = conf.searchRadius.has_value()
+                         ? conf.searchRadius.value()
+                         : 1.01 * 1.73205080757 * avgradius;
+  std::cout << "Radius is: " << radius << '\n';
   logDebug("Using search radius: {}", radius);
-  SparseMatrix<c64> iJ = SparseHC(points, kdtree, radius, [](Vector2d d) {
-    return c64{0, -1} * std::exp(-d.norm());
-  });
+  SparseMatrix<c64> J =
+      conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
+        return c64{0, -1} * std::exp(-d.norm());
+      });
   logDebug("Made sparse matrix iJ.");
-  SparseMatrix<c64> iL =
-      c64{0, -1} * SparseHC(points, kdtree, radius, [](Vector2d d) {
-        return 0.5 * std::exp(-d.norm()) *
+  SparseMatrix<c64> L =
+      0.5 * conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
+        // std::cout << d.squaredNorm() << '\n';
+        return c64{0, -1} * std::exp(-d.norm()) *
                c64{1 - 2 * d(1) * d(1) / d.squaredNorm(),
                    2 * d(0) * d(1) / d.squaredNorm()};
       });
+  // std::cout << L << '\n';
   logDebug("Made sparse matrix iL.");
   std::random_device dev;
   std::mt19937 gen(dev());
@@ -349,38 +333,41 @@ int doTETM(const TETMConf& conf) {
   MatrixX2cd psi(points.size(), 2);
   u32 psin = psi.rows();
   u32 psim = psi.cols();
-  logDebug("Allocated psi with dims {}x{}", psin, psim);
+  logDebug("Allocated psi with dims {}x{}", psi.rows(), psi.cols());
   logDebug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
-    *(psi.data() + i) = {cos(dis(gen)), sin(dis(gen))};
+    auto x = dis(gen);
+    *(psi.data() + i) = {cos(x), sin(x)};
   }
   u32 overallSize = conf.t.n * points.size();
   logDebug("Allocating psipdata with {} elements.", overallSize);
-  std::vector<c64> psidata(conf.t.n * points.size() * 2);
+  std::vector<c64> psidata((conf.t.n) * points.size() * 2);
+  size_t byteSize = psi.size() * sizeof(c64);
+  memcpy(psidata.data(), psi.data(), byteSize);
   // logDebug("Allocating psimdata with {} elements.", overallSize);
   // std::vector<c64> psimdata(conf.t.n * points.size());
-  logDebug("Testing allocation first");
-  MatrixX2cd first = (conf.p - 1) * psi;
-  logDebug("Testing allocation second");
-  MatrixX2cd second = -c64{0, conf.alpha} * psi.cwiseAbs2().transpose() * psi;
-  logDebug("Testing allocation third");
-  MatrixX2cd third = iJ * psi;
-  logDebug("Testing allocation fourth");
-  MatrixX2cd fourth(psi.rows(), 2);
-  logDebug("Testing spm v multiplication");
-  MatrixXcd b = iL * psi.col(1);
-  logDebug("Setting other fourth values");
-  fourth.col(1) = -iL.conjugate() * psi.col(0);
+  // logDebug("Testing allocation first");
+  // MatrixX2cd first = (conf.p - 1) * psi;
+  // logDebug("Testing allocation second");
+  // MatrixX2cd second = -c64{0, conf.alpha} * psi.cwiseAbs2().transpose() *
+  // psi; logDebug("Testing allocation third"); MatrixX2cd third = iJ * psi;
+  // logDebug("Testing allocation fourth");
+  // MatrixX2cd fourth(psi.rows(), 2);
+  // logDebug("Testing spm v multiplication");
+  // MatrixXcd b = iL * psi.col(1);
+  // logDebug("Setting other fourth values");
+  // fourth.col(1) = -iL.conjugate() * psi.col(0);
   // auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
-  logDebug("Created rhs function.");
-  size_t byteSize = psi.size() * sizeof(c64);
-  for (u32 i = 0; i < conf.t.n; i++) {
-    psi = tetmRK4Step(psi, iJ, iL, conf.p, conf.alpha, conf.t.d());
+  // logDebug("Created rhs function.");
+  std::cout << "byteSize is: " << byteSize << '\n';
+  std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
+  for (u32 i = 1; i < conf.t.n; i++) {
+    psi = tetmRK4Step(psi, J, L, conf.p, conf.alpha, conf.t.d());
     u32 n = psi.rows();
     u32 m = psi.cols();
     logDebug("Return psiish with dims {}x{}", n, m);
     logDebug("Copying to psipdata.");
-    memcpy(psidata.data() + i * byteSize, psi.data(), byteSize);
+    memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
     // logDebug("Copying to psimdata.");
     // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
   }
@@ -393,12 +380,12 @@ int doTETM(const TETMConf& conf) {
   }
   logDebug("Writing psip to file.");
   writeArray<3>("psi", file, c_double_id, psidata.data(),
-                {conf.t.n, points.size(), 2});
+                {conf.t.n, 2, points.size()});
   // logDebug("Writing psim to file.");
   // writeArray<2>("psip", file, c_double_id, psipdata.data(),
   //               {conf.t.n, points.size()});
-  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
-                {conf.t.n});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
+                linspace(conf.t, true).data(), {conf.t.n});
   logDebug("Exiting doTETM.");
   return 0;
 }
@@ -461,9 +448,10 @@ int doBasicNLin(const BasicNLinConf& conf) {
   for (auto& e : psi) {
     e = {cosf(dis(gen)), sinf(dis(gen))};
   }
-  std::vector<c64> outdata(conf.t.n * points.size());
+  std::vector<c64> outdata((conf.t.n + 1) * points.size());
+  memcpy(outdata.data(), psi.data(), psi.size() * sizeof(c64));
   auto rhs = basicNonLin(iH, conf.alpha);
-  for (u32 i = 0; i < conf.t.n; i++) {
+  for (u32 i = 1; i < conf.t.n + 1; i++) {
     psi = rk4step(psi, conf.t.d(), rhs);
     memcpy(outdata.data() + i * psi.size() * sizeof(c64), psi.data(),
            psi.size() * sizeof(c64));
@@ -476,8 +464,8 @@ int doBasicNLin(const BasicNLinConf& conf) {
   }
   writeArray<2>("data", file, c_double_id, outdata.data(),
                 {conf.t.n, points.size()});
-  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, linspace(conf.t).data(),
-                {conf.t.n});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
+                linspace(conf.t, true).data(), {conf.t.n});
   return 0;
 }
 

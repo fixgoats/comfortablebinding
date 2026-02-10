@@ -97,9 +97,10 @@ constexpr size_t vecBytes(std::vector<T>& v) {
 }
 
 template <class T>
-Eigen::VectorX<T> linspace(RangeConf<T> rc) {
-  Eigen::VectorX<T> lin(rc.n);
-  for (u64 i = 0; i < rc.n; ++i) {
+Eigen::VectorX<T> linspace(RangeConf<T> rc, bool endpoint) {
+  u64 oneOrZero = endpoint ? 1 : 0;
+  Eigen::VectorX<T> lin(rc.n + oneOrZero);
+  for (u64 i = 0; i < rc.n + oneOrZero; ++i) {
     lin(i) = rc.ith(i);
   }
   return lin;
