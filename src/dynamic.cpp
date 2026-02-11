@@ -317,6 +317,8 @@ int doTETM(const TETMConf& conf) {
         return c64{0, -1} * std::exp(-d.norm());
       });
   logDebug("Made sparse matrix iJ.");
+  auto sol = hermitianEigenSolver(MatrixXcd(J));
+  std::cout << "Highest eigenvalue is: " << sol.D.maxCoeff() << '\n';
   SparseMatrix<c64> L =
       0.5 * conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
         // std::cout << d.squaredNorm() << '\n';
