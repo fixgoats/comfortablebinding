@@ -38,6 +38,17 @@ struct TETMConf {
   RangeConf<f64> t;
 };
 
+struct DelayConf {
+  std::string outfile;
+  std::string pointPath;
+  std::optional<f64> searchRadius;
+  f64 p;
+  f64 alpha;
+  f64 j;
+  f64 v;
+  RangeConf<f64> t;
+}
+
 struct DynConf {
   std::optional<KuramotoConf> kuramoto;
   std::optional<BasicConf> basic;

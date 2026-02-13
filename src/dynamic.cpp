@@ -52,15 +52,30 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
 
     conf.tetm = tc;
   }
+  if (tbl.contains("delay")) {
+    TETMConf tc;
+    toml::table ttbl = *tbl["delay"].as_table();
+    SET_STRUCT_FIELD(tc, ttbl, outfile);
+    SET_STRUCT_FIELD(tc, ttbl, pointPath);
+    SET_STRUCT_FIELD(tc, ttbl, alpha);
+    SET_STRUCT_FIELD(tc, ttbl, p);
+    SET_STRUCT_FIELD(tc, ttbl, j);
+    if (ttbl.contains("searchRadius")) {
+      tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
+    }
+    tc.t = tblToRange(*ttbl["t"].as_table());
+
+    conf.tetm = tc;
+  }
   if (tbl.contains("basicNonLin")) {
     BasicNLinConf bc{};
     toml::table btbl = *tbl["basicNonLin"].as_table();
     SET_STRUCT_FIELD(bc, btbl, outfile);
     SET_STRUCT_FIELD(bc, btbl, pointPath);
+    SET_STRUCT_FIELD(bc, btbl, alpha);
     if (btbl.contains("searchRadius")) {
       bc.searchRadius = btbl["searchRadius"].value<f64>().value();
     }
-    SET_STRUCT_FIELD(bc, btbl, alpha);
     bc.t = tblToRange(*btbl["t"].as_table());
     conf.basicnlin = bc;
   }
