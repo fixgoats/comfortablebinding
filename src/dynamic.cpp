@@ -4,6 +4,7 @@
 #include "io.h"
 #include "logging.hpp"
 #include "unsupported/Eigen/MatrixFunctions"
+#include <gsl/gsl_sf.h>
 // #include "vkcore.hpp"
 #include <print>
 #include <random>
@@ -27,6 +28,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   }
   DynConf conf{};
   if (tbl.contains("basic")) {
+    logDebug("Writing config for basic.");
     BasicConf bc{};
     toml::table btbl = *tbl["basic"].as_table();
     SET_STRUCT_FIELD(bc, btbl, outfile);
@@ -36,6 +38,15 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     }
     bc.t = tblToRange(*btbl["t"].as_table());
     conf.basic = bc;
+  }
+  if (tbl.contains("basicdistance")) {
+    logDebug("Writing config for distance scan");
+    BasicDistanceConf bc{};
+    toml::table btbl = *tbl["basicdistance"].as_table();
+    SET_STRUCT_FIELD(bc, btbl, outfile);
+    bc.t = tblToRange(*btbl["t"].as_table());
+    bc.sep = tblToRange(*btbl["sep"].as_table());
+    conf.bd = bc;
   }
   if (tbl.contains("tetm")) {
     TETMConf tc;
@@ -247,6 +258,14 @@ auto LorenzDiff(f64 sigma, f64 R, f64 b) {
   };
 }
 
+auto basicHankel(f64 p, f64 alpha, f64 sep) {
+  return [=](Eigen::Vector2cd psi) {
+    return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
+           c64{gsl_sf_bessel_J0(sep), gsl_sf_bessel_Y0(sep)} *
+               psi(Eigen::indexing::lastN(2).reverse());
+  };
+}
+
 int doLorenz(const BasicConf&) {
   const f64 sigma = 10.0;
   const f64 R = 28.0;
@@ -266,6 +285,49 @@ int doLorenz(const BasicConf&) {
 
   for (u64 i = 0; i < 100; ++i) {
   }
+  return 0;
+}
+
+int doDistanceScan(const BasicDistanceConf& conf) {
+  logDebug("Function: doDistanceScan");
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  const auto seps = linspace(conf.sep, true);
+  const Eigen::VectorXd times = linspace(conf.t, true);
+  std::vector<c64> psil(conf.t.n * conf.sep.n);
+  std::vector<c64> psir(conf.t.n * conf.sep.n);
+  logDebug("Entering separation loop.");
+#pragma omp parallel for
+  for (u64 i = 0; i < conf.sep.n; ++i) {
+    const auto rhs = basicHankel(conf.p, conf.alpha, conf.sep.ith(i));
+    const f64 seed1 = dis(gen);
+    const f64 seed2 = dis(gen);
+    Eigen::Vector2cd psi{c64{cos(seed1), sin(seed1)},
+                         c64{cos(seed2), sin(seed2)}};
+    psil[i * conf.t.n] = psi.x();
+    psir[i * conf.t.n] = psi.y();
+    logDebug("Entering solution loop.");
+    for (u64 j = 1; j < conf.t.n; ++j) {
+      psi = rk4step(psi, conf.t.d(), rhs);
+      psil[i * conf.t.n + j] = psi.x();
+      psir[i * conf.t.n + j] = psi.y();
+    }
+  }
+  logDebug("Finished calculating.");
+
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  logDebug("Writing psil to file.");
+  writeArray<2>("psil", file, c_double_id, psil.data(), {conf.sep.n, conf.t.n});
+  logDebug("Writing psir to file.");
+  writeArray<2>("psir", file, c_double_id, psir.data(), {conf.sep.n, conf.t.n});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
+                {conf.t.n});
+  logDebug("Exiting doDistanceScan.");
   return 0;
 }
 
@@ -322,14 +384,13 @@ int doTETM(const TETMConf& conf) {
   kdt::KDTree<Point> kdtree(points);
   logDebug("Built kdtree");
   const f64 avgradius = avgNNDist(kdtree, points);
-  const f64 radius = conf.searchRadius.has_value()
-                         ? conf.searchRadius.value()
-                         : 1.01 * 1.73205080757 * avgradius;
+  const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                                   : 1.01 * avgradius;
   std::cout << "Radius is: " << radius << '\n';
   logDebug("Using search radius: {}", radius);
   SparseMatrix<c64> J =
       conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
-        return c64{0, -1} * std::exp(-d.norm());
+        return c64{gsl_sf_bessel_J0(d.norm()), gsl_sf_bessel_Y0(d.norm())};
       });
   logDebug("Made sparse matrix iJ.");
   auto sol = hermitianEigenSolver(MatrixXcd(J));
@@ -337,7 +398,7 @@ int doTETM(const TETMConf& conf) {
   SparseMatrix<c64> L =
       0.5 * conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
         // std::cout << d.squaredNorm() << '\n';
-        return c64{0, -1} * std::exp(-d.norm()) *
+        return c64{gsl_sf_bessel_J0(d.norm()), gsl_sf_bessel_Y0(d.norm())} *
                c64{1 - 2 * d(1) * d(1) / d.squaredNorm(),
                    2 * d(0) * d(1) / d.squaredNorm()};
       });
@@ -348,9 +409,9 @@ int doTETM(const TETMConf& conf) {
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
   logDebug("Allocating psi.");
   MatrixX2cd psi(points.size(), 2);
-  u32 psin = psi.rows();
-  u32 psim = psi.cols();
-  logDebug("Allocated psi with dims {}x{}", psi.rows(), psi.cols());
+  u64 n = psi.rows();
+  u64 m = psi.cols();
+  logDebug("Allocated psi with dims {}x{}", n, m);
   logDebug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
     auto x = dis(gen);
@@ -380,8 +441,8 @@ int doTETM(const TETMConf& conf) {
   std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
   for (u32 i = 1; i < conf.t.n; i++) {
     psi = tetmRK4Step(psi, J, L, conf.p, conf.alpha, conf.t.d());
-    u32 n = psi.rows();
-    u32 m = psi.cols();
+    u64 n = psi.rows();
+    u64 m = psi.cols();
     logDebug("Return psiish with dims {}x{}", n, m);
     logDebug("Copying to psipdata.");
     memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);

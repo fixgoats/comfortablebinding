@@ -21,6 +21,7 @@ set(CMAKE_CXX_COMPILER "clang++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 
+find_package(GSL REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(BLAS REQUIRED COMPONENTS openmp)
 find_package(LAPACK REQUIRED)
@@ -84,14 +85,15 @@ endif()
 find_package(HDF5 REQUIRED COMPONENTS C HL)
 
 if(NOT OpenMP_CXX_FOUND)
-    target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5 Vulkan::Vulkan)
-    target_link_libraries(dynamic PRIVATE hdf5::hdf5 Vulkan::Vulkan)
+    target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5 GSL::gsl)
+    target_link_libraries(dynamic PRIVATE hdf5::hdf5 GSL::gsl)
 else()
     target_link_libraries(
         ${MAIN_TARGET}
         PRIVATE
             hdf5::hdf5
             OpenMP::OpenMP_CXX
+            GSL::gsl
             ${BLAS_LIBRARIES}
             ${LAPACK_LIBRARIES}
     )
@@ -101,6 +103,7 @@ else()
             hdf5::hdf5
             OpenMP::OpenMP_CXX
             Vulkan::Vulkan
+            GSL::gsl
             ${BLAS_LIBRARIES}
             ${LAPACK_LIBRARIES}
     )

@@ -20,6 +20,14 @@ struct BasicConf {
   RangeConf<f64> t;
 };
 
+struct BasicDistanceConf {
+  std::string outfile;
+  f64 alpha;
+  f64 p;
+  RangeConf<f64> sep;
+  RangeConf<f64> t;
+};
+
 struct BasicNLinConf {
   std::string outfile;
   std::string pointPath;
@@ -47,11 +55,12 @@ struct DelayConf {
   f64 j;
   f64 v;
   RangeConf<f64> t;
-}
+};
 
 struct DynConf {
   std::optional<KuramotoConf> kuramoto;
   std::optional<BasicConf> basic;
+  std::optional<BasicDistanceConf> bd;
   std::optional<BasicNLinConf> basicnlin;
   std::optional<TETMConf> tetm;
 };
@@ -64,3 +73,4 @@ int doBasicNLin(const BasicNLinConf& conf);
 int doExactBasic(const BasicConf& conf);
 int doKuramoto(const KuramotoConf& conf);
 int doTETM(const TETMConf& conf);
+int doDistanceScan(const BasicDistanceConf& conf);

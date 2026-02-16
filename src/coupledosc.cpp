@@ -44,5 +44,8 @@ int main(const int argc, const char* const* argv) {
     if (conf.tetm.has_value()) {
       doTETM(conf.tetm.value());
     }
+    if (conf.bd.has_value()) {
+      doDistanceScan(conf.bd.value());
+    }
   }
 }
