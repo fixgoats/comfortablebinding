@@ -74,3 +74,4 @@ int doExactBasic(const BasicConf& conf);
 int doKuramoto(const KuramotoConf& conf);
 int doTETM(const TETMConf& conf);
 int doDistanceScan(const BasicDistanceConf& conf);
+int doNoCoupling(const BasicDistanceConf& conf);

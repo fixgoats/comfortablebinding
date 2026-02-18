@@ -45,7 +45,7 @@ int main(const int argc, const char* const* argv) {
       doTETM(conf.tetm.value());
     }
     if (conf.bd.has_value()) {
-      doDistanceScan(conf.bd.value());
+      doNoCoupling(conf.bd.value());
     }
   }
 }

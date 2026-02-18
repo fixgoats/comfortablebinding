@@ -266,6 +266,16 @@ auto basicHankel(f64 p, f64 alpha, f64 sep) {
   };
 }
 
+auto noCoupling(f64 p, f64 alpha) {
+  return [=](Eigen::Vector2cd psi) { return c64{0, -1} * psi; };
+}
+
+auto noCouplingDrivenDissipative(f64 p, f64 alpha) {
+  return [=](Eigen::Vector2cd psi) {
+    return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
+  };
+}
+
 int doLorenz(const BasicConf&) {
   const f64 sigma = 10.0;
   const f64 R = 28.0;
@@ -285,6 +295,47 @@ int doLorenz(const BasicConf&) {
 
   for (u64 i = 0; i < 100; ++i) {
   }
+  return 0;
+}
+
+int doNoCoupling(const BasicDistanceConf& conf) {
+  logDebug("Function: doDistanceScan");
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  const auto seps = linspace(conf.sep, true);
+  const Eigen::VectorXd times = linspace(conf.t, true);
+  std::vector<c64> psil(conf.t.n);
+  std::vector<c64> psir(conf.t.n);
+  logDebug("Entering separation loop.");
+  const auto rhs = noCoupling(conf.p, conf.alpha);
+  const f64 seed1 = dis(gen);
+  const f64 seed2 = dis(gen);
+  Eigen::Vector2cd psi{c64{cos(seed1), sin(seed1)},
+                       c64{cos(seed2), sin(seed2)}};
+  psil[0] = psi.x();
+  psir[0] = psi.y();
+  logDebug("Entering solution loop.");
+  for (u64 j = 1; j < conf.t.n; ++j) {
+    psi = rk4step(psi, conf.t.d(), rhs);
+    psil[j] = psi.x();
+    psir[j] = psi.y();
+  }
+  logDebug("Finished calculating.");
+
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  logDebug("Writing psil to file.");
+  writeArray<1>("psil", file, c_double_id, psil.data(), {conf.t.n});
+  logDebug("Writing psir to file.");
+  writeArray<1>("psir", file, c_double_id, psir.data(), {conf.t.n});
+  logDebug("Writing time to file.");
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
+                {conf.t.n});
+  logDebug("Exiting doDistanceScan.");
   return 0;
 }
 
