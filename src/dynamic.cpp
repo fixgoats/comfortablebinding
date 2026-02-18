@@ -44,6 +44,9 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     BasicDistanceConf bc{};
     toml::table btbl = *tbl["basicdistance"].as_table();
     SET_STRUCT_FIELD(bc, btbl, outfile);
+    SET_STRUCT_FIELD(bc, btbl, alpha);
+    SET_STRUCT_FIELD(bc, btbl, p);
+    SET_STRUCT_FIELD(bc, btbl, j);
     bc.t = tblToRange(*btbl["t"].as_table());
     bc.sep = tblToRange(*btbl["sep"].as_table());
     conf.bd = bc;
@@ -258,21 +261,24 @@ auto LorenzDiff(f64 sigma, f64 R, f64 b) {
   };
 }
 
-auto basicHankel(f64 p, f64 alpha, f64 sep) {
+auto basicHankel(f64 p, f64 alpha, f64 j, f64 sep) {
   return [=](Eigen::Vector2cd psi) {
-    return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
-           c64{gsl_sf_bessel_J0(sep), gsl_sf_bessel_Y0(sep)} *
-               psi(Eigen::indexing::lastN(2).reverse());
+    return Eigen::Vector2cd(
+        p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
+        j * c64{gsl_sf_bessel_J0(sep), gsl_sf_bessel_Y0(sep)} *
+            psi(Eigen::indexing::lastN(2).reverse()));
   };
 }
 
 auto noCoupling(f64 p, f64 alpha) {
-  return [=](Eigen::Vector2cd psi) { return c64{0, -1} * psi; };
+  return
+      [=](Eigen::Vector2cd psi) { return Eigen::Vector2cd(c64{0, -1} * psi); };
 }
 
 auto noCouplingDrivenDissipative(f64 p, f64 alpha) {
   return [=](Eigen::Vector2cd psi) {
-    return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
+    return Eigen::Vector2cd(p * psi -
+                            c64{0, alpha} * psi.cwiseAbs2().cwiseProduct(psi));
   };
 }
 
@@ -335,6 +341,47 @@ int doNoCoupling(const BasicDistanceConf& conf) {
   logDebug("Writing time to file.");
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
                 {conf.t.n});
+  logDebug("Exiting doNoCoupling.");
+  return 0;
+}
+
+int doNCDD(const BasicDistanceConf& conf) {
+  logDebug("Function: doDistanceScan");
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  const auto seps = linspace(conf.sep, true);
+  const Eigen::VectorXd times = linspace(conf.t, true);
+  std::vector<c64> psil(conf.t.n);
+  std::vector<c64> psir(conf.t.n);
+  logDebug("Entering separation loop.");
+  const auto rhs = noCouplingDrivenDissipative(conf.p, conf.alpha);
+  const f64 seed1 = dis(gen);
+  const f64 seed2 = dis(gen);
+  Eigen::Vector2cd psi{c64{cos(seed1), sin(seed1)},
+                       c64{cos(seed2), sin(seed2)}};
+  psil[0] = psi.x();
+  psir[0] = psi.y();
+  logDebug("Entering solution loop.");
+  for (u64 j = 1; j < conf.t.n; ++j) {
+    psi = rk4step(psi, conf.t.d(), rhs);
+    psil[j] = psi.x();
+    psir[j] = psi.y();
+  }
+  logDebug("Finished calculating.");
+
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  logDebug("Writing psil to file.");
+  writeArray<1>("psil", file, c_double_id, psil.data(), {conf.t.n});
+  logDebug("Writing psir to file.");
+  writeArray<1>("psir", file, c_double_id, psir.data(), {conf.t.n});
+  logDebug("Writing time to file.");
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
+                {conf.t.n});
   logDebug("Exiting doDistanceScan.");
   return 0;
 }
@@ -351,7 +398,7 @@ int doDistanceScan(const BasicDistanceConf& conf) {
   logDebug("Entering separation loop.");
 #pragma omp parallel for
   for (u64 i = 0; i < conf.sep.n; ++i) {
-    const auto rhs = basicHankel(conf.p, conf.alpha, conf.sep.ith(i));
+    const auto rhs = basicHankel(conf.p, conf.alpha, conf.j, conf.sep.ith(i));
     const f64 seed1 = dis(gen);
     const f64 seed2 = dis(gen);
     Eigen::Vector2cd psi{c64{cos(seed1), sin(seed1)},
@@ -379,6 +426,75 @@ int doDistanceScan(const BasicDistanceConf& conf) {
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
                 {conf.t.n});
   logDebug("Exiting doDistanceScan.");
+  return 0;
+}
+
+int doBasicHankelDD(const TETMConf& conf) {
+  logDebug("Function: doBasicHankelDD.");
+  const std::vector<Point> points = readPoints(conf.pointPath);
+  logDebug("Read points.");
+  kdt::KDTree<Point> kdtree(points);
+  logDebug("Built kdtree");
+  const f64 avgradius = avgNNDist(kdtree, points);
+  const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+                                                   : 1.01 * avgradius;
+  std::cout << "Radius is: " << radius << '\n';
+  logDebug("Using search radius: {}", radius);
+  SparseMatrix<c64> J =
+      conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
+        return c64{gsl_sf_bessel_J0(d.norm()), gsl_sf_bessel_Y0(d.norm())};
+      });
+  logDebug("Made sparse matrix iJ.");
+  Eigen::ComplexEigenSolver<SparseMatrix<c64>> sol(J);
+  auto max_coeff = std::ranges::max_element(
+      sol.eigenvalues(), [](c64 a, c64 b) { return a.real() < b.real(); });
+  std::cout << "Highest eigenvalue is: " << max_coeff->real() << '\n';
+  std::random_device dev;
+  std::mt19937 gen(dev());
+  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+  logDebug("Allocating psi.");
+  MatrixX2cd psi(points.size(), 2);
+  u64 n = psi.rows();
+  u64 m = psi.cols();
+  logDebug("Allocated psi with dims {}x{}", n, m);
+  logDebug("Writing random coordinates to psi.");
+  for (u64 i = 0; i < psi.size(); i++) {
+    auto x = dis(gen);
+    *(psi.data() + i) = {cos(x), sin(x)};
+  }
+  u32 overallSize = conf.t.n * points.size();
+  logDebug("Allocating psipdata with {} elements.", overallSize);
+  std::vector<c64> psidata((conf.t.n) * points.size() * 2);
+  size_t byteSize = psi.size() * sizeof(c64);
+  memcpy(psidata.data(), psi.data(), byteSize);
+  std::cout << "byteSize is: " << byteSize << '\n';
+  std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
+  for (u32 i = 1; i < conf.t.n; i++) {
+    psi = tetmRK4Step(psi, J, L, conf.p, conf.alpha, conf.t.d());
+    u64 n = psi.rows();
+    u64 m = psi.cols();
+    logDebug("Return psiish with dims {}x{}", n, m);
+    logDebug("Copying to psipdata.");
+    memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
+    // logDebug("Copying to psimdata.");
+    // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
+  }
+  logDebug("Finished calculating.");
+
+  H5File file(conf.outfile.c_str());
+  if (file == H5I_INVALID_HID) {
+    std::cerr << "Failed to create file " << conf.outfile << std::endl;
+    return 1;
+  }
+  logDebug("Writing psip to file.");
+  writeArray<3>("psi", file, c_double_id, psidata.data(),
+                {conf.t.n, 2, points.size()});
+  // logDebug("Writing psim to file.");
+  // writeArray<2>("psip", file, c_double_id, psipdata.data(),
+  //               {conf.t.n, points.size()});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
+                linspace(conf.t, true).data(), {conf.t.n});
+  logDebug("Exiting doTETM.");
   return 0;
 }
 

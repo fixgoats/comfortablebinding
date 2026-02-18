@@ -24,6 +24,7 @@ struct BasicDistanceConf {
   std::string outfile;
   f64 alpha;
   f64 p;
+  f64 j;
   RangeConf<f64> sep;
   RangeConf<f64> t;
 };
@@ -75,3 +76,4 @@ int doKuramoto(const KuramotoConf& conf);
 int doTETM(const TETMConf& conf);
 int doDistanceScan(const BasicDistanceConf& conf);
 int doNoCoupling(const BasicDistanceConf& conf);
+int doNCDD(const BasicDistanceConf& conf);
