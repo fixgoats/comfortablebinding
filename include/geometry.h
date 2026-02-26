@@ -16,12 +16,12 @@ struct Neighbour {
   }
 };
 
-struct Point : std::array<double, 2> {
-  static constexpr int DIM = 2;
+struct Point : std::array<f64, 2> {
+  static constexpr s64 DIM = 2;
   u32 idx;
 
   Point() {}
-  Point(double x, double y, u32 idx) : idx{idx} {
+  Point(f64 x, f64 y, u32 idx) : idx{idx} {
     (*this)[0] = x;
     (*this)[1] = y;
   }

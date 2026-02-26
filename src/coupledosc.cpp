@@ -42,7 +42,7 @@ int main(const int argc, const char* const* argv) {
       doBasicNLin(conf.basicnlin.value());
     }
     if (conf.tetm.has_value()) {
-      doTETM(conf.tetm.value());
+      doBasicHankelDD(conf.tetm.value());
     }
     if (conf.bd.has_value()) {
       doDistanceScan(conf.bd.value());

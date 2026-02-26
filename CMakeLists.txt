@@ -34,6 +34,7 @@ set(EIGEN_USE_LAPACKE)
 add_executable(${MAIN_TARGET})
 add_executable(test src/test.cpp)
 add_executable(dynamic)
+add_executable(couplings)
 target_sources(
     dynamic
     PRIVATE
@@ -43,7 +44,14 @@ target_sources(
         src/geometry.cpp
         src/hermEigen.cpp
 )
+
 target_sources(${MAIN_TARGET} PRIVATE ${PROJECT_SOURCES})
+target_sources(couplings
+PRIVATE
+src/couplingmaker.cpp
+src/io.cpp
+src/geometry.cpp)
+
 add_compile_options(
     -Wall
     -Wextra
@@ -62,13 +70,15 @@ add_compile_definitions(
 
 set_property(TARGET ${MAIN_TARGET} PROPERTY CXX_STANDARD 26)
 set_property(TARGET dynamic PROPERTY CXX_STANDARD 26)
+set_property(TARGET couplings PROPERTY CXX_STANDARD 26)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipoSupported OUTPUT output)
 target_compile_options(${MAIN_TARGET} PRIVATE -Wall)
 
-target_include_directories(${MAIN_TARGET} PRIVATE include deps/eigen-5.0.1)
-target_include_directories(test PRIVATE include deps/eigen-5.0.1)
-target_include_directories(dynamic PRIVATE include deps/eigen-5.0.1)
+target_include_directories(${MAIN_TARGET} PRIVATE include deps/eigen-5.0.1 deps/highfive_dep)
+target_include_directories(test PRIVATE include deps/eigen-5.0.1 deps/highfive_dep)
+target_include_directories(dynamic PRIVATE include deps/eigen-5.0.1 deps/highfive_dep)
+target_include_directories(couplings PRIVATE include deps/eigen-5.0.1 deps/highfive_dep)
 
 if(ipoSupported AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO")
@@ -87,6 +97,12 @@ find_package(HDF5 REQUIRED COMPONENTS C HL)
 if(NOT OpenMP_CXX_FOUND)
     target_link_libraries(${MAIN_TARGET} PRIVATE hdf5::hdf5 GSL::gsl)
     target_link_libraries(dynamic PRIVATE hdf5::hdf5 GSL::gsl)
+    target_link_libraries(
+        couplings
+        PRIVATE
+            hdf5::hdf5
+            GSL::gsl
+    )
 else()
     target_link_libraries(
         ${MAIN_TARGET}
@@ -99,6 +115,16 @@ else()
     )
     target_link_libraries(
         dynamic
+        PRIVATE
+            hdf5::hdf5
+            OpenMP::OpenMP_CXX
+            Vulkan::Vulkan
+            GSL::gsl
+            ${BLAS_LIBRARIES}
+            ${LAPACK_LIBRARIES}
+    )
+    target_link_libraries(
+       couplings 
         PRIVATE
             hdf5::hdf5
             OpenMP::OpenMP_CXX

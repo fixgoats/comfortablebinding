@@ -1,6 +1,8 @@
 #include "dynamic.h"
 #include "SDF.h"
 #include "geometry.h"
+#include "highfive/eigen.hpp"
+#include "highfive/highfive.hpp"
 #include "io.h"
 #include "logging.hpp"
 #include "unsupported/Eigen/MatrixFunctions"
@@ -59,6 +61,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     SET_STRUCT_FIELD(tc, ttbl, alpha);
     SET_STRUCT_FIELD(tc, ttbl, p);
     SET_STRUCT_FIELD(tc, ttbl, j);
+    SET_STRUCT_FIELD(tc, ttbl, rscale);
     if (ttbl.contains("searchRadius")) {
       tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
     }
@@ -429,71 +432,155 @@ int doDistanceScan(const BasicDistanceConf& conf) {
   return 0;
 }
 
+auto hankelDD(const SparseMatrix<c64>& J, f64 p, f64 alpha) {
+  return [&, p, alpha](Eigen::VectorXcd psi) {
+    return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
+           J * psi;
+  };
+}
+
+typedef struct {
+  f64 p;
+  f64 alpha;
+  f64 j;
+  f64 rscale;
+} Params;
+
+HighFive::CompoundType compoundParams() {
+  return {{"p", HighFive::create_datatype<f64>()},
+          {"alpha", HighFive::create_datatype<f64>()},
+          {"j", HighFive::create_datatype<f64>()},
+          {"rscale", HighFive::create_datatype<f64>()}};
+}
+
+HIGHFIVE_REGISTER_TYPE(Params, compoundParams);
+
 int doBasicHankelDD(const TETMConf& conf) {
   logDebug("Function: doBasicHankelDD.");
-  const std::vector<Point> points = readPoints(conf.pointPath);
+  HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
+  logDebug("Read pointfile.");
+  Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
   logDebug("Read points.");
-  kdt::KDTree<Point> kdtree(points);
-  logDebug("Built kdtree");
-  const f64 avgradius = avgNNDist(kdtree, points);
-  const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
+  Eigen::MatrixX2i couplings =
+      pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
+  logDebug("Read couplings.");
+  /*const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
                                                    : 1.01 * avgradius;
   std::cout << "Radius is: " << radius << '\n';
   logDebug("Using search radius: {}", radius);
-  SparseMatrix<c64> J =
-      conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
-        return c64{gsl_sf_bessel_J0(d.norm()), gsl_sf_bessel_Y0(d.norm())};
+  std::vector<Neighbour> toadie = pointsToNbs(points, kdtree, radius);*/
+  const f64 rscale = conf.rscale;
+  const SparseMatrix<c64> J =
+      conf.j * SparseC(points, couplings, [rscale](Vector2d d) {
+        return c64{gsl_sf_bessel_J0(rscale * d.norm()),
+                   gsl_sf_bessel_Y0(rscale * d.norm())};
       });
-  logDebug("Made sparse matrix iJ.");
-  Eigen::ComplexEigenSolver<SparseMatrix<c64>> sol(J);
+  logDebug("Made sparse matrix J.");
+  auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
   auto max_coeff = std::ranges::max_element(
       sol.eigenvalues(), [](c64 a, c64 b) { return a.real() < b.real(); });
   std::cout << "Highest eigenvalue is: " << max_coeff->real() << '\n';
+  const f64 p = (conf.p - 1) * max_coeff->real();
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
   logDebug("Allocating psi.");
-  MatrixX2cd psi(points.size(), 2);
+  VectorXcd psi(points.rows());
   u64 n = psi.rows();
   u64 m = psi.cols();
   logDebug("Allocated psi with dims {}x{}", n, m);
   logDebug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
     auto x = dis(gen);
-    *(psi.data() + i) = {cos(x), sin(x)};
+    *(psi.data() + i) = {1e-4 * cos(x), 1e-4 * sin(x)};
   }
-  u32 overallSize = conf.t.n * points.size();
+  const u32 overallSize = conf.t.n * psi.size();
   logDebug("Allocating psipdata with {} elements.", overallSize);
-  std::vector<c64> psidata((conf.t.n) * points.size() * 2);
-  size_t byteSize = psi.size() * sizeof(c64);
-  memcpy(psidata.data(), psi.data(), byteSize);
+  MatrixXcd psidata(psi.size(), conf.t.n + 1);
+  const size_t byteSize = psi.size() * sizeof(c64);
+  psidata(Eigen::indexing::all, 0) = psi;
   std::cout << "byteSize is: " << byteSize << '\n';
   std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
-  for (u32 i = 1; i < conf.t.n; i++) {
-    psi = tetmRK4Step(psi, J, L, conf.p, conf.alpha, conf.t.d());
-    u64 n = psi.rows();
-    u64 m = psi.cols();
+  auto rhs = hankelDD(J, p, conf.alpha);
+  std::cout << conf.t.n << '\n';
+  for (u32 i = 1; i < conf.t.n + 1; i++) {
+    psi = rk4step(psi, conf.t.d(), rhs);
+    n = psi.rows();
+    m = psi.cols();
     logDebug("Return psiish with dims {}x{}", n, m);
     logDebug("Copying to psipdata.");
-    memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
+    psidata(Eigen::indexing::all, i) = psi;
+    // memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
     // logDebug("Copying to psimdata.");
     // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
   }
   logDebug("Finished calculating.");
 
-  H5File file(conf.outfile.c_str());
+  /*H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
-  }
+  }*/
+  HighFive::File file(conf.outfile, HighFive::File::Truncate);
   logDebug("Writing psip to file.");
-  writeArray<3>("psi", file, c_double_id, psidata.data(),
-                {conf.t.n, 2, points.size()});
+
+  /*writeArray<2>("psi", file, c_double_id, psidata.data(),
+                {conf.t.n, points.size()});*/
+  file.createDataSet("psi", psidata);
+  file.createDataSet("points", points);
+  file.createDataSet("couplings", couplings);
+  file.createDataSet("time", linspace(conf.t, true));
+  // paramType.commit(file, "param_type");
+  HighFive::DataSet paramSet = file.createDataSet(
+      "params", Params{conf.p, conf.alpha, conf.j, conf.rscale});
+  /*f64 params[4] = ;
+  paramSet.write(params);
+  file.flush();*/
+
+  /*hsize_t point_mem_dims[2] = {points.size(), 3};
+  hid_t point_mem_space = H5Screate_simple(2, point_mem_dims, nullptr);
+  hsize_t point_file_dims[2] = {points.size(), 2};
+  hid_t point_file_space = H5Screate_simple(2, point_file_dims, nullptr);
+  hsize_t start[2] = {0, 0};
+  hsize_t stride[2] = {1, 1};
+  hsize_t count[2] = {points.size(), 1};
+  hsize_t block[2] = {1, 2};
+  H5Sselect_hyperslab(point_mem_space, H5S_SELECT_SET, start, stride, count,
+                      block);
+  hid_t pointSet =
+      H5Dcreate2(file, "points", H5T_NATIVE_DOUBLE, point_file_space,
+                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  H5Dwrite(pointSet, H5T_NATIVE_DOUBLE, point_mem_space, point_file_space,
+           H5P_DEFAULT, points.data());
+  hsize_t nb_mem_dims[2] = {couplings.size(), 4};
+  hid_t nb_mem_space = H5Screate_simple(2, nb_mem_dims, nullptr);
+  hsize_t nb_file_dims[2] = {toadie.size(), 2};
+  hid_t nb_file_space = H5Screate_simple(2, nb_file_dims, nullptr);
+  count[0] = toadie.size();
+  H5Sselect_hyperslab(nb_mem_space, H5S_SELECT_SET, start, stride, count,
+                      block);
+  hid_t nbSet = H5Dcreate2(file, "couplings", H5T_NATIVE_INT64, nb_file_space,
+                           H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  H5Dwrite(nbSet, H5T_NATIVE_INT64, nb_mem_space, nb_file_space, H5P_DEFAULT,
+           toadie.data());
+  hid_t paramType = H5Tcreate(H5T_COMPOUND, 8 * 5);
+  H5Tinsert(paramType, "p", 0, H5T_NATIVE_DOUBLE);
+  H5Tinsert(paramType, "alpha", 8, H5T_NATIVE_DOUBLE);
+  H5Tinsert(paramType, "j", 16, H5T_NATIVE_DOUBLE);
+  H5Tinsert(paramType, "rscale", 24, H5T_NATIVE_DOUBLE);
+  H5Tinsert(paramType, "radius", 32, H5T_NATIVE_DOUBLE);
+  hsize_t paramDim = 1;
+  hid_t paramSpace = H5Screate_simple(1, &paramDim, nullptr);
+  hid_t paramSet = H5Dcreate2(file, "params", paramType, paramSpace,
+                              H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  f64 params[5] = {conf.p, conf.alpha, conf.j, conf.rscale, radius};
+  H5Dwrite(paramSet, paramType, paramSpace, paramSpace, H5P_DEFAULT, params);
+
   // logDebug("Writing psim to file.");
   // writeArray<2>("psip", file, c_double_id, psipdata.data(),
   //               {conf.t.n, points.size()});
-  writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
-                linspace(conf.t, true).data(), {conf.t.n});
+  writeArray<1>("time", file, H5T_NATIVE_DOUBLE, linspace(conf.t, true).data(),
+                {conf.t.n});*/
   logDebug("Exiting doTETM.");
   return 0;
 }

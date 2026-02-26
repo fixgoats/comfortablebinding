@@ -44,6 +44,7 @@ struct TETMConf {
   f64 p;
   f64 alpha;
   f64 j;
+  f64 rscale;
   RangeConf<f64> t;
 };
 
@@ -77,3 +78,4 @@ int doTETM(const TETMConf& conf);
 int doDistanceScan(const BasicDistanceConf& conf);
 int doNoCoupling(const BasicDistanceConf& conf);
 int doNCDD(const BasicDistanceConf& conf);
+int doBasicHankelDD(const TETMConf& conf);
