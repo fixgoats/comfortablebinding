@@ -183,8 +183,18 @@ std::vector<T> tarrayToVec(const toml::array& arr) {
   return tmp;
 }
 
-RangeConf<Vector2d> tblToVecRange(const toml::table& tbl);
-RangeConf<f64> tblToRange(toml::table& tbl);
+inline RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
+  toml::array start = *tbl["start"].as_array();
+  toml::array end = *tbl["end"].as_array();
+  return {{start[0].value<f64>().value(), start[1].value<f64>().value()},
+          {end[0].value<f64>().value(), end[1].value<f64>().value()},
+          tbl["n"].value_or<u64>(0)};
+};
+
+inline RangeConf<f64> tblToRange(const toml::table& tbl) {
+  return {tbl["start"].value_or<double>(0.0), tbl["end"].value_or<double>(0.0),
+          tbl["n"].value_or<u64>(0)};
+};
 
 std::optional<EigenSolution> loadDiag(std::string fname);
 struct H5File {

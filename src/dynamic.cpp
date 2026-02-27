@@ -31,79 +31,33 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   DynConf conf{};
   if (tbl.contains("basic")) {
     logDebug("Writing config for basic.");
-    BasicConf bc{};
-    toml::table btbl = *tbl["basic"].as_table();
-    SET_STRUCT_FIELD(bc, btbl, outfile);
-    SET_STRUCT_FIELD(bc, btbl, pointPath);
-    if (btbl.contains("searchRadius")) {
-      bc.searchRadius = btbl["searchRadius"].value<f64>().value();
-    }
-    bc.t = tblToRange(*btbl["t"].as_table());
-    conf.basic = bc;
+    conf.basic = BasicConf(*tbl["basic"].as_table());
   }
   if (tbl.contains("basicdistance")) {
     logDebug("Writing config for distance scan");
-    BasicDistanceConf bc{};
-    toml::table btbl = *tbl["basicdistance"].as_table();
-    SET_STRUCT_FIELD(bc, btbl, outfile);
-    SET_STRUCT_FIELD(bc, btbl, alpha);
-    SET_STRUCT_FIELD(bc, btbl, p);
-    SET_STRUCT_FIELD(bc, btbl, j);
-    bc.t = tblToRange(*btbl["t"].as_table());
-    bc.sep = tblToRange(*btbl["sep"].as_table());
-    conf.bd = bc;
+    conf.bd = BasicDistanceConf(*tbl["basicdistance"].as_table());
   }
   if (tbl.contains("tetm")) {
-    TETMConf tc;
-    toml::table ttbl = *tbl["tetm"].as_table();
-    SET_STRUCT_FIELD(tc, ttbl, outfile);
-    SET_STRUCT_FIELD(tc, ttbl, pointPath);
-    SET_STRUCT_FIELD(tc, ttbl, alpha);
-    SET_STRUCT_FIELD(tc, ttbl, p);
-    SET_STRUCT_FIELD(tc, ttbl, j);
-    SET_STRUCT_FIELD(tc, ttbl, rscale);
-    if (ttbl.contains("searchRadius")) {
-      tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
-    }
-    tc.t = tblToRange(*ttbl["t"].as_table());
+    conf.tetm = TETMConf(*tbl["tetm"].as_table());
+  }
+  if (tbl.contains("hankelscan")) {
+    conf.hsc = HankelScanConf(*tbl["hankelscan"].as_table());
+  }
+  if (tbl.contains("hankelscans")) {
+    toml::array htbls = *tbl["hankelscans"].as_array();
 
-    conf.tetm = tc;
+    for (const auto& eee : htbls) {
+      conf.hscs.emplace_back(*eee.as_table());
+    }
   }
   if (tbl.contains("delay")) {
-    TETMConf tc;
-    toml::table ttbl = *tbl["delay"].as_table();
-    SET_STRUCT_FIELD(tc, ttbl, outfile);
-    SET_STRUCT_FIELD(tc, ttbl, pointPath);
-    SET_STRUCT_FIELD(tc, ttbl, alpha);
-    SET_STRUCT_FIELD(tc, ttbl, p);
-    SET_STRUCT_FIELD(tc, ttbl, j);
-    if (ttbl.contains("searchRadius")) {
-      tc.searchRadius = ttbl["searchRadius"].value<f64>().value();
-    }
-    tc.t = tblToRange(*ttbl["t"].as_table());
-
-    conf.tetm = tc;
+    conf.tetm = TETMConf(*tbl["delay"].as_table());
   }
   if (tbl.contains("basicNonLin")) {
-    BasicNLinConf bc{};
-    toml::table btbl = *tbl["basicNonLin"].as_table();
-    SET_STRUCT_FIELD(bc, btbl, outfile);
-    SET_STRUCT_FIELD(bc, btbl, pointPath);
-    SET_STRUCT_FIELD(bc, btbl, alpha);
-    if (btbl.contains("searchRadius")) {
-      bc.searchRadius = btbl["searchRadius"].value<f64>().value();
-    }
-    bc.t = tblToRange(*btbl["t"].as_table());
-    conf.basicnlin = bc;
+    conf.basicnlin = BasicNLinConf(*tbl["basicNonLin"].as_table());
   }
   if (tbl.contains("kuramoto")) {
-    KuramotoConf kc{};
-    auto ktbl = *tbl["kuramoto"].as_table();
-    SET_STRUCT_FIELD(kc, ktbl, outfile);
-    SET_STRUCT_FIELD(kc, ktbl, K);
-    SET_STRUCT_FIELD(kc, ktbl, N);
-    kc.t = tblToRange(*ktbl["t"].as_table());
-    conf.kuramoto = kc;
+    conf.kuramoto = KuramotoConf(*tbl["kuramoto"].as_table());
   }
   logDebug("Exiting tomlToDynConf.");
   return conf;
@@ -464,11 +418,6 @@ int doBasicHankelDD(const TETMConf& conf) {
   Eigen::MatrixX2i couplings =
       pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
   logDebug("Read couplings.");
-  /*const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
-                                                   : 1.01 * avgradius;
-  std::cout << "Radius is: " << radius << '\n';
-  logDebug("Using search radius: {}", radius);
-  std::vector<Neighbour> toadie = pointsToNbs(points, kdtree, radius);*/
   const f64 rscale = conf.rscale;
   const SparseMatrix<c64> J =
       conf.j * SparseC(points, couplings, [rscale](Vector2d d) {
@@ -510,78 +459,110 @@ int doBasicHankelDD(const TETMConf& conf) {
     logDebug("Return psiish with dims {}x{}", n, m);
     logDebug("Copying to psipdata.");
     psidata(Eigen::indexing::all, i) = psi;
-    // memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
-    // logDebug("Copying to psimdata.");
-    // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
   }
   logDebug("Finished calculating.");
 
-  /*H5File file(conf.outfile.c_str());
-  if (file == H5I_INVALID_HID) {
-    std::cerr << "Failed to create file " << conf.outfile << std::endl;
-    return 1;
-  }*/
   HighFive::File file(conf.outfile, HighFive::File::Truncate);
   logDebug("Writing psip to file.");
 
-  /*writeArray<2>("psi", file, c_double_id, psidata.data(),
-                {conf.t.n, points.size()});*/
   file.createDataSet("psi", psidata);
   file.createDataSet("points", points);
   file.createDataSet("couplings", couplings);
   file.createDataSet("time", linspace(conf.t, true));
-  // paramType.commit(file, "param_type");
   HighFive::DataSet paramSet = file.createDataSet(
       "params", Params{conf.p, conf.alpha, conf.j, conf.rscale});
-  /*f64 params[4] = ;
-  paramSet.write(params);
-  file.flush();*/
-
-  /*hsize_t point_mem_dims[2] = {points.size(), 3};
-  hid_t point_mem_space = H5Screate_simple(2, point_mem_dims, nullptr);
-  hsize_t point_file_dims[2] = {points.size(), 2};
-  hid_t point_file_space = H5Screate_simple(2, point_file_dims, nullptr);
-  hsize_t start[2] = {0, 0};
-  hsize_t stride[2] = {1, 1};
-  hsize_t count[2] = {points.size(), 1};
-  hsize_t block[2] = {1, 2};
-  H5Sselect_hyperslab(point_mem_space, H5S_SELECT_SET, start, stride, count,
-                      block);
-  hid_t pointSet =
-      H5Dcreate2(file, "points", H5T_NATIVE_DOUBLE, point_file_space,
-                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(pointSet, H5T_NATIVE_DOUBLE, point_mem_space, point_file_space,
-           H5P_DEFAULT, points.data());
-  hsize_t nb_mem_dims[2] = {couplings.size(), 4};
-  hid_t nb_mem_space = H5Screate_simple(2, nb_mem_dims, nullptr);
-  hsize_t nb_file_dims[2] = {toadie.size(), 2};
-  hid_t nb_file_space = H5Screate_simple(2, nb_file_dims, nullptr);
-  count[0] = toadie.size();
-  H5Sselect_hyperslab(nb_mem_space, H5S_SELECT_SET, start, stride, count,
-                      block);
-  hid_t nbSet = H5Dcreate2(file, "couplings", H5T_NATIVE_INT64, nb_file_space,
-                           H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Dwrite(nbSet, H5T_NATIVE_INT64, nb_mem_space, nb_file_space, H5P_DEFAULT,
-           toadie.data());
-  hid_t paramType = H5Tcreate(H5T_COMPOUND, 8 * 5);
-  H5Tinsert(paramType, "p", 0, H5T_NATIVE_DOUBLE);
-  H5Tinsert(paramType, "alpha", 8, H5T_NATIVE_DOUBLE);
-  H5Tinsert(paramType, "j", 16, H5T_NATIVE_DOUBLE);
-  H5Tinsert(paramType, "rscale", 24, H5T_NATIVE_DOUBLE);
-  H5Tinsert(paramType, "radius", 32, H5T_NATIVE_DOUBLE);
-  hsize_t paramDim = 1;
-  hid_t paramSpace = H5Screate_simple(1, &paramDim, nullptr);
-  hid_t paramSet = H5Dcreate2(file, "params", paramType, paramSpace,
-                              H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  f64 params[5] = {conf.p, conf.alpha, conf.j, conf.rscale, radius};
-  H5Dwrite(paramSet, paramType, paramSpace, paramSpace, H5P_DEFAULT, params);
-
-  // logDebug("Writing psim to file.");
-  // writeArray<2>("psip", file, c_double_id, psipdata.data(),
-  //               {conf.t.n, points.size()});
-  writeArray<1>("time", file, H5T_NATIVE_DOUBLE, linspace(conf.t, true).data(),
-                {conf.t.n});*/
   logDebug("Exiting doTETM.");
+  return 0;
+}
+
+int doHankelScan(const std::vector<HankelScanConf>& confs) {
+  logDebug("Function: doHankelScan.");
+  for (const auto& conf : confs) {
+    HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
+    logDebug("Read pointfile.");
+    Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
+    logDebug("Read points.");
+    Eigen::MatrixX2i couplings =
+        pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
+    logDebug("Read couplings.");
+
+    std::random_device dev;
+    std::mt19937 gen(dev());
+    std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+
+    s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
+    std::vector<c64> data(samples * points.rows());
+    s64 datasize = data.size();
+    logDebug("data has {} elements in total.", datasize);
+    s64 psize = conf.ps.n;
+    logDebug("number of ps is {}.", psize);
+    s64 alphasize = conf.alphas.n;
+    logDebug("number of alphas is {}.", alphasize);
+    s64 jsize = conf.js.n;
+    logDebug("number of js is {}.", jsize);
+    s64 rscalesize = conf.rscales.n;
+    logDebug("number of rscales is {}.", rscalesize);
+    for (s64 k = 0; k < psize; ++k) {
+      const f64 p = conf.ps.ith(k);
+      for (s64 l = 0; l < alphasize; ++l) {
+        const f64 alpha = conf.alphas.ith(l);
+        for (s64 m = 0; m < jsize; ++m) {
+          const f64 j = conf.js.ith(m);
+          for (s64 n = 0; n < rscalesize; ++n) {
+            const f64 scale = conf.rscales.ith(n);
+            const SparseMatrix<c64> J =
+                j * SparseC(points, couplings, [scale](Vector2d d) {
+                  return c64{gsl_sf_bessel_J0(scale * d.norm()),
+                             gsl_sf_bessel_Y0(scale * d.norm())};
+                });
+            const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
+            auto max_coeff =
+                std::ranges::max_element(sol.eigenvalues(), [](c64 a, c64 b) {
+                  return a.real() < b.real();
+                });
+            const f64 eff_p = (p - 1) * max_coeff->real();
+            logDebug("Made sparse matrix J.");
+            logDebug("Allocating psi.");
+            VectorXcd psi(points.rows());
+            logDebug("Writing random coordinates to psi.");
+            for (u64 o = 0; o < psi.size(); ++o) {
+              auto x = dis(gen);
+              *(psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
+            }
+            const size_t byteSize = psi.size() * sizeof(c64);
+            auto rhs = hankelDD(J, eff_p, alpha);
+            logDebug("Running rk4 for {} steps.", conf.t.n);
+            for (u32 o = 1; o < conf.t.n + 1; ++o) {
+              psi = rk4step(psi, conf.t.d(), rhs);
+            }
+            s64 idx = (n + rscalesize * (m + jsize * (l + alphasize * k))) *
+                      points.rows();
+            logDebug("Copying to {}-th complex number.", idx);
+            logDebug("Finished calculating.");
+            memcpy(data.data() + idx, psi.data(), byteSize);
+          }
+        }
+      }
+    }
+
+    HighFive::File file(conf.outfile, HighFive::File::Truncate);
+    logDebug("Writing samples to file.");
+
+    auto sampleSet = file.createDataSet<c64>(
+        "psis", HighFive::DataSpace(
+                    {static_cast<u64>(psize), static_cast<u64>(alphasize),
+                     static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+                     static_cast<u64>(points.rows())}));
+    sampleSet.write_raw(data.data());
+    file.createDataSet("points", points);
+    file.createDataSet("couplings", couplings);
+    file.createDataSet("time", linspace(conf.t, true));
+    file.createDataSet("ps", linspace(conf.ps, false));
+    file.createDataSet("alphas", linspace(conf.alphas, false));
+    file.createDataSet("js", linspace(conf.js, false));
+    file.createDataSet("rscales", linspace(conf.rscales, false));
+  }
+  logDebug("Exiting doHankelScan.");
   return 0;
 }
 
@@ -735,7 +716,8 @@ int doTETM(const TETMConf& conf) {
 //       c64{0, -1} * SparseHC(points, kdtree, radius, [](Vector2d d) {
 //         return std::exp(-d.norm()) * c64{1 - 2 * d(1) * d(1) /
 //         d.squaredNorm(),
-//                                          2 * d(0) * d(1) / d.squaredNorm()};
+//                                          2 * d(0) * d(1) /
+//                                          d.squaredNorm()};
 //       });
 //   std::random_device dev;
 //   std::mt19937 gen(dev());

@@ -44,6 +44,9 @@ int main(const int argc, const char* const* argv) {
     if (conf.tetm.has_value()) {
       doBasicHankelDD(conf.tetm.value());
     }
+    if (!conf.hscs.empty()) {
+      doHankelScan(conf.hscs);
+    }
     if (conf.bd.has_value()) {
       doDistanceScan(conf.bd.value());
     }

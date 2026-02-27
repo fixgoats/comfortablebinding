@@ -37,16 +37,3 @@ std::optional<EigenSolution> loadDiag(std::string fname) {
   H5Pclose(flist_id);
   return eigsol;
 }
-
-RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
-  toml::array start = *tbl["start"].as_array();
-  toml::array end = *tbl["end"].as_array();
-  return {{start[0].value<f64>().value(), start[1].value<f64>().value()},
-          {end[0].value<f64>().value(), end[1].value<f64>().value()},
-          tbl["n"].value_or<u64>(0)};
-}
-
-RangeConf<double> tblToRange(toml::table& tbl) {
-  return {tbl["start"].value_or<double>(0.0), tbl["end"].value_or<double>(0.0),
-          tbl["n"].value_or<u64>(0)};
-}

@@ -62,9 +62,10 @@ int main(int argc, char* argv[]) {
       std::vector<std::string> allLines{std::istream_iterator<Line>(f),
                                         std::istream_iterator<Line>()};
       m = allLines.size();
+      logDebug("Number of rows: {}", m);
       // f.clear();
       // f.seekg(0, std::ios::beg);
-      points.reserve(m);
+      points.resize(m);
       for (u32 j = 0; j < m; j++) {
         std::istringstream stream(allLines[j]);
         std::vector<double> v{std::istream_iterator<double>(stream),

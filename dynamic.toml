@@ -1,33 +1,55 @@
 pointPath = "../data/squarepoints.txt"
 searchRadius = 1.1
 
-# [kuramoto]
-# outfile = "kuramoto.txt"
-# K = 1.01
-# N = 10
-# t = {start = 0, end = 100, n = 10000}
-#
-# [basic]
-# pointPath = "../data/mediummonotilepoints.txt"
-# # pointPath = "../data/smallermonotilepoints.txt"
-# outfile = "basic.h5"
-# t = {start = 0, end = 100, n = 10000}
-# # searchRadius = "auto"
+[[hankelscans]]
+pointPath = "../punktar/monotile150couplings.h5"
+outfile = "monotile150scalescan.h5"
+ps = { start = 0.2, end = 1.0, n = 1 }
+alphas = { start = 1, end = 1, n = 1 }
+js = { start = 1, end = 1, n = 1 }
+rscales = { start = 4, end = 16, n = 100 }
+t = { start = 0, end = 100, n = 10000 }
 
-[tetm]
-outfile = "tetrille.h5"
-alpha = 1
-p = 0.1
-j = 0.1
-rscale = 1
-searchRadius = 1.1
-pointPath = "../data/smalltetrille.h5"
-t = { start = 0, end = 1000, n = 10000 }
+[[hankelscans]]
+pointPath = "../punktar/monotile259couplings.h5"
+outfile = "monotile259scalescan.h5"
+ps = { start = 0.2, end = 1.0, n = 1 }
+alphas = { start = 1, end = 1, n = 1 }
+js = { start = 1, end = 1, n = 1 }
+rscales = { start = 4, end = 16, n = 100 }
+t = { start = 0, end = 100, n = 10000 }
 
-[basicdistance]
-outfile = "distancescanloweralpha.h5"
-alpha = 8
-p = 1
-j = 10
-sep = { start = 5, end = 40, n = 1000 }
-t = { start = 0, end = 480, n = 11024 }
+[[hankelscans]]
+pointPath = "../punktar/monotile198couplings.h5"
+outfile = "monotile198scalescan.h5"
+ps = { start = 0.2, end = 1.0, n = 1 }
+alphas = { start = 1, end = 1, n = 1 }
+js = { start = 1, end = 1, n = 1 }
+rscales = { start = 4, end = 16, n = 100 }
+t = { start = 0, end = 100, n = 10000 }
+
+[[hankelscans]]
+pointPath = "../punktar/monotile404couplings.h5"
+outfile = "monotile404scalescan.h5"
+ps = { start = 0.2, end = 1.0, n = 1 }
+alphas = { start = 1, end = 1, n = 1 }
+js = { start = 1, end = 1, n = 1 }
+rscales = { start = 4, end = 16, n = 100 }
+t = { start = 0, end = 100, n = 10000 }
+
+# [basicdistance]
+# outfile = "distancescanloweralpha.h5"
+# alpha = 8
+# p = 1
+# j = 10
+# sep = { start = 5, end = 40, n = 1000 }
+# t = { start = 0, end = 480, n = 11024 }
+
+# [tetm]
+# outfile = "threepointrun.h5"
+# pointPath = "threepoints.h5"
+# p = -0.1
+# alpha = 1
+# j = 1
+# rscale = 8
+# t = { start = 0, end = 100, n = 10000 }
