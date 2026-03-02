@@ -3,7 +3,7 @@
 #include "highfive/highfive.hpp"
 #include "io.h"
 #include "kdtree.h"
-#include "logging.hpp"
+#include "spdlog/spdlog.h"
 #include <cxxopts.hpp>
 
 using Eigen::Vector2i;
@@ -44,14 +44,14 @@ int main(int argc, char* argv[]) {
     std::vector<KDVec2> points;
     if (fname.substr(fname.find_last_of(".") + 1) == "h5") {
       HighFive::File pfile(fname, HighFive::File::ReadOnly);
-      logDebug("Read file {}", fname);
+      spdlog::debug("Read file {}", fname);
       auto space = pfile.getDataSet("points").getSpace();
       std::cout << space.getDimensions()[0] << '\n';
       points.resize(space.getDimensions()[0]);
       pfile.getDataSet("points").read_raw<f64>((f64*)points.data());
       // std::vector<f64> prePoints =
       //     file.getDataSet("points").read<std::vector<f64>>();
-      logDebug("Loaded points");
+      spdlog::debug("Loaded points");
     } else {
       // Eigen::MatrixX2cd points = readEigen<f64>(fname);
       u32 m = 0;
@@ -62,9 +62,9 @@ int main(int argc, char* argv[]) {
       std::vector<std::string> allLines{std::istream_iterator<Line>(f),
                                         std::istream_iterator<Line>()};
       m = allLines.size();
-      logDebug("Number of rows: {}", m);
-      // f.clear();
-      // f.seekg(0, std::ios::beg);
+      spdlog::debug("Number of rows: {}", m);
+      //  f.clear();
+      //  f.seekg(0, std::ios::beg);
       points.resize(m);
       for (u32 j = 0; j < m; j++) {
         std::istringstream stream(allLines[j]);
@@ -84,8 +84,8 @@ int main(int argc, char* argv[]) {
       for (const auto& idx : nbs) {
         if ((size_t)idx > i) {
 
-          logDebug("source: {}", i);
-          logDebug("dest: {}", idx);
+          spdlog::debug("source: {}", i);
+          spdlog::debug("dest: {}", idx);
           couplings(tmp, 0) = i;
           couplings(tmp, 1) = idx;
           ++tmp;
@@ -97,17 +97,17 @@ int main(int argc, char* argv[]) {
     std::cout << "rows: " << couplings.rows() << '\n';
     std::cout << "cols: " << couplings.cols() << '\n';
     std::string outfile = result["o"].as<std::string>();
-    logDebug("Writing to file {}", outfile);
+    spdlog::debug("Writing to file {}", outfile);
     HighFive::File file(outfile, HighFive::File::Truncate);
-    logDebug("Creating dataset couplings");
+    spdlog::debug("Creating dataset couplings");
     file.createDataSet("couplings", couplings);
     // auto couplingset = file.createDataSet<s64>("couplings", {(u64)tmp, 2});
     // couplingset.write_raw(couplings.data());
     std::array<size_t, 2> dims{points.size(), 2};
-    logDebug("Creating dataset points");
+    spdlog::debug("Creating dataset points");
     auto pointSet =
         file.createDataSet<f64>("points", HighFive::DataSpace(dims));
-    logDebug("Writing points");
+    spdlog::debug("Writing points");
     pointSet.write_raw((f64*)points.data());
   }
 

@@ -1,6 +1,7 @@
 #include "dynamic.h"
 #include "hermEigen.h"
 #include "periodic.h"
+#include "spdlog/spdlog.h"
 #include <H5public.h>
 #include <cstddef>
 #include <cxxopts.hpp>
@@ -16,7 +17,8 @@ using Eigen::MatrixX2d, Eigen::MatrixXd;
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("Dynamic Simulations", "bleh");
   options.add_options()("c,config", "TOML configuration",
-                        cxxopts::value<std::string>());
+                        cxxopts::value<std::string>())(
+      "v,verbose", "Verbose output", cxxopts::value<bool>());
   cxxopts::ParseResult result;
   try {
     result = options.parse(argc, argv);
@@ -24,6 +26,11 @@ int main(const int argc, const char* const* argv) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return EXIT_FAILURE;
   }
+
+  if (result["v"].count()) {
+    spdlog::set_level(spdlog::level::trace);
+  }
+
   if (result["c"].count()) {
     std::string fname = result["c"].as<std::string>();
     DynConf conf;

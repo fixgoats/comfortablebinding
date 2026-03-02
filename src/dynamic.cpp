@@ -4,10 +4,10 @@
 #include "highfive/eigen.hpp"
 #include "highfive/highfive.hpp"
 #include "io.h"
-#include "logging.hpp"
 #include "unsupported/Eigen/MatrixFunctions"
 #include <gsl/gsl_sf.h>
 // #include "vkcore.hpp"
+#include "spdlog/spdlog.h"
 #include <print>
 #include <random>
 #include <toml++/toml.hpp>
@@ -19,8 +19,8 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd;
   c.key = *tbl[#key].value<decltype(c.key)>()
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname) {
-  logDebug("Function: tomlToDynConf.");
   toml::table tbl;
+  spdlog::debug("bleh");
   try {
     tbl = toml::parse_file(fname);
   } catch (const std::exception& err) {
@@ -30,11 +30,11 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   }
   DynConf conf{};
   if (tbl.contains("basic")) {
-    logDebug("Writing config for basic.");
+    spdlog::debug("Writing config for basic.");
     conf.basic = BasicConf(*tbl["basic"].as_table());
   }
   if (tbl.contains("basicdistance")) {
-    logDebug("Writing config for distance scan");
+    spdlog::debug("Writing config for distance scan");
     conf.bd = BasicDistanceConf(*tbl["basicdistance"].as_table());
   }
   if (tbl.contains("tetm")) {
@@ -59,7 +59,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   if (tbl.contains("kuramoto")) {
     conf.kuramoto = KuramotoConf(*tbl["kuramoto"].as_table());
   }
-  logDebug("Exiting tomlToDynConf.");
+  spdlog::debug("Exiting tomlToDynConf.");
   return conf;
 }
 
@@ -70,13 +70,13 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
 
 template <class F, class State>
 State rk4step(const State& x, f64 dt, F rhs) {
-  logDebug("Function: rk4step.");
+  spdlog::debug("Function: rk4step.");
   State k1 = rhs(x);
   State k2 = rhs(x + 0.5 * dt * k1);
   State k3 = rhs(x + 0.5 * dt * k2);
   State k4 = rhs(x + dt * k3);
   State ret = x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
-  logDebug("Exiting rk4step.");
+  spdlog::debug("Exiting rk4step.");
   return ret;
 }
 
@@ -126,30 +126,30 @@ auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
 auto tetmNonLin(const SparseMatrix<f64>& iJ, const SparseMatrix<c64>& iL, f64 p,
                 f64 alpha) {
   return [&, p, alpha](const MatrixX2cd& psi) {
-    logDebug("Function: tetmNonLin.");
-    logDebug("Making first matrix");
+    spdlog::debug("Function: tetmNonLin.");
+    spdlog::debug("Making first matrix");
     MatrixX2cd first = (p - 1) * psi;
     u32 n = first.rows();
     u32 m = first.cols();
-    logDebug("First matrix has dims {}x{}", n, m);
-    logDebug("Making second matrix");
+    spdlog::debug("First matrix has dims {}x{}", n, m);
+    spdlog::debug("Making second matrix");
     MatrixX2cd second = -c64{0, alpha} * psi.cwiseAbs2().cwiseProduct(psi);
     n = second.rows();
     m = second.cols();
-    logDebug("Second matrix has dims {}x{}", n, m);
-    logDebug("Making third matrix");
+    spdlog::debug("Second matrix has dims {}x{}", n, m);
+    spdlog::debug("Making third matrix");
     MatrixX2cd third = iJ * psi;
     n = third.rows();
     m = third.cols();
-    logDebug("Third matrix has dims {}x{}", n, m);
-    logDebug("Making fourth matrix");
+    spdlog::debug("Third matrix has dims {}x{}", n, m);
+    spdlog::debug("Making fourth matrix");
     MatrixX2cd fourth(psi.rows(), 2);
     fourth.col(0) = iL * psi.col(1);
     fourth.col(1) = -iL.conjugate() * psi.col(0);
     n = fourth.rows();
     m = fourth.cols();
-    logDebug("Fourth matrix has dims {}x{}", n, m);
-    logDebug("Exiting tetmNonLin.");
+    spdlog::debug("Fourth matrix has dims {}x{}", n, m);
+    spdlog::debug("Exiting tetmNonLin.");
     return first + second + third + fourth;
   };
 }
@@ -262,7 +262,7 @@ int doLorenz(const BasicConf&) {
 }
 
 int doNoCoupling(const BasicDistanceConf& conf) {
-  logDebug("Function: doDistanceScan");
+  spdlog::debug("Function: doDistanceScan");
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
@@ -270,7 +270,7 @@ int doNoCoupling(const BasicDistanceConf& conf) {
   const Eigen::VectorXd times = linspace(conf.t, true);
   std::vector<c64> psil(conf.t.n);
   std::vector<c64> psir(conf.t.n);
-  logDebug("Entering separation loop.");
+  spdlog::debug("Entering separation loop.");
   const auto rhs = noCoupling(conf.p, conf.alpha);
   const f64 seed1 = dis(gen);
   const f64 seed2 = dis(gen);
@@ -278,32 +278,32 @@ int doNoCoupling(const BasicDistanceConf& conf) {
                        c64{cos(seed2), sin(seed2)}};
   psil[0] = psi.x();
   psir[0] = psi.y();
-  logDebug("Entering solution loop.");
+  spdlog::debug("Entering solution loop.");
   for (u64 j = 1; j < conf.t.n; ++j) {
     psi = rk4step(psi, conf.t.d(), rhs);
     psil[j] = psi.x();
     psir[j] = psi.y();
   }
-  logDebug("Finished calculating.");
+  spdlog::debug("Finished calculating.");
 
   H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  logDebug("Writing psil to file.");
+  spdlog::debug("Writing psil to file.");
   writeArray<1>("psil", file, c_double_id, psil.data(), {conf.t.n});
-  logDebug("Writing psir to file.");
+  spdlog::debug("Writing psir to file.");
   writeArray<1>("psir", file, c_double_id, psir.data(), {conf.t.n});
-  logDebug("Writing time to file.");
+  spdlog::debug("Writing time to file.");
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
                 {conf.t.n});
-  logDebug("Exiting doNoCoupling.");
+  spdlog::debug("Exiting doNoCoupling.");
   return 0;
 }
 
 int doNCDD(const BasicDistanceConf& conf) {
-  logDebug("Function: doDistanceScan");
+  spdlog::debug("Function: doDistanceScan");
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
@@ -311,7 +311,7 @@ int doNCDD(const BasicDistanceConf& conf) {
   const Eigen::VectorXd times = linspace(conf.t, true);
   std::vector<c64> psil(conf.t.n);
   std::vector<c64> psir(conf.t.n);
-  logDebug("Entering separation loop.");
+  spdlog::debug("Entering separation loop.");
   const auto rhs = noCouplingDrivenDissipative(conf.p, conf.alpha);
   const f64 seed1 = dis(gen);
   const f64 seed2 = dis(gen);
@@ -319,32 +319,32 @@ int doNCDD(const BasicDistanceConf& conf) {
                        c64{cos(seed2), sin(seed2)}};
   psil[0] = psi.x();
   psir[0] = psi.y();
-  logDebug("Entering solution loop.");
+  spdlog::debug("Entering solution loop.");
   for (u64 j = 1; j < conf.t.n; ++j) {
     psi = rk4step(psi, conf.t.d(), rhs);
     psil[j] = psi.x();
     psir[j] = psi.y();
   }
-  logDebug("Finished calculating.");
+  spdlog::debug("Finished calculating.");
 
   H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  logDebug("Writing psil to file.");
+  spdlog::debug("Writing psil to file.");
   writeArray<1>("psil", file, c_double_id, psil.data(), {conf.t.n});
-  logDebug("Writing psir to file.");
+  spdlog::debug("Writing psir to file.");
   writeArray<1>("psir", file, c_double_id, psir.data(), {conf.t.n});
-  logDebug("Writing time to file.");
+  spdlog::debug("Writing time to file.");
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
                 {conf.t.n});
-  logDebug("Exiting doDistanceScan.");
+  spdlog::debug("Exiting doDistanceScan.");
   return 0;
 }
 
 int doDistanceScan(const BasicDistanceConf& conf) {
-  logDebug("Function: doDistanceScan");
+  spdlog::debug("Function: doDistanceScan");
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
@@ -352,7 +352,7 @@ int doDistanceScan(const BasicDistanceConf& conf) {
   const Eigen::VectorXd times = linspace(conf.t, true);
   std::vector<c64> psil(conf.t.n * conf.sep.n);
   std::vector<c64> psir(conf.t.n * conf.sep.n);
-  logDebug("Entering separation loop.");
+  spdlog::debug("Entering separation loop.");
 #pragma omp parallel for
   for (u64 i = 0; i < conf.sep.n; ++i) {
     const auto rhs = basicHankel(conf.p, conf.alpha, conf.j, conf.sep.ith(i));
@@ -362,27 +362,27 @@ int doDistanceScan(const BasicDistanceConf& conf) {
                          c64{cos(seed2), sin(seed2)}};
     psil[i * conf.t.n] = psi.x();
     psir[i * conf.t.n] = psi.y();
-    logDebug("Entering solution loop.");
+    spdlog::debug("Entering solution loop.");
     for (u64 j = 1; j < conf.t.n; ++j) {
       psi = rk4step(psi, conf.t.d(), rhs);
       psil[i * conf.t.n + j] = psi.x();
       psir[i * conf.t.n + j] = psi.y();
     }
   }
-  logDebug("Finished calculating.");
+  spdlog::debug("Finished calculating.");
 
   H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  logDebug("Writing psil to file.");
+  spdlog::debug("Writing psil to file.");
   writeArray<2>("psil", file, c_double_id, psil.data(), {conf.sep.n, conf.t.n});
-  logDebug("Writing psir to file.");
+  spdlog::debug("Writing psir to file.");
   writeArray<2>("psir", file, c_double_id, psir.data(), {conf.sep.n, conf.t.n});
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g, (void*)times.data(),
                 {conf.t.n});
-  logDebug("Exiting doDistanceScan.");
+  spdlog::debug("Exiting doDistanceScan.");
   return 0;
 }
 
@@ -410,21 +410,21 @@ HighFive::CompoundType compoundParams() {
 HIGHFIVE_REGISTER_TYPE(Params, compoundParams);
 
 int doBasicHankelDD(const TETMConf& conf) {
-  logDebug("Function: doBasicHankelDD.");
+  spdlog::debug("Function: doBasicHankelDD.");
   HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
-  logDebug("Read pointfile.");
+  spdlog::debug("Read pointfile.");
   Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
-  logDebug("Read points.");
+  spdlog::debug("Read points.");
   Eigen::MatrixX2i couplings =
       pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
-  logDebug("Read couplings.");
+  spdlog::debug("Read couplings.");
   const f64 rscale = conf.rscale;
   const SparseMatrix<c64> J =
       conf.j * SparseC(points, couplings, [rscale](Vector2d d) {
         return c64{gsl_sf_bessel_J0(rscale * d.norm()),
                    gsl_sf_bessel_Y0(rscale * d.norm())};
       });
-  logDebug("Made sparse matrix J.");
+  spdlog::debug("Made sparse matrix J.");
   auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
   auto max_coeff = std::ranges::max_element(
       sol.eigenvalues(), [](c64 a, c64 b) { return a.real() < b.real(); });
@@ -433,18 +433,18 @@ int doBasicHankelDD(const TETMConf& conf) {
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
-  logDebug("Allocating psi.");
+  spdlog::debug("Allocating psi.");
   VectorXcd psi(points.rows());
   u64 n = psi.rows();
   u64 m = psi.cols();
-  logDebug("Allocated psi with dims {}x{}", n, m);
-  logDebug("Writing random coordinates to psi.");
+  spdlog::debug("Allocated psi with dims {}x{}", n, m);
+  spdlog::debug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
     auto x = dis(gen);
     *(psi.data() + i) = {1e-4 * cos(x), 1e-4 * sin(x)};
   }
   const u32 overallSize = conf.t.n * psi.size();
-  logDebug("Allocating psipdata with {} elements.", overallSize);
+  spdlog::debug("Allocating psipdata with {} elements.", overallSize);
   MatrixXcd psidata(psi.size(), conf.t.n + 1);
   const size_t byteSize = psi.size() * sizeof(c64);
   psidata(Eigen::indexing::all, 0) = psi;
@@ -456,14 +456,14 @@ int doBasicHankelDD(const TETMConf& conf) {
     psi = rk4step(psi, conf.t.d(), rhs);
     n = psi.rows();
     m = psi.cols();
-    logDebug("Return psiish with dims {}x{}", n, m);
-    logDebug("Copying to psipdata.");
+    spdlog::debug("Return psiish with dims {}x{}", n, m);
+    spdlog::debug("Copying to psipdata.");
     psidata(Eigen::indexing::all, i) = psi;
   }
-  logDebug("Finished calculating.");
+  spdlog::debug("Finished calculating.");
 
   HighFive::File file(conf.outfile, HighFive::File::Truncate);
-  logDebug("Writing psip to file.");
+  spdlog::debug("Writing psip to file.");
 
   file.createDataSet("psi", psidata);
   file.createDataSet("points", points);
@@ -471,20 +471,20 @@ int doBasicHankelDD(const TETMConf& conf) {
   file.createDataSet("time", linspace(conf.t, true));
   HighFive::DataSet paramSet = file.createDataSet(
       "params", Params{conf.p, conf.alpha, conf.j, conf.rscale});
-  logDebug("Exiting doTETM.");
+  spdlog::debug("Exiting doTETM.");
   return 0;
 }
 
 int doHankelScan(const std::vector<HankelScanConf>& confs) {
-  logDebug("Function: doHankelScan.");
+  spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
-    logDebug("Read pointfile.");
+    spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
-    logDebug("Read points.");
+    spdlog::debug("Read points.");
     Eigen::MatrixX2i couplings =
         pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
-    logDebug("Read couplings.");
+    spdlog::debug("Read couplings.");
 
     std::random_device dev;
     std::mt19937 gen(dev());
@@ -493,15 +493,15 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
     s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
     std::vector<c64> data(samples * points.rows());
     s64 datasize = data.size();
-    logDebug("data has {} elements in total.", datasize);
+    spdlog::debug("data has {} elements in total.", datasize);
     s64 psize = conf.ps.n;
-    logDebug("number of ps is {}.", psize);
+    spdlog::debug("number of ps is {}.", psize);
     s64 alphasize = conf.alphas.n;
-    logDebug("number of alphas is {}.", alphasize);
+    spdlog::debug("number of alphas is {}.", alphasize);
     s64 jsize = conf.js.n;
-    logDebug("number of js is {}.", jsize);
+    spdlog::debug("number of js is {}.", jsize);
     s64 rscalesize = conf.rscales.n;
-    logDebug("number of rscales is {}.", rscalesize);
+    spdlog::debug("number of rscales is {}.", rscalesize);
     for (s64 k = 0; k < psize; ++k) {
       const f64 p = conf.ps.ith(k);
       for (s64 l = 0; l < alphasize; ++l) {
@@ -521,24 +521,24 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
                   return a.real() < b.real();
                 });
             const f64 eff_p = (p - 1) * max_coeff->real();
-            logDebug("Made sparse matrix J.");
-            logDebug("Allocating psi.");
+            spdlog::debug("Made sparse matrix J.");
+            spdlog::debug("Allocating psi.");
             VectorXcd psi(points.rows());
-            logDebug("Writing random coordinates to psi.");
+            spdlog::debug("Writing random coordinates to psi.");
             for (u64 o = 0; o < psi.size(); ++o) {
               auto x = dis(gen);
               *(psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
             }
             const size_t byteSize = psi.size() * sizeof(c64);
             auto rhs = hankelDD(J, eff_p, alpha);
-            logDebug("Running rk4 for {} steps.", conf.t.n);
+            spdlog::debug("Running rk4 for {} steps.", conf.t.n);
             for (u32 o = 1; o < conf.t.n + 1; ++o) {
               psi = rk4step(psi, conf.t.d(), rhs);
             }
             s64 idx = (n + rscalesize * (m + jsize * (l + alphasize * k))) *
                       points.rows();
-            logDebug("Copying to {}-th complex number.", idx);
-            logDebug("Finished calculating.");
+            spdlog::debug("Copying to {}-th complex number.", idx);
+            spdlog::debug("Finished calculating.");
             memcpy(data.data() + idx, psi.data(), byteSize);
           }
         }
@@ -546,7 +546,7 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
     }
 
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
-    logDebug("Writing samples to file.");
+    spdlog::debug("Writing samples to file.");
 
     auto sampleSet = file.createDataSet<c64>(
         "psis", HighFive::DataSpace(
@@ -562,7 +562,7 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
     file.createDataSet("js", linspace(conf.js, false));
     file.createDataSet("rscales", linspace(conf.rscales, false));
   }
-  logDebug("Exiting doHankelScan.");
+  spdlog::debug("Exiting doHankelScan.");
   return 0;
 }
 
@@ -613,21 +613,21 @@ int doBasic(const BasicConf& conf) {
 }
 
 int doTETM(const TETMConf& conf) {
-  logDebug("Function: doTETM.");
+  spdlog::debug("Function: doTETM.");
   const std::vector<Point> points = readPoints(conf.pointPath);
-  logDebug("Read points.");
+  spdlog::debug("Read points.");
   kdt::KDTree<Point> kdtree(points);
-  logDebug("Built kdtree");
+  spdlog::debug("Built kdtree");
   const f64 avgradius = avgNNDist(kdtree, points);
   const f64 radius = conf.searchRadius.has_value() ? conf.searchRadius.value()
                                                    : 1.01 * avgradius;
   std::cout << "Radius is: " << radius << '\n';
-  logDebug("Using search radius: {}", radius);
+  spdlog::debug("Using search radius: {}", radius);
   SparseMatrix<c64> J =
       conf.j * SparseHC(points, kdtree, radius, [](Vector2d d) {
         return c64{gsl_sf_bessel_J0(d.norm()), gsl_sf_bessel_Y0(d.norm())};
       });
-  logDebug("Made sparse matrix iJ.");
+  spdlog::debug("Made sparse matrix iJ.");
   auto sol = hermitianEigenSolver(MatrixXcd(J));
   std::cout << "Highest eigenvalue is: " << sol.D.maxCoeff() << '\n';
   SparseMatrix<c64> L =
@@ -638,68 +638,66 @@ int doTETM(const TETMConf& conf) {
                    2 * d(0) * d(1) / d.squaredNorm()};
       });
   // std::cout << L << '\n';
-  logDebug("Made sparse matrix iL.");
+  spdlog::debug("Made sparse matrix iL.");
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
-  logDebug("Allocating psi.");
+  spdlog::debug("Allocating psi.");
   MatrixX2cd psi(points.size(), 2);
   u64 n = psi.rows();
   u64 m = psi.cols();
-  logDebug("Allocated psi with dims {}x{}", n, m);
-  logDebug("Writing random coordinates to psi.");
+  spdlog::debug("Allocated psi with dims {}x{}", n, m);
+  spdlog::debug("Writing random coordinates to psi.");
   for (u64 i = 0; i < psi.size(); i++) {
     auto x = dis(gen);
     *(psi.data() + i) = {cos(x), sin(x)};
   }
   u32 overallSize = conf.t.n * points.size();
-  logDebug("Allocating psipdata with {} elements.", overallSize);
+  spdlog::debug("Allocating psipdata with {} elements.", overallSize);
   std::vector<c64> psidata((conf.t.n) * points.size() * 2);
   size_t byteSize = psi.size() * sizeof(c64);
   memcpy(psidata.data(), psi.data(), byteSize);
-  // logDebug("Allocating psimdata with {} elements.", overallSize);
-  // std::vector<c64> psimdata(conf.t.n * points.size());
-  // logDebug("Testing allocation first");
+  // //dlog::debug(std::cout, "Allocating psimdata with {} elements.",
+  // overallSize); std::vector<c64> psimdata(conf.t.n * points.size());
+  // //dlog::debug(std::cout, "Testing allocation first");
   // MatrixX2cd first = (conf.p - 1) * psi;
-  // logDebug("Testing allocation second");
+  // //dlog::debug(std::cout, "Testing allocation second");
   // MatrixX2cd second = -c64{0, conf.alpha} * psi.cwiseAbs2().transpose() *
-  // psi; logDebug("Testing allocation third"); MatrixX2cd third = iJ * psi;
-  // logDebug("Testing allocation fourth");
-  // MatrixX2cd fourth(psi.rows(), 2);
-  // logDebug("Testing spm v multiplication");
-  // MatrixXcd b = iL * psi.col(1);
-  // logDebug("Setting other fourth values");
-  // fourth.col(1) = -iL.conjugate() * psi.col(0);
-  // auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
-  // logDebug("Created rhs function.");
+  // psi; //dlog::debug(std::cout, "Testing allocation third"); MatrixX2cd third
+  // = iJ * psi; //dlog::debug(std::cout, "Testing allocation fourth");
+  // MatrixX2cd fourth(psi.rows(), 2); //dlog::debug(std::cout, "Testing spm v
+  // multiplication"); MatrixXcd b = iL * psi.col(1); //dlog::debug(std::cout,
+  // "Setting other fourth values"); fourth.col(1) = -iL.conjugate() *
+  // psi.col(0); auto rhs = tetmNonLin(iJ, iL, conf.p, conf.alpha);
+  // //dlog::debug(std::cout, "Created rhs function.");
   std::cout << "byteSize is: " << byteSize << '\n';
   std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
   for (u32 i = 1; i < conf.t.n; i++) {
     psi = tetmRK4Step(psi, J, L, conf.p, conf.alpha, conf.t.d());
     u64 n = psi.rows();
     u64 m = psi.cols();
-    logDebug("Return psiish with dims {}x{}", n, m);
-    logDebug("Copying to psipdata.");
+    spdlog::debug("Return psiish with dims {}x{}", n, m);
+    spdlog::debug("Copying to psipdata.");
     memcpy(psidata.data() + i * psi.size(), psi.data(), byteSize);
-    // logDebug("Copying to psimdata.");
+    // //dlog::debug(std::cout, "Copying to psimdata.");
     // memcpy(psimdata.data() + i * byteSize, psi.data(), byteSize);
   }
-  logDebug("Finished calculating.");
+  spdlog::debug("Finished calculating.");
 
   H5File file(conf.outfile.c_str());
   if (file == H5I_INVALID_HID) {
     std::cerr << "Failed to create file " << conf.outfile << std::endl;
     return 1;
   }
-  logDebug("Writing psip to file.");
+  spdlog::debug("Writing psip to file.");
   writeArray<3>("psi", file, c_double_id, psidata.data(),
                 {conf.t.n, 2, points.size()});
-  // logDebug("Writing psim to file.");
+  // //dlog::debug(std::cout, "Writing psim to file.");
   // writeArray<2>("psip", file, c_double_id, psipdata.data(),
   //               {conf.t.n, points.size()});
   writeArray<1>("time", file, H5T_NATIVE_DOUBLE_g,
                 linspace(conf.t, true).data(), {conf.t.n});
-  logDebug("Exiting doTETM.");
+  spdlog::debug("Exiting doTETM.");
   return 0;
 }
 
