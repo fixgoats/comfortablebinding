@@ -1,0 +1,78 @@
+#version 450
+layout(row_major) uniform;
+layout(row_major) buffer;
+
+#line 4 0
+layout(std430, binding = 3) readonly buffer StructuredBuffer_uint_t_0 {
+    uint _data[];
+} row_indices_0;
+
+#line 1
+layout(std430, binding = 0) buffer StructuredBuffer_float_t_0 {
+    float _data[];
+} u_0;
+
+#line 3
+layout(std430, binding = 2) readonly buffer StructuredBuffer_float_t_1 {
+    float _data[];
+} M_0;
+
+#line 5
+layout(std430, binding = 4) readonly buffer StructuredBuffer_uint_t_1 {
+    uint _data[];
+} col_indices_0;
+
+#line 2
+layout(std430, binding = 1) readonly buffer StructuredBuffer_float_t_2 {
+    float _data[];
+} v_0;
+
+
+
+layout(constant_id = 0)
+const uint LEN_0 = 0U;
+
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+
+#line 12
+    uint _S1 = gl_GlobalInvocationID.x;
+
+    if(_S1 < LEN_0)
+    {
+        uint _S2 = row_indices_0._data[uint(_S1 + 1U)];
+
+#line 16
+        uint j_0 = row_indices_0._data[uint(_S1)];
+        for(;;)
+        {
+
+#line 17
+            if(j_0 < _S2)
+            {
+            }
+            else
+            {
+
+#line 17
+                break;
+            }
+
+#line 18
+            u_0._data[uint(_S1)] = u_0._data[uint(_S1)] + M_0._data[uint(j_0)] * v_0._data[uint(col_indices_0._data[uint(j_0)])];
+
+#line 17
+            j_0 = j_0 + 1U;
+
+#line 17
+        }
+
+#line 14
+    }
+
+#line 21
+    return;
+}
+

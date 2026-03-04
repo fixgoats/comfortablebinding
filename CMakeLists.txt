@@ -27,7 +27,7 @@ set(EIGEN_USE_BLAS)
 set(EIGEN_USE_LAPACKE)
 
 add_executable(${MAIN_TARGET})
-add_executable(test src/test.cpp)
+add_executable(test src/test.cpp src/vkcore.cpp)
 add_executable(dynamic)
 add_executable(couplings)
 
@@ -78,6 +78,7 @@ set_property(
     PROPERTY
         LINK_LIBRARIES comp_base spdlog ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES}
 )
+target_link_libraries(test PRIVATE Vulkan::Vulkan)
 set_property(
     TARGET ${MAIN_TARGET} dynamic couplings test comp_base
     PROPERTY

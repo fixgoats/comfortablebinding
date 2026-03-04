@@ -10,7 +10,6 @@
 #include <format>
 #include <fstream>
 #include <span>
-#include <vma/vk_mem_alloc.h>
 
 using std::bit_cast;
 
@@ -211,7 +210,7 @@ struct Manager {
     copyBuffer(staging, buffer.buffer, nElements * sizeof(T));
   }
   template <typename T>
-  MetaBuffer makeRawBuffer(u32 nElements) {
+  [[nodiscard]] MetaBuffer makeRawBuffer(u32 nElements) {
     vk::BufferCreateInfo bCI{vk::BufferCreateFlags(),
                              round_up_x16(nElements * sizeof(T)),
                              vk::BufferUsageFlagBits::eStorageBuffer |
@@ -252,18 +251,19 @@ struct Manager {
   }
 
   template <typename T>
-  MetaBuffer vecToBuffer(const std::vector<T>& v) {
+  [[nodiscard]] MetaBuffer vecToBuffer(const std::vector<T>& v) {
     auto buffer = makeRawBuffer<T>(v.size());
     writeToBuffer(buffer, v);
     return buffer;
   }
-  Algorithm makeAlgorithmRaw(
+  [[nodiscard]] Algorithm makeAlgorithmRaw(
       std::string spirvname, const std::vector<vk::ImageView>& images,
       const std::vector<MetaBuffer*>& buffers, const u8* specConsts = nullptr,
       const size_t* specConstOffsets = nullptr, size_t nConsts = 0,
       const size_t* pushSizes = nullptr, size_t nPushConstants = 0);
+
   template <class T>
-  Algorithm
+  [[nodiscard]] Algorithm
   makeAlgorithm(std::string spirvname, const std::vector<vk::ImageView>& images,
                 std::vector<MetaBuffer*> buffers, const T specConsts) {
     constexpr auto sizes = struct_field_sizes<T>();
@@ -273,16 +273,16 @@ struct Manager {
                             sizes.size());
   }
   template <class PushType, class T>
-  Algorithm makeAlgorithm(std::string spirvname,
-                          std::vector<MetaBuffer*> buffers,
-                          const T specConsts) {
+  [[nodiscard]] Algorithm makeAlgorithm(std::string spirvname,
+                                        std::vector<MetaBuffer*> buffers,
+                                        const T specConsts) {
     constexpr size_t nSpecConsts = boost::pfr::tuple_size_v<T>;
-    std::array<u32, nSpecConsts> sizes;
+    std::array<size_t, nSpecConsts> sizes;
     constexpr_for<0, nSpecConsts, 1>([&sizes](auto i) {
       sizes[i] = sizeof(boost::pfr::tuple_element_t<i, T>);
     });
     constexpr size_t nPushConsts = boost::pfr::tuple_size_v<PushType>;
-    std::array<u32, nPushConsts> pushSizes;
+    std::array<size_t, nPushConsts> pushSizes;
     constexpr_for<0, nPushConsts, 1>([&pushSizes](auto i) {
       pushSizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
     });
@@ -293,7 +293,7 @@ struct Manager {
   ~Manager();
 };
 
-struct Renderer {
+/*struct Renderer {
   // non-owned
   Manager* p_mgr;
   //  owned
@@ -340,26 +340,7 @@ struct Renderer {
   void recreateSwapchain();
   void drawFrame();
   ~Renderer();
-};
-
-template <class T>
-void writeCsv(std::ofstream& of, T* v, u32 nColumns, u32 nRows = 1,
-              const std::vector<std::string>& heading = {}) {
-  std::string out;
-  if (heading.size()) {
-    for (const auto& h : heading) {
-      of << h << ' ';
-    }
-    of << '\n';
-  }
-  for (u32 j = 0; j < nRows; j++) {
-    for (u32 i = 0; i < nColumns; i++) {
-      of << numfmt(v[j * nColumns + i]) << ' ';
-    }
-    of << '\n';
-  }
-  of.close();
-}
+};*/
 
 std::vector<u32> readFile(const std::string& filename);
 vk::PhysicalDevice pickPhysicalDevice(const vk::Instance& instance,

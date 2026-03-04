@@ -8,8 +8,6 @@
 #include <format>
 #include <iostream>
 #include <set>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_handles.hpp>
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -768,7 +766,7 @@ void Algorithm::bindData(const std::vector<vk::ImageView>& img_views,
   m_device.updateDescriptorSets(writeDescriptorSets, {});
 }
 
-Renderer::Renderer(Manager& manager, u32 nx, u32 ny) {
+/* Renderer::Renderer(Manager& manager, u32 nx, u32 ny) {
   p_mgr = &manager;
   render_queue_indices = get_graphics_present_queue_family_indices(
       manager.physicalDevice, manager.surface);
@@ -1322,4 +1320,4 @@ Renderer::~Renderer() {
   dev.destroyPipeline(graphicsPipeline);
   dev.destroyPipelineLayout(graphicsPipelineLayout);
   dev.destroyRenderPass(renderPass);
-}
+}*/
