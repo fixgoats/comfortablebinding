@@ -125,6 +125,7 @@ inline SparseMatrix<c64> SparseHC(const std::vector<Point>& points,
     H.insert(nb.i, nb.j) = val;
     H.insert(nb.j, nb.i) = std::conj(val);
   }
+  H.finalize();
   return H;
 }
 
@@ -140,6 +141,7 @@ inline SparseMatrix<c64> SparseHC(const Eigen::MatrixX2d& points,
     H.insert(couplings(i, 0), couplings(i, 1)) = val;
     H.insert(couplings(i, 1), couplings(i, 0)) = std::conj(val);
   }
+  H.finalize();
   return H;
 }
 
@@ -154,12 +156,29 @@ inline SparseMatrix<c64> SparseC(const Eigen::MatrixX2d& points,
     H.insert(couplings(i, 0), couplings(i, 1)) = val;
     H.insert(couplings(i, 1), couplings(i, 0)) = val;
   }
+  H.finalize();
   return H;
 }
 
+template <class Func>
+inline SparseMatrix<c32> SparseCf(const Eigen::MatrixX2d& points,
+                                  const Eigen::MatrixX2i& couplings, Func f) {
+  SparseMatrix<c32> H(points.rows(), points.rows());
+  for (s64 i = 0; i < couplings.rows(); ++i) {
+    Vector2d d = points(couplings(i, 1), Eigen::indexing::all) -
+                 points(couplings(i, 0), Eigen::indexing::all);
+    c64 val = f(d);
+    H.insert(couplings(i, 0), couplings(i, 1)) = val;
+    H.insert(couplings(i, 1), couplings(i, 0)) = val;
+  }
+  H.finalize();
+  return H;
+}
+
+template <class Func>
 inline SparseMatrix<f64> SparseH(const std::vector<Point>& points,
                                  const kdt::KDTree<Point>& kdtree, f64 radius,
-                                 f64 (*f)(Vector2d)) {
+                                 Func f) {
 
   std::vector<Neighbour> nb_info = pointsToNbs(points, kdtree, radius);
   SparseMatrix<double> H(points.size(), points.size());
@@ -168,5 +187,6 @@ inline SparseMatrix<f64> SparseH(const std::vector<Point>& points,
     H.insert(nb.i, nb.j) = val;
     H.insert(nb.j, nb.i) = val;
   }
+  H.finalize();
   return H;
 }

@@ -52,6 +52,7 @@ int main(const int argc, const char* const* argv) {
       doBasicHankelDD(conf.tetm.value());
     }
     if (!conf.hscs.empty()) {
+      // GPUDrivenDiss(conf.hscs);
       doHankelScan(conf.hscs);
     }
     if (conf.bd.has_value()) {
