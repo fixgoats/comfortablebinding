@@ -1,36 +1,6 @@
-pointPath = "../data/squarepoints.txt"
-searchRadius = 1.1
-
-[[hankelscans]]
-pointPath = "../punktar/square100couplings.h5"
-outfile = "monotile100scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 1, end = 8, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/square225couplings.h5"
-outfile = "monotile225scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 1, end = 8, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/square400couplings.h5"
-outfile = "monotile400scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 1, end = 8, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
 [[hankelscans]]
 pointPath = "../punktar/monotile150couplings.h5"
-outfile = "monotile150scalescan.h5"
+outfile = "../gögn/monotile150scalescan.h5"
 ps = { start = 0.2, end = 1.0, n = 1 }
 alphas = { start = 1, end = 1, n = 1 }
 js = { start = 1, end = 1, n = 1 }
@@ -38,17 +8,8 @@ rscales = { start = 2, end = 16, n = 400 }
 t = { start = 0, end = 100, n = 10000 }
 
 [[hankelscans]]
-pointPath = "../punktar/monotile198couplings.h5"
-outfile = "monotile198scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
 pointPath = "../punktar/monotile259couplings.h5"
-outfile = "monotile259scalescan.h5"
+outfile = "../gögn/monotile259scalescan.h5"
 ps = { start = 0.2, end = 1.0, n = 1 }
 alphas = { start = 1, end = 1, n = 1 }
 js = { start = 1, end = 1, n = 1 }
@@ -57,66 +18,93 @@ t = { start = 0, end = 100, n = 10000 }
 
 [[hankelscans]]
 pointPath = "../punktar/monotile404couplings.h5"
-outfile = "monotile404scalescan.h5"
+outfile = "../gögn/monotile404scalescan.h5"
 ps = { start = 0.2, end = 1.0, n = 1 }
 alphas = { start = 1, end = 1, n = 1 }
 js = { start = 1, end = 1, n = 1 }
 rscales = { start = 4, end = 16, n = 400 }
 t = { start = 0, end = 100, n = 10000 }
 
-[[hankelscans]]
-pointPath = "../punktar/tetrille183couplings.h5"
-outfile = "tetrille183scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
+# [[hankelscans]]
+# pointPath = "../punktar/square100couplings.h5"
+# outfile = "square100scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 1, end = 8, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/square225couplings.h5"
+# outfile = "square225scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 1, end = 8, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/square400couplings.h5"
+# outfile = "square400scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 1, end = 8, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
 
-[[hankelscans]]
-pointPath = "../punktar/tetrille303couplings.h5"
-outfile = "tetrille303scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/tetrille462couplings.h5"
-outfile = "tetrille462scalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/tetrille201dcouplings.h5"
-outfile = "tetrille201dscalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/tetrille305dcouplings.h5"
-outfile = "tetrille305dscalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
-
-[[hankelscans]]
-pointPath = "../punktar/tetrille462dcouplings.h5"
-outfile = "tetrille462dscalescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 4, end = 16, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille183couplings.h5"
+# outfile = "tetrille183scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille303couplings.h5"
+# outfile = "tetrille303scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille462couplings.h5"
+# outfile = "tetrille462scalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille201dcouplings.h5"
+# outfile = "tetrille201dscalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille305dcouplings.h5"
+# outfile = "tetrille305dscalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
+#
+# [[hankelscans]]
+# pointPath = "../punktar/tetrille462dcouplings.h5"
+# outfile = "tetrille462dscalescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 4, end = 16, n = 400 }
+# t = { start = 0, end = 100, n = 10000 }
 
 # [basicdistance]
 # outfile = "distancescanloweralpha.h5"

@@ -24,7 +24,7 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd, Eigen::VectorXcf,
 
 std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   toml::table tbl;
-  spdlog::debug("bleh");
+  spdlog::debug("Function: tomlToDynConf");
   try {
     tbl = toml::parse_file(fname);
   } catch (const std::exception& err) {
@@ -32,6 +32,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
               << " failed with exception: " << err.what() << '\n';
     return {};
   }
+  spdlog::debug("File {} successfully parsed", fname);
   DynConf conf{};
   if (tbl.contains("basic")) {
     spdlog::debug("Writing config for basic.");
@@ -49,6 +50,7 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
   }
   if (tbl.contains("hankelscans")) {
     toml::array htbls = *tbl["hankelscans"].as_array();
+    spdlog::debug("number of Hankel scan configs: {}", htbls.size());
 
     for (const auto& eee : htbls) {
       conf.hscs.emplace_back(*eee.as_table());

@@ -4,6 +4,7 @@
 #include "Eigen/Sparse"
 #include "io.h"
 #include "mathhelpers.h"
+#include "spdlog/spdlog.h"
 #include "typedefs.h"
 #include <toml++/toml.hpp>
 
@@ -116,6 +117,7 @@ struct HankelScanConf {
   RangeConf<f64> t;
 
   HankelScanConf(const toml::table& tbl) {
+    spdlog::debug("Constructor: HankelScanConf(const toml::table& tbl)");
     SET_STRUCT_FIELD(outfile, tbl);
     SET_STRUCT_FIELD(pointPath, tbl);
     ps = tblToRange(*tbl["ps"].as_table());

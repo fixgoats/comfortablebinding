@@ -3,6 +3,7 @@
 #include "highfive/highfive.hpp"
 #include "io.h"
 #include "kdtree.h"
+#include "raylib.h"
 #include "spdlog/spdlog.h"
 #include <cxxopts.hpp>
 
@@ -26,12 +27,21 @@ struct KDVec2 : std::array<f64, 2> {
   }
 };
 
+s32 toScreenX(f64 r, f64 min, f64 max, s32 dim) {
+  return (s32)(((r - min) / (max - min)) * (f64)dim);
+}
+
+s32 toScreenY(f64 r, f64 min, f64 max, s32 dim) {
+  return (s32)(((r - max) / (min - max)) * (f64)dim);
+}
+
 int main(int argc, char* argv[]) {
   cxxopts::Options options("Dynamic Simulations", "bleh");
   options.add_options()("p,points", "TOML configuration",
                         cxxopts::value<std::string>())(
       "r,radius", "Search radius", cxxopts::value<f64>())(
-      "o,out", "Output file", cxxopts::value<std::string>());
+      "o,out", "Output file", cxxopts::value<std::string>())(
+      "w,window", "View in window", cxxopts::value<std::string>());
   cxxopts::ParseResult result;
   try {
     result = options.parse(argc, argv);
@@ -110,6 +120,59 @@ int main(int argc, char* argv[]) {
     spdlog::debug("Writing points");
     pointSet.write_raw((f64*)points.data());
   }
+  if (result["w"].count()) {
+    std::string fname = result["w"].as<std::string>();
+    std::vector<KDVec2> points;
+    HighFive::File pfile(fname, HighFive::File::ReadOnly);
+    spdlog::debug("Read file {}", fname);
+    auto space = pfile.getDataSet("points").getSpace();
+    std::cout << space.getDimensions()[0] << '\n';
+    points.resize(space.getDimensions()[0]);
+    pfile.getDataSet("points").read_raw<f64>((f64*)points.data());
+    kdt::KDTree<KDVec2> kdtree(points);
+    size_t xmin_idx = kdtree.axisFindMin(0);
+    size_t xmax_idx = kdtree.axisFindMax(0);
+    size_t ymin_idx = kdtree.axisFindMin(1);
+    size_t ymax_idx = kdtree.axisFindMax(1);
+    double xmin = points[xmin_idx][0];
+    double xmax = points[xmax_idx][0];
+    double ymin = points[ymin_idx][1];
+    double ymax = points[ymax_idx][1];
+    double exmin = xmin - 0.05 * (xmax - xmin);
+    double eymin = ymin - 0.05 * (ymax - ymin);
+    double exmax = xmax + 0.05 * (xmax - xmin);
+    double eymax = ymax + 0.05 * (ymax - ymin);
 
+    Eigen::MatrixX2i couplings =
+        pfile.getDataSet("couplings").read<Eigen::MatrixX2i>();
+    int width = 1080;
+    int height = 1080;
+    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
+                   FLAG_WINDOW_TRANSPARENT);
+    InitWindow(width, height, "raylib test");
+    SetTargetFPS(10);
+    while (!WindowShouldClose()) {
+      width = GetScreenWidth();
+      height = GetScreenHeight();
+      BeginDrawing();
+      ClearBackground(WHITE);
+      for (const auto& point : points) {
+        DrawCircle(toScreenX(point[0], exmin, exmax, width),
+                   toScreenY(point[1], eymin, eymax, height), 3.0f, RED);
+      }
+      for (const auto& nb : couplings.rowwise()) {
+        auto startx = toScreenX(points[nb[0]][0], exmin, exmax, width);
+        auto starty = toScreenY(points[nb[0]][1], eymin, eymax, height);
+        auto endx = toScreenX(points[nb[1]][0], exmin, exmax, width);
+        auto endy = toScreenY(points[nb[1]][1], eymin, eymax, height);
+        DrawLine(startx, starty, endx, endy, BLUE);
+      }
+      EndDrawing();
+      if (IsKeyPressed(KEY_P)) {
+        TakeScreenshot("graph.png");
+      }
+    }
+    CloseWindow();
+  }
   return 0;
 }
