@@ -56,6 +56,14 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
       conf.hscs.emplace_back(*eee.as_table());
     }
   }
+  if (tbl.contains("hankeltimescans")) {
+    toml::array htbls = *tbl["hankeltimescans"].as_array();
+    spdlog::debug("number of Hankel scan configs: {}", htbls.size());
+
+    for (const auto& eee : htbls) {
+      conf.hscs.emplace_back(*eee.as_table());
+    }
+  }
   if (tbl.contains("delay")) {
     conf.tetm = TETMConf(*tbl["delay"].as_table());
   }
@@ -561,6 +569,103 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
                     {static_cast<u64>(psize), static_cast<u64>(alphasize),
                      static_cast<u64>(jsize), static_cast<u64>(rscalesize),
                      static_cast<u64>(points.rows())}));
+    sampleSet.write_raw(data.data());
+    file.createDataSet("points", points);
+    file.createDataSet("couplings", couplings);
+    file.createDataSet("time", linspace(conf.t, true));
+    file.createDataSet("ps", linspace(conf.ps, false));
+    file.createDataSet("alphas", linspace(conf.alphas, false));
+    file.createDataSet("js", linspace(conf.js, false));
+    file.createDataSet("rscales", linspace(conf.rscales, false));
+  }
+  spdlog::debug("Exiting doHankelScan.");
+  return 0;
+}
+
+int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+  spdlog::debug("Function: doHankelScan.");
+  for (const auto& conf : confs) {
+    HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
+    spdlog::debug("Read pointfile.");
+    Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
+    spdlog::debug("Read points.");
+    Eigen::MatrixX2i couplings =
+        pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
+    spdlog::debug("Read couplings.");
+
+    std::random_device dev;
+    std::mt19937 gen(dev());
+    std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+
+    s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
+    std::vector<c64> data(samples * 2 * (conf.t.n + 1));
+    s64 datasize = data.size();
+    spdlog::debug("data has {} elements in total.", datasize);
+    s64 psize = conf.ps.n;
+    spdlog::debug("number of ps is {}.", psize);
+    s64 alphasize = conf.alphas.n;
+    spdlog::debug("number of alphas is {}.", alphasize);
+    s64 jsize = conf.js.n;
+    spdlog::debug("number of js is {}.", jsize);
+    s64 rscalesize = conf.rscales.n;
+    spdlog::debug("number of rscales is {}.", rscalesize);
+    VectorXcd init_psi(points.rows());
+    for (u64 o = 0; o < init_psi.size(); ++o) {
+      auto x = dis(gen);
+      *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
+    }
+    s64 idx = 0;
+    for (s64 m = 0; m < jsize; ++m) {
+      const f64 j = conf.js.ith(m);
+#pragma omp parallel for
+      for (s64 n = 0; n < rscalesize; ++n) {
+        const f64 scale = conf.rscales.ith(n);
+        const SparseMatrix<c64> J =
+            j * SparseC(points, couplings, [scale](Vector2d d) {
+              return c64{gsl_sf_bessel_J0(scale * d.norm()),
+                         gsl_sf_bessel_Y0(scale * d.norm())};
+            });
+        const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
+        auto max_coeff =
+            std::ranges::max_element(sol.eigenvalues(), [](c64 a, c64 b) {
+              return a.real() < b.real();
+            });
+        for (s64 k = 0; k < psize; ++k) {
+          const f64 p = conf.ps.ith(k);
+          for (s64 l = 0; l < alphasize; ++l) {
+            const f64 alpha = conf.alphas.ith(l);
+            const f64 eff_p = (p - 1) * max_coeff->real();
+            spdlog::debug("Made sparse matrix J.");
+            spdlog::debug("Allocating psi.");
+            VectorXcd psi = init_psi;
+            spdlog::debug("Writing random coordinates to psi.");
+            // const size_t byteSize = psi.size() * sizeof(c64);
+            auto rhs = hankelDD(J, eff_p, alpha);
+            spdlog::debug("Running rk4 for {} steps.", conf.t.n);
+            c64 psisum = psi.sum();
+            data[idx] = psisum;
+            data[idx + 1] = psi[0];
+            idx += 2;
+            for (u32 o = 1; o < conf.t.n + 1; ++o) {
+              psi = rk4step(psi, conf.t.d(), rhs);
+              c64 psisum = psi.sum();
+              data[idx] = psisum;
+              data[idx + 1] = psi[0];
+              idx += 2;
+            }
+          }
+        }
+      }
+    }
+
+    HighFive::File file(conf.outfile, HighFive::File::Truncate);
+    spdlog::debug("Writing samples to file.");
+
+    auto sampleSet = file.createDataSet<c64>(
+        "psis", HighFive::DataSpace(
+                    {static_cast<u64>(psize), static_cast<u64>(alphasize),
+                     static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+                     static_cast<u64>(conf.t.n + 1), 2}));
     sampleSet.write_raw(data.data());
     file.createDataSet("points", points);
     file.createDataSet("couplings", couplings);
