@@ -617,7 +617,6 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     s64 idx = 0;
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = conf.js.ith(m);
-#pragma omp parallel for
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = conf.rscales.ith(n);
         const SparseMatrix<c64> J =

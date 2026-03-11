@@ -4,8 +4,8 @@ outfile = "../gögn/monotile150scalescan.h5"
 ps = { start = 0.2, end = 1.0, n = 1 }
 alphas = { start = 1, end = 1, n = 1 }
 js = { start = 1, end = 1, n = 1 }
-rscales = { start = 2, end = 16, n = 2 }
-t = { start = 0, end = 10, n = 1000 }
+rscales = { start = 2, end = 10, n = 4 }
+t = { start = 0, end = 300, n = 30000 }
 
 # [[hankelscans]]
 # pointPath = "../punktar/monotile259couplings.h5"
