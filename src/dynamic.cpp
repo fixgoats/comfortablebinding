@@ -441,9 +441,9 @@ int doBasicHankelDD(const TETMConf& conf) {
   spdlog::debug("Made sparse matrix J.");
   auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
   auto max_coeff = std::ranges::max_element(
-      sol.eigenvalues(), [](c64 a, c64 b) { return a.real() < b.real(); });
-  std::cout << "Highest eigenvalue is: " << max_coeff->real() << '\n';
-  const f64 p = (conf.p - 1) * max_coeff->real();
+      sol.eigenvalues(), [](c64 a, c64 b) { return a.imag() < b.imag(); });
+  std::cout << "Highest eigenvalue is: " << max_coeff->imag() << '\n';
+  const f64 p = (conf.p - 1) * max_coeff->imag();
   std::random_device dev;
   std::mt19937 gen(dev());
   std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
@@ -532,15 +532,15 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
                          gsl_sf_bessel_Y0(scale * d.norm())};
             });
         const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
-        auto max_coeff =
-            std::ranges::max_element(sol.eigenvalues(), [](c64 a, c64 b) {
-              return a.real() < b.real();
+        auto min_coeff =
+            std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
+              return a.imag() < b.imag();
             });
         for (s64 k = 0; k < psize; ++k) {
           const f64 p = conf.ps.ith(k);
           for (s64 l = 0; l < alphasize; ++l) {
             const f64 alpha = conf.alphas.ith(l);
-            const f64 eff_p = (p - 1) * max_coeff->real();
+            const f64 eff_p = (p - 1) * min_coeff->imag();
             spdlog::debug("Made sparse matrix J.");
             spdlog::debug("Allocating psi.");
             VectorXcd psi = init_psi;
@@ -600,6 +600,8 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
     std::vector<c64> data(samples * 2 * (conf.t.n + 1));
     s64 datasize = data.size();
+    std::vector<c64> snapshotdata(samples * points.rows());
+    s64 snapshotsize = snapshotdata.size();
     spdlog::debug("data has {} elements in total.", datasize);
     s64 psize = conf.ps.n;
     spdlog::debug("number of ps is {}.", psize);
@@ -614,6 +616,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
       auto x = dis(gen);
       *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
+    const size_t byteSize = init_psi.size() * sizeof(c64);
     s64 idx = 0;
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = conf.js.ith(m);
@@ -625,15 +628,15 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
                          gsl_sf_bessel_Y0(scale * d.norm())};
             });
         const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
-        auto max_coeff =
-            std::ranges::max_element(sol.eigenvalues(), [](c64 a, c64 b) {
-              return a.real() < b.real();
+        auto min_coeff =
+            std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
+              return a.imag() < b.imag();
             });
         for (s64 k = 0; k < psize; ++k) {
           const f64 p = conf.ps.ith(k);
           for (s64 l = 0; l < alphasize; ++l) {
             const f64 alpha = conf.alphas.ith(l);
-            const f64 eff_p = (p - 1) * max_coeff->real();
+            const f64 eff_p = (p - 1) * min_coeff->imag();
             spdlog::debug("Made sparse matrix J.");
             spdlog::debug("Allocating psi.");
             VectorXcd psi = init_psi;
@@ -652,6 +655,9 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
               data[idx + 1] = psi[0];
               idx += 2;
             }
+            s64 idx = (n + rscalesize * (m + jsize * (l + alphasize * k))) *
+                      points.rows();
+            memcpy(snapshotdata.data() + idx, psi.data(), byteSize);
           }
         }
       }
@@ -660,12 +666,20 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
 
-    auto sampleSet = file.createDataSet<c64>(
-        "psis", HighFive::DataSpace(
-                    {static_cast<u64>(psize), static_cast<u64>(alphasize),
-                     static_cast<u64>(jsize), static_cast<u64>(rscalesize),
-                     static_cast<u64>(conf.t.n + 1), 2}));
-    sampleSet.write_raw(data.data());
+    auto seriesSet = file.createDataSet<c64>(
+        "sumpsitimeseries",
+        HighFive::DataSpace(
+            {static_cast<u64>(psize), static_cast<u64>(alphasize),
+             static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+             static_cast<u64>(conf.t.n + 1), 2}));
+    seriesSet.write_raw(data.data());
+    auto snapshot = file.createDataSet<c64>(
+        "psisnapshot",
+        HighFive::DataSpace(
+            {static_cast<u64>(psize), static_cast<u64>(alphasize),
+             static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+             static_cast<u64>(points.rows())}));
+    snapshot.write_raw(snapshotdata.data());
     file.createDataSet("points", points);
     file.createDataSet("couplings", couplings);
     file.createDataSet("time", linspace(conf.t, true));
@@ -674,7 +688,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     file.createDataSet("js", linspace(conf.js, false));
     file.createDataSet("rscales", linspace(conf.rscales, false));
   }
-  spdlog::debug("Exiting doHankelScan.");
+  spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
 }
 

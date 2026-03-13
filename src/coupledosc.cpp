@@ -53,12 +53,12 @@ int main(const int argc, const char* const* argv) {
     }
     if (!conf.hscs.empty()) {
       // GPUDrivenDiss(conf.hscs);
-      doHankelScan(conf.hscs);
-    }
-    if (!conf.hscs.empty()) {
-      // GPUDrivenDiss(conf.hscs);
       doHankelTimeScan(conf.hscs);
     }
+    // if (!conf.hscs.empty()) {
+    //   // GPUDrivenDiss(conf.hscs);
+    //   doHankelTimeScan(conf.hscs);
+    // }
     if (conf.bd.has_value()) {
       doDistanceScan(conf.bd.value());
     }

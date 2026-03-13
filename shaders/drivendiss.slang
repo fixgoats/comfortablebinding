@@ -19,7 +19,7 @@ const float alpha = 0;
 
 void f1(uint i) {
   float2 y = psi[i];
-  k1[i] = c_mul(float2(ps[i] - 1, alpha * dot(y, y)), y);
+  k1[i] = c_mul(float2(ps[i] - 1, -alpha * dot(y, y)), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -29,7 +29,7 @@ void f1(uint i) {
 
 void f2(uint i) {
   float2 y = psi[i] + k1[i] * (0.5 * dt);
-  k2[i] = c_mul(float2(ps[i] - 1, alpha * dot(y, y)), y);
+  k2[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -39,7 +39,7 @@ void f2(uint i) {
 
 void f3(uint i) {
   float2 y = psi[i] + k2[i] * (0.5 * dt);
-  k3[i] = c_mul(float2(ps[i] - 1, alpha * dot(y, y)), y);
+  k3[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -49,7 +49,7 @@ void f3(uint i) {
 
 void f4(uint i) {
   float2 y = psi[i] + k3[i] * dt;
-  k4[i] = c_mul(float2(ps[i] - 1, alpha * dot(y, y)), y);
+  k4[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
