@@ -32,9 +32,16 @@ constexpr bool fleq(auto x, auto y, double tol) {
 }
 
 // Note: only for x86. Not sure if simd friendly
-static inline u32 uintlog2(const u32 x) {
+static inline u32 uintlog2(u32 x) {
   uint32_t y;
   asm("\tbsr %1, %0\n" : "=r"(y) : "r"(x));
+  return y;
+}
+
+static inline u32 uintlog2n(u32 x, u32 n) {
+  uint32_t y;
+  asm("\tbsr %1, %0\n" : "=r"(y) : "r"(x));
+  y /= n;
   return y;
 }
 

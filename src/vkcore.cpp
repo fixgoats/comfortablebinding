@@ -358,7 +358,7 @@ Manager::Manager(size_t stagingSize) {
   }();
   // const std::vector<const char*> instanceExtensions = ;
   const std::vector<const char*> deviceExtensions = [&]() {
-    return std::vector<const char*>{};
+    return std::vector<const char*>{"VK_KHR_maintenance4"};
   }();
   vk::InstanceCreateInfo iCI(vk::InstanceCreateFlags(), &appInfo, layers.size(),
                              layers.data(), instance_extension_count,
@@ -381,11 +381,13 @@ Manager::Manager(size_t stagingSize) {
   std::transform(qfis.begin(), qfis.end(), dQCI.begin(), [&](u32 qfi) {
     return vk::DeviceQueueCreateInfo({}, qfi, 1, &queuePriority);
   });
+  vk::PhysicalDeviceVulkan13Features phys_dev_features13;
+  phys_dev_features13.maintenance4 = vk::True;
   vk::PhysicalDeviceFeatures phys_dev_features;
   phys_dev_features.shaderFloat64 = vk::True;
   phys_dev_features.shaderInt64 = vk::True;
   vk::DeviceCreateInfo dCI(vk::DeviceCreateFlags(), dQCI, {}, deviceExtensions,
-                           &phys_dev_features, nullptr);
+                           &phys_dev_features, &phys_dev_features13);
   device = physicalDevice.createDevice(dCI);
   vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(),
                                                   cQFI);

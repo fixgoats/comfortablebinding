@@ -692,7 +692,8 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   return 0;
 }
 
-int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+/*int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+  Manager mgr(100 * 1024 * 1024);
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
@@ -705,12 +706,12 @@ int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
 
     std::random_device dev;
     std::mt19937 gen(dev());
-    std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+    std::uniform_real_distribution<f32> dis(0.0, 2 * M_PI);
 
     s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
-    std::vector<c64> data(samples * 2 * (conf.t.n + 1));
+    std::vector<c32> data(samples * 2 * (conf.t.n + 1));
     s64 datasize = data.size();
-    std::vector<c64> snapshotdata(samples * points.rows());
+    std::vector<c32> snapshotdata(samples * points.rows());
     s64 snapshotsize = snapshotdata.size();
     spdlog::debug("data has {} elements in total.", datasize);
     s64 psize = conf.ps.n;
@@ -721,32 +722,68 @@ int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     spdlog::debug("number of js is {}.", jsize);
     s64 rscalesize = conf.rscales.n;
     spdlog::debug("number of rscales is {}.", rscalesize);
-    VectorXcd init_psi(points.rows());
+    VectorXcf init_psi(points.rows());
     for (u64 o = 0; o < init_psi.size(); ++o) {
       auto x = dis(gen);
-      *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
+      *(init_psi.data() + o) = {1e-4f * cos(x), 1e-4f * sin(x)};
     }
-    const size_t byteSize = init_psi.size() * sizeof(c64);
+    spdlog::debug("allocating gpu_psi");
+    MetaBuffer gpu_psi = mgr.makeRawBuffer<c32>(points.rows());
+    spdlog::debug("allocating gpu_J");
+    MetaBuffer gpu_J = mgr.makeRawBuffer<c32>(couplings.rows() * 2);
+    spdlog::debug("allocating gpu_ps");
+    MetaBuffer gpu_ps = mgr.makeRawBuffer<f32>(points.rows());
+    spdlog::debug("allocating gpu_k1");
+    MetaBuffer gpu_k1 = mgr.makeRawBuffer<c32>(points.rows());
+    spdlog::debug("allocating gpu_k2");
+    MetaBuffer gpu_k2 = mgr.makeRawBuffer<c32>(points.rows());
+    spdlog::debug("allocating gpu_k3");
+    MetaBuffer gpu_k3 = mgr.makeRawBuffer<c32>(points.rows());
+    spdlog::debug("allocating gpu_k4");
+    MetaBuffer gpu_k4 = mgr.makeRawBuffer<c32>(points.rows());
+    std::vector<u32> col_indices(couplings.rows() * 2);
+    std::vector<u32> row_indices(points.rows() + 1);
+    {
+      const SparseMatrix<c64> bleh =
+          SparseC(points, couplings, [](Vector2d d) { return c64{1, 0}; });
+      for (u32 i = 0; i < points.rows() + 1; ++i) {
+        spdlog::debug("Sparse Matrix row index {}: {}", i,
+                      bleh.outerIndexPtr()[i]);
+        row_indices[i] = static_cast<u32>(bleh.outerIndexPtr()[i]);
+      }
+      for (u32 i = 0; i < 2 * couplings.rows(); ++i) {
+        spdlog::debug("Sparse Matrix col index {}: {}", i,
+                      bleh.innerIndexPtr()[i]);
+        col_indices[i] = static_cast<u32>(bleh.innerIndexPtr()[i]);
+      }
+    }
+    spdlog::debug("moving col_indices to gpu");
+    MetaBuffer gpu_col_indices = mgr.vecToBuffer(col_indices);
+    spdlog::debug("moving row_indices to gpu");
+    MetaBuffer gpu_row_indices = mgr.vecToBuffer(row_indices);
+    const size_t byteSize = init_psi.size() * sizeof(c32);
     s64 idx = 0;
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = conf.js.ith(m);
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = conf.rscales.ith(n);
-        const SparseMatrix<c64> J =
-            j * SparseC(points, couplings, [scale](Vector2d d) {
-              return c64{gsl_sf_bessel_J0(scale * d.norm()),
-                         gsl_sf_bessel_Y0(scale * d.norm())};
+        const SparseMatrix<c32> J =
+            j * SparseCf(points, couplings, [scale](Vector2d d) {
+              return c32{static_cast<f32>(gsl_sf_bessel_J0(scale * d.norm())),
+                         static_cast<f32>(gsl_sf_bessel_Y0(scale * d.norm()))};
             });
-        const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
+        mgr.writeToBuffer(gpu_J, J.valuePtr(),
+                          2 * couplings.rows() * sizeof(c32));
+        const auto sol = Eigen::ComplexEigenSolver<MatrixXcf>(MatrixXcf(J));
         auto min_coeff =
-            std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
+            std::ranges::min_element(sol.eigenvalues(), [](c32 a, c32 b) {
               return a.imag() < b.imag();
             });
         for (s64 k = 0; k < psize; ++k) {
-          const f64 p = conf.ps.ith(k);
+          const f32 p = conf.ps.ith(k);
           for (s64 l = 0; l < alphasize; ++l) {
-            const f64 alpha = conf.alphas.ith(l);
-            const f64 eff_p = (p - 1) * min_coeff->imag();
+            const f32 alpha = conf.alphas.ith(l);
+            const f32 eff_p = (p - 1) * min_coeff->imag();
             spdlog::debug("Made sparse matrix J.");
             spdlog::debug("Allocating psi.");
             VectorXcd psi = init_psi;
@@ -800,7 +837,7 @@ int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}
+}*/
 
 int doBasic(const BasicConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);

@@ -9,9 +9,12 @@ StructuredBuffer<float> ps;
 StructuredBuffer<float2> J;
 StructuredBuffer<uint> row_indices;
 StructuredBuffer<uint> col_indices;
+RWStructuredBuffer<float2> psisum;
 
 [vk::specialization_constant]
 const uint LEN = 0;
+[vk::specialization_constant]
+const uint WAVE_SIZE = 0;
 [vk::specialization_constant]
 const float dt = 0;
 [vk::specialization_constant]
@@ -19,7 +22,7 @@ const float alpha = 0;
 
 void f1(uint i) {
   float2 y = psi[i];
-  k1[i] = c_mul(float2(ps[i] - 1, -alpha * dot(y, y)), y);
+  k1[i] = ps[i] * y - dot(y,y) * c_mul(float2(1, alpha), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -29,7 +32,7 @@ void f1(uint i) {
 
 void f2(uint i) {
   float2 y = psi[i] + k1[i] * (0.5 * dt);
-  k2[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
+  k2[i] = ps[i] * y - dot(y,y) * c_mul(float2(1, alpha), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -39,7 +42,7 @@ void f2(uint i) {
 
 void f3(uint i) {
   float2 y = psi[i] + k2[i] * (0.5 * dt);
-  k3[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
+  k3[i] = ps[i] * y - dot(y,y) * c_mul(float2(1, alpha), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -49,7 +52,7 @@ void f3(uint i) {
 
 void f4(uint i) {
   float2 y = psi[i] + k3[i] * dt;
-  k4[i] = c_mul(float2(ps[i] - 1 * dot(y, y), -alpha * dot(y, y)), y);
+  k4[i] = ps[i] * y - dot(y,y) * c_mul(float2(1, alpha), y);
   uint row_start = row_indices[i];
   uint row_end = row_indices[i+1];
   for (uint j = row_start; j < row_end; ++j) {
@@ -57,21 +60,22 @@ void f4(uint i) {
   }
 }
 
+void parsumfirst(uint threadId: SV_DispatchThreadID, uint gId: SV_GroupID) {
+  psisum[gId] = WaveActiveSum(psi[threadId]);
+}
+void parsum(uint threadId: SV_DispatchThreadID, uint gId: SV_GroupID) {
+  psisum[gId] = WaveActiveSum(psisum[threadId]);
+}
+
 void commit(uint i) {
   psi[i] += (dt/6.) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
 }
 
-// [shader("compute")]
-// [numthreads(64)]
-// void main(uint threadId: SV_DispatchThreadID, uniform uint stage) {
-//   uint i = threadId.x;
-//   f1(i);
-// }
-
 [shader("compute")]
-[numthreads(64)]
-void main(uint threadId: SV_DispatchThreadID, uniform uint stage) {
-  uint i = threadId.x;
+[numthreads(WAVE_SIZE)]
+void main(uint threadId: SV_DispatchThreadID, uint gId: SV_GroupID, uniform uint stage) {
+  uint i = threadId;
+  // psi[i] = J[i];
   if(i < LEN) {
   switch (stage) {
   case 0:
@@ -88,6 +92,13 @@ void main(uint threadId: SV_DispatchThreadID, uniform uint stage) {
     break;
   case 4:
     commit(i);
+    break;
+  case 5:
+    psisum[gId] = WaveActiveSum(psi[threadId]);
+    // parsumfirst(threadId, gId);
+    break;
+  case 6:
+    parsum(threadId, gId);
     break;
   }
   }
