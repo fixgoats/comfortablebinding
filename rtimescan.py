@@ -1,4 +1,5 @@
-import numpy as np import h5py
+import numpy as np
+import h5py
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import scipy as sp
@@ -45,6 +46,7 @@ for fname in args.files:
     dt = t01 - t0
     emax = np.pi / dt 
     de = 2 * np.pi / period
+    print(type(dt))
     energies = np.arange(-emax, emax, de)
     couplephasediffs = np.array([np.mean(np.array([np.abs(np.angle(snapshot[ci, i]*snapshot[cj, i].conj())) for ci, cj in couplings[:]])) for i, _ in enumerate(rs)])
     

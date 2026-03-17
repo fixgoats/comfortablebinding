@@ -584,6 +584,7 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
 
 int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
+#pragma omp parallel for
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");

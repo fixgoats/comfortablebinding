@@ -73,7 +73,7 @@ void commit(uint i) {
 
 [shader("compute")]
 [numthreads(WAVE_SIZE)]
-void main(uint threadId: SV_DispatchThreadID, uint gId: SV_GroupID, uniform uint stage) {
+void main(uint threadId: SV_DispatchThreadID, uint gId: SV_GroupID, uniform uint stage, uniform uint dest) {
   uint i = threadId;
   // psi[i] = J[i];
   if(i < LEN) {
