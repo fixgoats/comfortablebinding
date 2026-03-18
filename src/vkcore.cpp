@@ -1,6 +1,6 @@
 #define VMA_IMPLEMENTATION 1003000
 #include "vkcore.hpp"
-#include "colormaps.h"
+// #include "colormaps.h"
 #include "mathhelpers.h"
 #include <cmath>
 #include <cstddef>

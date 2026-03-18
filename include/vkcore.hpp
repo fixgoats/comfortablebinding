@@ -19,8 +19,8 @@ constexpr u32 GRID_HEIGHT = 512;
 constexpr u32 round_up_x16(u32 n) { return ((n + 15) / 16) * 16; }
 
 struct PositionTextureVertex {
-  vec2<f32> pos;
-  vec2<f32> uv;
+  f32 pos[2];
+  f32 uv[2];
 
   static vk::VertexInputBindingDescription bindingDscr() {
     return {0, sizeof(PositionTextureVertex), vk::VertexInputRate::eVertex};

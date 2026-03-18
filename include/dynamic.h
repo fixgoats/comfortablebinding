@@ -164,4 +164,4 @@ int doNCDD(const BasicDistanceConf& conf);
 int doBasicHankelDD(const TETMConf& conf);
 int doHankelScan(const std::vector<HankelScanConf>& conf);
 int doHankelTimeScan(const std::vector<HankelScanConf>& conf);
-int GPUDrivenDiss(const std::vector<HankelScanConf>& conf);
+int GPUHankelTimeScan(const std::vector<HankelScanConf>& conf);

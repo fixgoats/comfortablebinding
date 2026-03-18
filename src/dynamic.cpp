@@ -94,6 +94,26 @@ State rk4step(const State& x, f64 dt, F rhs) {
   return ret;
 }
 
+template <class Func>
+struct RK4 {
+  VectorXcd k1;
+  VectorXcd k2;
+  VectorXcd k3;
+  VectorXcd k4;
+  Func f;
+
+  RK4(Func f, s64 n) : f{f}, k1{n}, k2{}, k3{}, k4{} {}
+
+  VectorXcd step(VectorXcd& y, f64 dt) {
+
+    k1 = f(y);
+    k2 = f(y + 0.5 * dt * k1);
+    k3 = f(y + 0.5 * dt * k2);
+    k4 = f(y + 0.5 * dt * k3);
+    y += (dt / 6.0) * ((k1 + k4) + 2 * (k2 + k3));
+  }
+};
+
 static Eigen::IOFormat oneliner(Eigen::StreamPrecision, Eigen::DontAlignCols,
                                 " ", " ", "", "", "", "");
 auto basicNonLin(const SparseMatrix<c64>& iH, f64 alpha) {
@@ -693,7 +713,14 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   return 0;
 }
 
-/*int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+struct SpecConsts {
+  u32 len;
+  u32 wave_size;
+  f32 dt;
+  f32 alpha;
+};
+
+int GPUHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   Manager mgr(100 * 1024 * 1024);
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
@@ -726,7 +753,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     VectorXcf init_psi(points.rows());
     for (u64 o = 0; o < init_psi.size(); ++o) {
       auto x = dis(gen);
-      *(init_psi.data() + o) = {1e-4f * cos(x), 1e-4f * sin(x)};
+      init_psi[o] = {1e-4f * cos(x), 1e-4f * sin(x)};
     }
     spdlog::debug("allocating gpu_psi");
     MetaBuffer gpu_psi = mgr.makeRawBuffer<c32>(points.rows());
@@ -742,6 +769,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     MetaBuffer gpu_k3 = mgr.makeRawBuffer<c32>(points.rows());
     spdlog::debug("allocating gpu_k4");
     MetaBuffer gpu_k4 = mgr.makeRawBuffer<c32>(points.rows());
+    MetaBuffer gpu_psisum = mgr.makeRawBuffer<c32>(points.rows());
     std::vector<u32> col_indices(couplings.rows() * 2);
     std::vector<u32> row_indices(points.rows() + 1);
     {
@@ -763,7 +791,6 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     spdlog::debug("moving row_indices to gpu");
     MetaBuffer gpu_row_indices = mgr.vecToBuffer(row_indices);
     const size_t byteSize = init_psi.size() * sizeof(c32);
-    s64 idx = 0;
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = conf.js.ith(m);
       for (s64 n = 0; n < rscalesize; ++n) {
@@ -780,32 +807,57 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
             std::ranges::min_element(sol.eigenvalues(), [](c32 a, c32 b) {
               return a.imag() < b.imag();
             });
-        for (s64 k = 0; k < psize; ++k) {
-          const f32 p = conf.ps.ith(k);
-          for (s64 l = 0; l < alphasize; ++l) {
-            const f32 alpha = conf.alphas.ith(l);
+        for (s64 l = 0; l < alphasize; ++l) {
+          const f32 alpha = conf.alphas.ith(l);
+          SpecConsts spc{static_cast<u32>(points.size()), 32,
+                         static_cast<f32>(conf.t.d()), alpha};
+          size_t spcsizes[4] = {4, 4, 4, 4};
+          size_t pushSizes[1] = {8};
+          Algorithm rk4sim = mgr.makeAlgorithmRaw(
+              "drivendiss.spv", {},
+              {&gpu_psi, &gpu_k1, &gpu_k2, &gpu_k3, &gpu_k4, &gpu_ps, &gpu_J,
+               &gpu_row_indices, &gpu_col_indices, &gpu_psisum},
+              std::bit_cast<u8*>(&spc), spcsizes, 4, pushSizes, 1);
+          for (s64 k = 0; k < psize; ++k) {
+            const f32 p = conf.ps.ith(k);
             const f32 eff_p = (p - 1) * min_coeff->imag();
+            std::vector<f32> ps(points.size(), eff_p);
             spdlog::debug("Made sparse matrix J.");
             spdlog::debug("Allocating psi.");
-            VectorXcd psi = init_psi;
+            mgr.writeToBuffer(gpu_psi, init_psi.data(), byteSize);
             spdlog::debug("Writing random coordinates to psi.");
             // const size_t byteSize = psi.size() * sizeof(c64);
-            auto rhs = hankelDD(J, eff_p, alpha);
             spdlog::debug("Running rk4 for {} steps.", conf.t.n);
-            c64 psisum = psi.sum();
-            data[idx] = psisum;
-            data[idx + 1] = psi[0];
-            idx += 2;
-            for (u32 o = 1; o < conf.t.n + 1; ++o) {
-              psi = rk4step(psi, conf.t.d(), rhs);
-              c64 psisum = psi.sum();
-              data[idx] = psisum;
-              data[idx + 1] = psi[0];
-              idx += 2;
+            for (s64 i = 0; i < conf.t.n / 128; ++i) {
+              auto super_cb = mgr.beginRecord();
+              for (s64 j = 0; j < 128; ++j) {
+                u32 stage = 0;
+                super_cb.pushConstants(rk4sim.m_PipelineLayout,
+                                       vk::ShaderStageFlagBits::eCompute, 0, 4,
+                                       &stage);
+                appendOp(super_cb, rk4sim, (points.rows() + 31) / 32, 1, 1);
+                stage = 1;
+                super_cb.pushConstants(rk4sim.m_PipelineLayout,
+                                       vk::ShaderStageFlagBits::eCompute, 0, 4,
+                                       &stage);
+                appendOp(super_cb, rk4sim, (points.rows() + 31) / 32, 1, 1);
+                stage = 2;
+                super_cb.pushConstants(rk4sim.m_PipelineLayout,
+                                       vk::ShaderStageFlagBits::eCompute, 0, 4,
+                                       &stage);
+                appendOp(super_cb, rk4sim, (points.rows() + 31) / 32, 1, 1);
+                stage = 3;
+                super_cb.pushConstants(rk4sim.m_PipelineLayout,
+                                       vk::ShaderStageFlagBits::eCompute, 0, 4,
+                                       &stage);
+                appendOp(super_cb, rk4sim, (points.rows() + 31) / 32, 1, 1);
+              }
+              super_cb.end();
+              mgr.execute(super_cb);
             }
             s64 idx = (n + rscalesize * (m + jsize * (l + alphasize * k))) *
                       points.rows();
-            memcpy(snapshotdata.data() + idx, psi.data(), byteSize);
+            mgr.writeFromBuffer(gpu_psi, snapshotdata.data() + idx, byteSize);
           }
         }
       }
@@ -814,13 +866,13 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
 
-    auto seriesSet = file.createDataSet<c64>(
-        "sumpsitimeseries",
-        HighFive::DataSpace(
-            {static_cast<u64>(psize), static_cast<u64>(alphasize),
-             static_cast<u64>(jsize), static_cast<u64>(rscalesize),
-             static_cast<u64>(conf.t.n + 1), 2}));
-    seriesSet.write_raw(data.data());
+    // auto seriesSet = file.createDataSet<c64>(
+    //     "sumpsitimeseries",
+    //     HighFive::DataSpace(
+    //         {static_cast<u64>(psize), static_cast<u64>(alphasize),
+    //          static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+    //          static_cast<u64>(conf.t.n + 1), 2}));
+    // seriesSet.write_raw(data.data());
     auto snapshot = file.createDataSet<c64>(
         "psisnapshot",
         HighFive::DataSpace(
@@ -838,7 +890,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}*/
+}
 
 int doBasic(const BasicConf& conf) {
   std::vector<Point> points = readPoints(conf.pointPath);
@@ -975,13 +1027,7 @@ int doTETM(const TETMConf& conf) {
   return 0;
 }
 
-struct SpecConsts {
-  u32 len;
-  f32 dt;
-  f32 alpha;
-};
-
-int GPUDrivenDiss(const std::vector<HankelScanConf>& confs) {
+/* int GPUDrivenDiss(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: GPUDrivenDiss.");
   spdlog::debug("Constructing manager.");
   Manager mgr(100 * 1024 * 1024);
@@ -1183,7 +1229,7 @@ int GPUDrivenDiss(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Exiting doHankelScan.");
 
   return 0;
-}
+}*/
 
 // int GPUTETM(const TETMConf& conf) {
 //   std::vector<Point> points = readPoints(conf.pointPath);

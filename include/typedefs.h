@@ -15,20 +15,3 @@ typedef int16_t s16;
 typedef int8_t s8;
 typedef float f32;
 typedef double f64;
-
-template <class T>
-struct vec4 {
-  T x, y, z, w;
-};
-
-template <class T>
-struct vec3 {
-  T x;
-  T y;
-  T z;
-};
-
-template <class T>
-struct vec2 {
-  T x, y;
-};
