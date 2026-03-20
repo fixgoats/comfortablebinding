@@ -23,7 +23,7 @@ ps = { start = 0.2, end = 1.0, n = 1 }
 alphas = { start = 1, end = 1, n = 1 }
 js = { start = 1, end = 1, n = 1 }
 rscales = { start = 1, end = 24, n = 400 }
-t = { start = 0, end = 100, n = 128 }
+t = { start = 0, end = 100, n = 10000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/square100couplings.h5"

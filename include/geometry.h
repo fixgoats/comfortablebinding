@@ -3,6 +3,7 @@
 #include "Eigen/Sparse"
 #include "kdtree.h"
 #include "mathhelpers.h"
+#include "spdlog/spdlog.h"
 #include <format>
 
 using Eigen::Vector2d, Eigen::Vector2f, Eigen::MatrixXd, Eigen::SparseMatrix,
@@ -189,4 +190,38 @@ inline SparseMatrix<f64> SparseH(const std::vector<Point>& points,
   }
   H.finalize();
   return H;
+}
+
+template <class Func>
+CSRMat<c64> spsh(const Eigen::MatrixX2d& points,
+                 const Eigen::MatrixX2i& couplings, Func f) {
+  spdlog::debug("Function template: spsh.");
+  COOMat<c64> H;
+  for (s64 i = 0; i < couplings.rows(); ++i) {
+    spdlog::debug("writing to row: {}, col: {}", couplings(i, 0),
+                  couplings(i, 1));
+    Vector2d d = points(couplings(i, 1), Eigen::indexing::all) -
+                 points(couplings(i, 0), Eigen::indexing::all);
+    c64 val = f(d);
+    H(couplings(i, 0), couplings(i, 1)) = val;
+    H(couplings(i, 1), couplings(i, 0)) = val;
+  }
+  H.rows = points.rows();
+  H.cols = points.rows();
+  return CSRMat<c64>(H);
+}
+
+template <class Func>
+void updatesps(CSRMat<c64>& H, const Eigen::MatrixX2d& points, Func f) {
+  spdlog::debug("Function updatesps");
+  for (s64 i = 0; i < H.row_indices.size() - 1; ++i) {
+    u64 row_start = H.row_indices[i];
+    u64 row_end = H.row_indices[i + 1];
+    for (u64 j = row_start; j < row_end; ++j) {
+      Vector2d d = points(i, Eigen::indexing::all) -
+                   points(H.col_indices[j], Eigen::indexing::all);
+
+      H.data[j] = f(d);
+    }
+  }
 }

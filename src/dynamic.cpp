@@ -5,11 +5,19 @@
 #include "highfive/eigen.hpp"
 #include "highfive/highfive.hpp"
 #include "io.h"
+#include "mathhelpers.h"
+#include "sparse.hpp"
 #include "spdlog/spdlog.h"
 #include "unsupported/Eigen/MatrixFunctions"
 #include "vkcore.hpp"
 #include "vulkan/vulkan.hpp"
+#include <algorithm>
+#include <complex>
+#include <cstddef>
+#include <cstring>
+#include <execution>
 #include <gsl/gsl_sf.h>
+#include <numeric>
 #include <print>
 #include <random>
 #include <toml++/toml.hpp>
@@ -602,9 +610,57 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
   return 0;
 }
 
+struct DrivenDiss {
+  f64 alpha;
+  f64 p;
+  CSRMat<c64> J;
+  std::vector<c64> k1;
+  std::vector<c64> k2;
+  std::vector<c64> k3;
+  std::vector<c64> k4;
+  std::vector<c64> tmp1;
+  std::vector<c64> psi;
+
+  DrivenDiss() = default;
+  DrivenDiss(DrivenDiss&) = default;
+  DrivenDiss(DrivenDiss&&) = default;
+  DrivenDiss& operator=(DrivenDiss&) = default;
+  DrivenDiss& operator=(DrivenDiss&&) = default;
+  DrivenDiss(size_t n) : k1(n), k2(n), k3(n), k4(n), tmp1(n), psi(n) {}
+
+  void step(f64 dt) {
+    const auto lamb = [this](c64 x) {
+      return (p - c64{1, alpha} * std::norm(x)) * x;
+    };
+    std::transform(std::execution::par, psi.cbegin(), psi.cend(), k1.begin(),
+                   lamb);
+    spmv(J, 1.0, psi.data(), 1., k1.data());
+    std::transform(std::execution::par, psi.cbegin(), psi.cend(), k1.cbegin(),
+                   tmp1.begin(),
+                   [dt](c64 a, c64 b) { return a + 0.5 * dt * b; });
+    std::transform(std::execution::par, tmp1.cbegin(), tmp1.cend(), k2.begin(),
+                   lamb);
+    spmv(J, 1.0, tmp1.data(), 1., k2.data());
+    std::transform(std::execution::par, psi.cbegin(), psi.cend(), k2.cbegin(),
+                   tmp1.begin(),
+                   [dt](c64 a, c64 b) { return a + 0.5 * dt * b; });
+    std::transform(std::execution::par, tmp1.cbegin(), tmp1.cend(), k3.begin(),
+                   lamb);
+    spmv(J, 1.0, tmp1.data(), 1., k3.data());
+    std::transform(std::execution::par, psi.cbegin(), psi.cend(), k3.cbegin(),
+                   tmp1.begin(), [dt](c64 a, c64 b) { return a + dt * b; });
+    std::transform(std::execution::par, tmp1.cbegin(), tmp1.cend(), k4.begin(),
+                   lamb);
+    spmv(J, 1.0, tmp1.data(), 1., k4.data());
+    apply([](c64 y, c64 a, c64 b, c64 c,
+             c64 d) { return y + (0.1 / 6.) * (a + (2. * b) + (2. * c) + d); },
+          psi.size(), psi.data(), psi.data(), k1.data(), k2.data(), k3.data(),
+          k4.data());
+  }
+};
+
 int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
-#pragma omp parallel for
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
@@ -622,7 +678,6 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     std::vector<c64> data(samples * 2 * (conf.t.n + 1));
     s64 datasize = data.size();
     std::vector<c64> snapshotdata(samples * points.rows());
-    s64 snapshotsize = snapshotdata.size();
     spdlog::debug("data has {} elements in total.", datasize);
     s64 psize = conf.ps.n;
     spdlog::debug("number of ps is {}.", psize);
@@ -633,7 +688,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     s64 rscalesize = conf.rscales.n;
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
-    for (u64 o = 0; o < init_psi.size(); ++o) {
+    for (u64 o = 0; o < (u64)init_psi.size(); ++o) {
       auto x = dis(gen);
       *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
@@ -676,9 +731,10 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
               data[idx + 1] = psi[0];
               idx += 2;
             }
-            s64 idx = (n + rscalesize * (m + jsize * (l + alphasize * k))) *
-                      points.rows();
-            memcpy(snapshotdata.data() + idx, psi.data(), byteSize);
+            s64 snapshot_idx =
+                (n + rscalesize * (m + jsize * (l + alphasize * k))) *
+                points.rows();
+            memcpy(snapshotdata.data() + snapshot_idx, psi.data(), byteSize);
           }
         }
       }
@@ -712,6 +768,126 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
 }
+
+/*int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+  spdlog::debug("Function: doHankelScan.");
+  for (const auto& conf : confs) {
+    HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
+    spdlog::debug("Read pointfile.");
+    Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
+    spdlog::debug("Read points.");
+    Eigen::MatrixX2i couplings =
+        pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
+    spdlog::debug("Read couplings.");
+
+    auto J = spsh(points, couplings, [](Vector2d d) { return c64{1, 0}; });
+    DrivenDiss rk4sim(points.rows());
+    rk4sim.J = J;
+
+    std::random_device dev;
+    std::mt19937 gen(dev());
+    std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+
+    s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
+    std::vector<c64> data(samples * 2 * (conf.t.n + 1));
+    s64 datasize = data.size();
+    std::vector<c64> snapshotdata(samples * points.rows());
+    s64 snapshotsize = snapshotdata.size();
+    spdlog::debug("data has {} elements in total.", datasize);
+    s64 psize = conf.ps.n;
+    spdlog::debug("number of ps is {}.", psize);
+    s64 alphasize = conf.alphas.n;
+    spdlog::debug("number of alphas is {}.", alphasize);
+    s64 jsize = conf.js.n;
+    spdlog::debug("number of js is {}.", jsize);
+    s64 rscalesize = conf.rscales.n;
+    spdlog::debug("number of rscales is {}.", rscalesize);
+    VectorXcd init_psi(points.rows());
+    for (u64 o = 0; o < init_psi.size(); ++o) {
+      auto x = dis(gen);
+      init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
+    }
+    const size_t byteSize = init_psi.size() * sizeof(c64);
+#pragma omp parallel for collapse(4)
+    for (s64 m = 0; m < jsize; ++m) {
+      const f64 j = conf.js.ith(m);
+      for (s64 n = 0; n < rscalesize; ++n) {
+        const f64 scale = conf.rscales.ith(n);
+        updatesps(rk4sim.J, points, [scale, j](Vector2d d) {
+          return c64{j * gsl_sf_bessel_J0(scale * d.norm()),
+                     j * gsl_sf_bessel_Y0(scale * d.norm())};
+        });
+        MatrixXcd eee = csr_to_dense(rk4sim.J);
+        spdlog::debug("eee rows: {}, cols: {}", eee.rows(), eee.cols());
+        spdlog::debug(
+            "Created dense version of coupling matrix. Putting it in solver.");
+        const auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(eee);
+        spdlog::debug("Solved eigenvalues of coupling matrix");
+        auto min_coeff =
+            std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
+              return a.imag() < b.imag();
+            });
+        for (s64 k = 0; k < psize; ++k) {
+          rk4sim.p = (conf.ps.ith(k) - 1) * min_coeff->imag();
+          for (s64 l = 0; l < alphasize; ++l) {
+            rk4sim.alpha = conf.alphas.ith(l);
+            spdlog::debug("Made sparse matrix J.");
+            // const size_t byteSize = psi.size() * sizeof(c64);
+            spdlog::debug("Running rk4 for {} steps.", conf.t.n);
+            spdlog::debug("Size of psi is: {}", rk4sim.psi.size());
+            memcpy(rk4sim.psi.data(), init_psi.data(), points.rows() * 16);
+            c64 psisum = std::accumulate(rk4sim.psi.cbegin(), rk4sim.psi.cend(),
+                                         c64{0, 0});
+            s64 idx = 2 * (l + alphasize * (k + psize * (n + rscalesize * m)));
+            data[idx] = psisum;
+            data[idx + 1] = rk4sim.psi[0];
+            for (u32 o = 1; o < conf.t.n + 1; ++o) {
+              rk4sim.step(conf.t.d());
+              c64 psisum = std::accumulate(rk4sim.psi.cbegin(),
+                                           rk4sim.psi.cend(), c64{0, 0});
+              data[idx] = psisum;
+              data[idx + 1] = rk4sim.psi[0];
+            }
+            spdlog::debug("Calculation done.");
+            s64 snap_idx =
+                (n + rscalesize * (m + jsize * (l + alphasize * k))) *
+                points.rows();
+            spdlog::debug("writing to snapshotdata.");
+            memcpy(snapshotdata.data() + snap_idx, rk4sim.psi.data(), byteSize);
+            spdlog::debug("wrote to snapshotdata.");
+          }
+        }
+      }
+    }
+
+    HighFive::File file(conf.outfile, HighFive::File::Truncate);
+    spdlog::debug("Writing samples to file.");
+
+    auto seriesSet = file.createDataSet<c64>(
+        "sumpsitimeseries",
+        HighFive::DataSpace(
+            {static_cast<u64>(psize), static_cast<u64>(alphasize),
+             static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+             static_cast<u64>(conf.t.n + 1), 2}));
+    seriesSet.write_raw(data.data());
+    auto snapshot = file.createDataSet<c64>(
+        "psisnapshot",
+        HighFive::DataSpace(
+            {static_cast<u64>(psize), static_cast<u64>(alphasize),
+             static_cast<u64>(jsize), static_cast<u64>(rscalesize),
+             static_cast<u64>(points.rows())}));
+    snapshot.write_raw(snapshotdata.data());
+    file.createDataSet("points", points);
+    file.createDataSet("couplings", couplings);
+    file.createDataSet("time", linspace(conf.t, true));
+    file.createDataSet("ps", linspace(conf.ps, false));
+    file.createDataSet("alphas", linspace(conf.alphas, false));
+    file.createDataSet("js", linspace(conf.js, false));
+    file.createDataSet("rscales", linspace(conf.rscales, false));
+  }
+  spdlog::debug("Exiting doHankelTimeScan.");
+  return 0;
+}*/
 
 struct SpecConsts {
   u32 len;

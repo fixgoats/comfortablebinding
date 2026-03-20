@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(stuff)
 
 set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 26)
 
 set(PROJECT_SOURCES src/main.cpp src/SDF.cpp src/periodic.cpp src/dynamic.cpp
                     src/vkcore.cpp)
@@ -11,11 +12,22 @@ set(MAIN_TARGET disp)
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+# $<$<CONFIG>:-Ofast -march=native> $<$<CONFIG>:-fsanitize=address
+# -static-libasan -g>) add_compile_definitions($<$<CONFIG>:NDEBUG>
+# $<$<CONFIG>:BOOST_DISABLE_ASSERTS>)
+
+add_compile_options(
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-error=maybe-uninitialized
+  -fexperimental-library
+  "$<$<CONFIG:debug>:-fsanitize=address;-ggdb3>"
+  "$<$<CONFIG:release>:-O3;-ffast-math;-march=native>")
+add_compile_definitions("$<$<CONFIG:release>:NDEBUG;BOOST_DISABLE_ASSERTS>")
+add_link_options("$<$<CONFIG:debug>:-fsanitize=address>")
 
 add_subdirectory(deps/spdlog)
-add_library(comp_base src/geometry.cpp src/io.cpp)
-target_link_libraries(comp_base PUBLIC hdf5::hdf5)
-
 find_package(GSL REQUIRED)
 
 # Adding Raylib
@@ -35,9 +47,8 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE)
 
 FetchContent_MakeAvailable(raylib)
-
-message(STATUS ${GSL_FOUND})
-message(STATUS ${GSL_LIBRARIES})
+message(STATUS "Found GSL: ${GSL_FOUND}")
+message(STATUS "GSL library path: ${GSL_LIBRARIES}")
 include_directories(include deps/eigen-5.0.1 deps/highfive_dep)
 find_package(OpenMP REQUIRED)
 find_package(BLAS REQUIRED COMPONENTS openmp)
@@ -48,41 +59,30 @@ find_package(Vulkan REQUIRED COMPONENTS glslang SPIRV-Tools)
 set(EIGEN_USE_BLAS)
 set(EIGEN_USE_LAPACKE)
 
-add_executable(${MAIN_TARGET})
+add_library(comp_base src/geometry.cpp src/io.cpp)
+target_link_libraries(comp_base PUBLIC spdlog hdf5::hdf5 ${BLAS_LIBRARIES}
+                                       ${LAPACK_LIBRARIES})
+
+add_executable(disp)
 add_executable(test src/test.cpp src/vkcore.cpp)
 add_executable(dynamic)
 add_executable(couplings)
 
 target_sources(dynamic PRIVATE src/coupledosc.cpp src/dynamic.cpp
                                src/vkcore.cpp)
-target_sources(${MAIN_TARGET} PRIVATE ${PROJECT_SOURCES})
+target_sources(disp PRIVATE ${PROJECT_SOURCES})
 target_sources(couplings PRIVATE src/couplingmaker.cpp)
 
-add_compile_options(
-  -Wall
-  -Wextra
-  -Wpedantic
-  -Wno-error=maybe-uninitialized
-  $<$<CONFIG:RELEASE>:-Ofast
-  -march=native>
-  $<$<CONFIG:DEBUG>:-O0>
-  $<$<CONFIG:DEBUG>:-ggdb3
-  -fsanitize=address>)
-add_compile_definitions($<$<CONFIG:RELEASE>:NDEBUG>
-                        $<$<CONFIG:RELEASE>:BOOST_DISABLE_ASSERTS>)
-
-set_property(
-  TARGET ${MAIN_TARGET} dynamic couplings
-  test comp_base
-  PROPERTY CXX_STANDARD 26)
+# set_property( TARGET disp dynamic couplings test comp_base PROPERTY
+# CXX_STANDARD 26)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipoSupported OUTPUT output)
-target_compile_options(${MAIN_TARGET} PRIVATE -Wall)
+target_compile_options(disp PRIVATE -Wall)
 
 if(ipoSupported AND CMAKE_BUILD_TYPE STREQUAL "Release")
   message(STATUS "Using LTO")
   set_property(
-    TARGET ${MAIN_TARGET} dynamic couplings
+    TARGET disp dynamic couplings
     test
     PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -94,13 +94,12 @@ endif()
 find_package(HDF5 REQUIRED COMPONENTS C HL)
 
 set_property(
-  TARGET ${MAIN_TARGET} dynamic couplings
+  TARGET disp dynamic couplings
   test
-  PROPERTY LINK_LIBRARIES comp_base spdlog ${BLAS_LIBRARIES}
-           ${LAPACK_LIBRARIES})
+  PROPERTY LINK_LIBRARIES comp_base)
 target_link_libraries(test PRIVATE GSL::gsl Vulkan::Vulkan)
 set_property(
-  TARGET ${MAIN_TARGET} dynamic couplings
+  TARGET disp dynamic couplings
   test comp_base
   PROPERTY PRECOMPILE_HEADERS
            hermEigen.h
@@ -112,11 +111,11 @@ set_property(
            kdtree.h
            betterexc.h)
 
-target_link_libraries(${MAIN_TARGET} PRIVATE GSL::gsl Vulkan::Vulkan)
+target_link_libraries(disp PRIVATE GSL::gsl Vulkan::Vulkan)
 target_link_libraries(dynamic PRIVATE GSL::gsl Vulkan::Vulkan)
 target_link_libraries(couplings PRIVATE raylib)
 if(OpenMP_CXX_FOUND)
-  target_link_libraries(${MAIN_TARGET} PRIVATE OpenMP::OpenMP_CXX)
+  target_link_libraries(disp PRIVATE OpenMP::OpenMP_CXX)
   target_link_libraries(dynamic PRIVATE OpenMP::OpenMP_CXX)
   target_link_libraries(couplings PRIVATE OpenMP::OpenMP_CXX)
 endif()
