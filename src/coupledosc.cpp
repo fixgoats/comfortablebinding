@@ -48,8 +48,8 @@ int main(const int argc, const char* const* argv) {
     if (conf.basicnlin.has_value()) {
       doBasicNLin(conf.basicnlin.value());
     }
-    if (conf.tetm.has_value()) {
-      doBasicHankelDD(conf.tetm.value());
+    if (!conf.tetm.empty()) {
+      doBasicHankelDD(conf.tetm);
     }
     if (!conf.hscs.empty()) {
       // GPUHankelTimeScan(conf.hscs);

@@ -1,11 +1,146 @@
-# [[hankeltimescans]]
+# [[tetm]]
+# pointPath = "../punktar/monotile404couplings.h5"
+# outfile = "../gögn/monotile404scaletimescanr3.5.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 3.5
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
 # pointPath = "../punktar/monotile150couplings.h5"
-# outfile = "../gögn/monotile150scaletimescan.h5"
-# ps = { start = 0.2, end = 1.0, n = 1 }
-# alphas = { start = 1, end = 1, n = 1 }
-# js = { start = 1, end = 1, n = 1 }
-# rscales = { start = 1, end = 24, n = 400 }
-# t = { start = 0, end = 100, n = 10 }
+# outfile = "../gögn/monotile150scaletimescanr3.5.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 3.5
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile259couplings.h5"
+# outfile = "../gögn/monotile259scaletimescanr3.5.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 3.5
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile404couplings.h5"
+# outfile = "../gögn/monotile404scaletimescanr9.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 9
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile150couplings.h5"
+# outfile = "../gögn/monotile150scaletimescanr9.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 9
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile259couplings.h5"
+# outfile = "../gögn/monotile259scaletimescanr9.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 9
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile404couplings.h5"
+# outfile = "../gögn/monotile404scaletimescanr15.2.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 15.2
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile150couplings.h5"
+# outfile = "../gögn/monotile150scaletimescanr15.2.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 15.2
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/monotile259couplings.h5"
+# outfile = "../gögn/monotile259scaletimescanr15.2.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 15.2
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/square400couplings.h5"
+# outfile = "../gögn/square400scaletimescanr1.8.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 1.8
+# t = { start = 0, end = 400, n = 20000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/square400couplings.h5"
+# outfile = "../gögn/square400scaletimescanr4.7.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 4.7
+# t = { start = 0, end = 400, n = 20000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/tetrille462dcouplings.h5"
+# outfile = "../gögn/tetrille462dscaletimescanr8.1.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 8.1
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/tetrille462dcouplings.h5"
+# outfile = "../gögn/tetrill462dscaletimescanr6.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 6
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/tetrille462couplings.h5"
+# outfile = "../gögn/tetrille462scaletimescanr8.1.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 8.1
+# t = { start = 0, end = 600, n = 30000 }
+#
+# [[tetm]]
+# pointPath = "../punktar/tetrille462couplings.h5"
+# outfile = "../gögn/tetrill462scaletimescanr6.h5"
+# p = 0.2
+# alpha = 1
+# j = 1
+# rscale = 6
+# t = { start = 0, end = 600, n = 30000 }
+
+[[hankeltimescans]]
+pointPath = "../punktar/monotile150couplings.h5"
+outfile = "../gögn/monotile150scaletimescan.h5"
+ps = { start = 0.2, end = 1.0, n = 1 }
+alphas = { start = 1, end = 1, n = 1 }
+js = { start = 1, end = 1, n = 1 }
+rscales = { start = 1, end = 24, n = 400 }
+t = { start = 0, end = 600, n = 20000 }
 
 # [[hankeltimescans]]
 # pointPath = "../punktar/monotile259couplings.h5"
@@ -14,16 +149,16 @@
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 1, end = 24, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
-[[hankeltimescans]]
-pointPath = "../punktar/monotile404couplings.h5"
-outfile = "../gögn/monotile404scaletimescan.h5"
-ps = { start = 0.2, end = 1.0, n = 1 }
-alphas = { start = 1, end = 1, n = 1 }
-js = { start = 1, end = 1, n = 1 }
-rscales = { start = 1, end = 24, n = 400 }
-t = { start = 0, end = 100, n = 10000 }
+# [[hankeltimescans]]
+# pointPath = "../punktar/monotile404couplings.h5"
+# outfile = "../gögn/monotile404scaletimescan.h5"
+# ps = { start = 0.2, end = 1.0, n = 1 }
+# alphas = { start = 1, end = 1, n = 1 }
+# js = { start = 1, end = 1, n = 1 }
+# rscales = { start = 1, end = 24, n = 400 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/square100couplings.h5"
@@ -32,7 +167,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 400, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/square225couplings.h5"
@@ -41,7 +176,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 400, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/square400couplings.h5"
@@ -50,7 +185,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 400, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille183couplings.h5"
@@ -59,7 +194,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille303couplings.h5"
@@ -68,7 +203,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille462couplings.h5"
@@ -77,7 +212,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille201dcouplings.h5"
@@ -86,7 +221,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille305dcouplings.h5"
@@ -95,7 +230,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 4, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 #
 # [[hankeltimescans]]
 # pointPath = "../punktar/tetrille462dcouplings.h5"
@@ -104,7 +239,7 @@ t = { start = 0, end = 100, n = 10000 }
 # alphas = { start = 1, end = 1, n = 1 }
 # js = { start = 1, end = 1, n = 1 }
 # rscales = { start = 0.1, end = 16, n = 400 }
-# t = { start = 0, end = 100, n = 10000 }
+# t = { start = 0, end = 600, n = 20000 }
 
 # [basicdistance]
 # outfile = "distancescanloweralpha.h5"

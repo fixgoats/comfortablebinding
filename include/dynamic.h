@@ -145,7 +145,7 @@ struct DynConf {
   std::optional<BasicConf> basic;
   std::optional<BasicDistanceConf> bd;
   std::optional<BasicNLinConf> basicnlin;
-  std::optional<TETMConf> tetm;
+  std::vector<TETMConf> tetm;
   std::optional<HankelScanConf> hsc;
   std::vector<HankelScanConf> hscs;
 };
@@ -161,7 +161,7 @@ int doTETM(const TETMConf& conf);
 int doDistanceScan(const BasicDistanceConf& conf);
 int doNoCoupling(const BasicDistanceConf& conf);
 int doNCDD(const BasicDistanceConf& conf);
-int doBasicHankelDD(const TETMConf& conf);
+int doBasicHankelDD(const std::vector<TETMConf>& conf);
 int doHankelScan(const std::vector<HankelScanConf>& conf);
 int doHankelTimeScan(const std::vector<HankelScanConf>& conf);
 int GPUHankelTimeScan(const std::vector<HankelScanConf>& conf);

@@ -151,8 +151,13 @@ inline SparseMatrix<c64> SparseC(const Eigen::MatrixX2d& points,
                                  const Eigen::MatrixX2i& couplings, Func f) {
   SparseMatrix<c64> H(points.rows(), points.rows());
   for (s64 i = 0; i < couplings.rows(); ++i) {
+    spdlog::debug("Pair: {}, {}", couplings(i, 0), couplings(i, 1));
+    spdlog::debug("subtracting ({}, {}) from ({}, {})",
+                  points(couplings(i, 0), 0), points(couplings(i, 0), 1),
+                  points(couplings(i, 1), 0), points(couplings(i, 1), 1));
     Vector2d d = points(couplings(i, 1), Eigen::indexing::all) -
                  points(couplings(i, 0), Eigen::indexing::all);
+    spdlog::debug("Distance is: {}", d.norm());
     c64 val = f(d);
     H.insert(couplings(i, 0), couplings(i, 1)) = val;
     H.insert(couplings(i, 1), couplings(i, 0)) = val;

@@ -51,7 +51,12 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
     conf.bd = BasicDistanceConf(*tbl["basicdistance"].as_table());
   }
   if (tbl.contains("tetm")) {
-    conf.tetm = TETMConf(*tbl["tetm"].as_table());
+    toml::array ttbls = *tbl["tetm"].as_array();
+    spdlog::debug("number of tetm scan configs: {}", ttbls.size());
+
+    for (const auto& eee : ttbls) {
+      conf.tetm.emplace_back(*eee.as_table());
+    }
   }
   if (tbl.contains("hankelscan")) {
     conf.hsc = HankelScanConf(*tbl["hankelscan"].as_table());
@@ -72,9 +77,9 @@ std::optional<DynConf> tomlToDynConf(const std::string& fname) {
       conf.hscs.emplace_back(*eee.as_table());
     }
   }
-  if (tbl.contains("delay")) {
-    conf.tetm = TETMConf(*tbl["delay"].as_table());
-  }
+  // if (tbl.contains("delay")) {
+  //   conf.tetm = TETMConf(*tbl["delay"].as_table());
+  // }
   if (tbl.contains("basicNonLin")) {
     conf.basicnlin = BasicNLinConf(*tbl["basicNonLin"].as_table());
   }
@@ -451,68 +456,69 @@ HighFive::CompoundType compoundParams() {
 
 HIGHFIVE_REGISTER_TYPE(Params, compoundParams);
 
-int doBasicHankelDD(const TETMConf& conf) {
+int doBasicHankelDD(const std::vector<TETMConf>& confs) {
   spdlog::debug("Function: doBasicHankelDD.");
-  HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
-  spdlog::debug("Read pointfile.");
-  Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
-  spdlog::debug("Read points.");
-  Eigen::MatrixX2i couplings =
-      pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
-  spdlog::debug("Read couplings.");
-  const f64 rscale = conf.rscale;
-  const SparseMatrix<c64> J =
-      conf.j * SparseC(points, couplings, [rscale](Vector2d d) {
-        return c64{gsl_sf_bessel_J0(rscale * d.norm()),
-                   gsl_sf_bessel_Y0(rscale * d.norm())};
-      });
-  spdlog::debug("Made sparse matrix J.");
-  auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
-  auto max_coeff = std::ranges::max_element(
-      sol.eigenvalues(), [](c64 a, c64 b) { return a.imag() < b.imag(); });
-  std::cout << "Highest eigenvalue is: " << max_coeff->imag() << '\n';
-  const f64 p = (conf.p - 1) * max_coeff->imag();
-  std::random_device dev;
-  std::mt19937 gen(dev());
-  std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
-  spdlog::debug("Allocating psi.");
-  VectorXcd psi(points.rows());
-  u64 n = psi.rows();
-  u64 m = psi.cols();
-  spdlog::debug("Allocated psi with dims {}x{}", n, m);
-  spdlog::debug("Writing random coordinates to psi.");
-  for (u64 i = 0; i < psi.size(); i++) {
-    auto x = dis(gen);
-    *(psi.data() + i) = {1e-4 * cos(x), 1e-4 * sin(x)};
-  }
-  const u32 overallSize = conf.t.n * psi.size();
-  spdlog::debug("Allocating psipdata with {} elements.", overallSize);
-  MatrixXcd psidata(psi.size(), conf.t.n + 1);
-  const size_t byteSize = psi.size() * sizeof(c64);
-  psidata(Eigen::indexing::all, 0) = psi;
-  std::cout << "byteSize is: " << byteSize << '\n';
-  std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
-  auto rhs = hankelDD(J, p, conf.alpha);
-  std::cout << conf.t.n << '\n';
-  for (u32 i = 1; i < conf.t.n + 1; i++) {
-    psi = rk4step(psi, conf.t.d(), rhs);
-    n = psi.rows();
-    m = psi.cols();
-    spdlog::debug("Return psiish with dims {}x{}", n, m);
-    spdlog::debug("Copying to psipdata.");
-    psidata(Eigen::indexing::all, i) = psi;
-  }
-  spdlog::debug("Finished calculating.");
+  for (const auto& conf : confs) {
+    HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
+    spdlog::debug("Read pointfile.");
+    Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
+    spdlog::debug("Read points.");
+    Eigen::MatrixX2i couplings =
+        pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
+    spdlog::debug("Read couplings.");
+    const f64 rscale = conf.rscale;
+    const SparseMatrix<c64> J =
+        conf.j * SparseC(points, couplings, [rscale](Vector2d d) {
+          spdlog::debug("Effective distance is: {}", rscale * d.norm());
+          return c64{gsl_sf_bessel_J0(rscale * d.norm()),
+                     gsl_sf_bessel_Y0(rscale * d.norm())};
+        });
+    spdlog::debug("Made sparse matrix J.");
+    auto sol = Eigen::ComplexEigenSolver<MatrixXcd>(MatrixXcd(J));
+    auto min_coeff = std::ranges::min_element(
+        sol.eigenvalues(), [](c64 a, c64 b) { return a.imag() < b.imag(); });
+    std::cout << "Highest eigenvalue is: " << min_coeff->imag() << '\n';
+    const f64 p = (conf.p - 1) * min_coeff->imag();
+    std::random_device dev;
+    std::mt19937 gen(dev());
+    std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
+    spdlog::debug("Allocating psi.");
+    VectorXcd psi(points.rows());
+    u64 n = psi.rows();
+    u64 m = psi.cols();
+    spdlog::debug("Allocated psi with dims {}x{}", n, m);
+    spdlog::debug("Writing random coordinates to psi.");
+    for (u64 i = 0; i < static_cast<u64>(psi.size()); i++) {
+      auto x = dis(gen);
+      psi[i] = {1e-4 * cos(x), 1e-4 * sin(x)};
+    }
+    const u32 overallSize = conf.t.n * psi.size();
+    spdlog::debug("Allocating psipdata with {} elements.", overallSize);
+    MatrixXcd psidata(psi.size(), conf.t.n + 1);
+    const size_t byteSize = psi.size() * sizeof(c64);
+    psidata(Eigen::indexing::all, 0) = psi;
+    std::cout << "byteSize is: " << byteSize << '\n';
+    std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
+    auto rhs = hankelDD(J, p, conf.alpha);
+    std::cout << conf.t.n << '\n';
+    for (u32 i = 1; i < conf.t.n + 1; i++) {
+      psi = rk4step(psi, conf.t.d(), rhs);
+      spdlog::debug("Return psiish with dims {}x{}", psi.rows(), psi.cols());
+      spdlog::debug("Copying to psipdata.");
+      psidata(Eigen::indexing::all, i) = psi;
+    }
+    spdlog::debug("Finished calculating.");
 
-  HighFive::File file(conf.outfile, HighFive::File::Truncate);
-  spdlog::debug("Writing psip to file.");
+    HighFive::File file(conf.outfile, HighFive::File::Truncate);
+    spdlog::debug("Writing psip to file.");
 
-  file.createDataSet("psi", psidata);
-  file.createDataSet("points", points);
-  file.createDataSet("couplings", couplings);
-  file.createDataSet("time", linspace(conf.t, true));
-  HighFive::DataSet paramSet = file.createDataSet(
-      "params", Params{conf.p, conf.alpha, conf.j, conf.rscale});
+    file.createDataSet("psi", psidata);
+    file.createDataSet("points", points);
+    file.createDataSet("couplings", couplings);
+    file.createDataSet("time", linspace(conf.t, true));
+    HighFive::DataSet paramSet = file.createDataSet(
+        "params", Params{conf.p, conf.alpha, conf.j, conf.rscale});
+  }
   spdlog::debug("Exiting doTETM.");
   return 0;
 }
@@ -659,7 +665,7 @@ struct DrivenDiss {
   }
 };
 
-int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+/* int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
@@ -693,8 +699,9 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
       *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
     const size_t byteSize = init_psi.size() * sizeof(c64);
-    s64 idx = 0;
+#pragma omp parallel for collapse(4)
     for (s64 m = 0; m < jsize; ++m) {
+      s64 idx = m * rscalesize * psize * alphasize * (conf.t.n + 1) * 2;
       const f64 j = conf.js.ith(m);
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = conf.rscales.ith(n);
@@ -767,9 +774,9 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}
+}*/
 
-/*int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
@@ -810,6 +817,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     const size_t byteSize = init_psi.size() * sizeof(c64);
 #pragma omp parallel for collapse(4)
     for (s64 m = 0; m < jsize; ++m) {
+      s64 idx = m * rscalesize * psize * alphasize * (conf.t.n + 1) * 2;
       const f64 j = conf.js.ith(m);
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = conf.rscales.ith(n);
@@ -838,15 +846,16 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
             memcpy(rk4sim.psi.data(), init_psi.data(), points.rows() * 16);
             c64 psisum = std::accumulate(rk4sim.psi.cbegin(), rk4sim.psi.cend(),
                                          c64{0, 0});
-            s64 idx = 2 * (l + alphasize * (k + psize * (n + rscalesize * m)));
             data[idx] = psisum;
             data[idx + 1] = rk4sim.psi[0];
+            idx += 2;
             for (u32 o = 1; o < conf.t.n + 1; ++o) {
               rk4sim.step(conf.t.d());
               c64 psisum = std::accumulate(rk4sim.psi.cbegin(),
                                            rk4sim.psi.cend(), c64{0, 0});
               data[idx] = psisum;
               data[idx + 1] = rk4sim.psi[0];
+              idx += 2;
             }
             spdlog::debug("Calculation done.");
             s64 snap_idx =
@@ -887,7 +896,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}*/
+}
 
 struct SpecConsts {
   u32 len;
