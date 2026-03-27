@@ -193,7 +193,8 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  std::vector<int> v = {5, 4, 3, 2, 1};
-  std::sort(std::execution::seq, v.begin(), v.end());
+  constexpr s32 a = -1;
+  constexpr s32 b = 6;
+  std::cout << 0xfff << '\n';
   return 0;
 }

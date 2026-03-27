@@ -30,6 +30,11 @@ constexpr u32 euclid_mod(T a, u32 b) {
   return a % b;
 }
 
+constexpr s32 euclid_mod(s32 a, s32 b) {
+  s32 tmp = a % b;
+  return tmp < 0 ? tmp + b : tmp;
+}
+
 constexpr bool fleq(auto x, auto y, double tol) {
   return std::abs(y - x) < tol;
 }

@@ -6,6 +6,7 @@ import scipy as sp
 from matplotlib.colors import LogNorm
 from argparse import ArgumentParser
 import os
+import re
 
 parser = ArgumentParser()
 parser.add_argument("files", nargs="+", default=[])
@@ -16,8 +17,13 @@ def sqNorm(x):
 
 timepixels = 600
 
+dec_pattern = "(\\d+\\.*\\d*)"
+
 for fname in args.files:
     fig, ax = plt.subplots(2,2)
+    fig.set_size_inches(12, 12)
+    fig.set_dpi(200)
+    rvalue = float(re.findall(dec_pattern, fname)[1])
 
     ax[0, 0].set_title("Average phase difference")
     ax[0, 0].set_xlabel("t")
@@ -28,9 +34,9 @@ for fname in args.files:
     ax[1, 0].set_xlabel("t")
     ax[1, 0].set_ylabel("n")
     ax[1, 1].set_title("$|ifft(\\psi_n)|^2$")
-    ax[1, 1].set_xlabel("$\\omega$")
-    ax[1, 1].set_ylabel("$n$")
-    fig.suptitle(f"rscale time scan: {os.path.basename(fname)[:-3]}")
+    ax[1, 1].set_ylabel("$\\omega$")
+    ax[1, 1].set_xlabel("$n$")
+    fig.suptitle(f"rscale time scan: {os.path.basename(fname)[:-3]}, r = {rvalue}")
 
     f = h5py.File(fname, "r")
     psiseries = f["psi"][:,:]
@@ -57,5 +63,5 @@ for fname in args.files:
     psifft = np.fft.fftshift(np.fft.ifft(psiseries[:,-2048:], norm="ortho"))
     psifftsqnorm = sqNorm(psifft)
     im3 = ax[1,1].imshow(psifftsqnorm.T[1024-64:1024+64,:], extent=(0, np.shape(psiseries)[0], energies[1024-64], energies[1024+64]), origin="lower", aspect="auto", interpolation="none")
+    fig.savefig(fname[:-3] + ".png")
 
-    plt.show()

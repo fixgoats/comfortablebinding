@@ -255,6 +255,30 @@ std::vector<Color> valuesToColor(IIt it, IIt end, const Color* cmap) {
   return out;
 }
 
+static void AddCodepointRange(Font* font, const char* fontPath, int start,
+                              int stop) {
+  int rangeSize = stop - start + 1;
+  int currentRangeSize = font->glyphCount;
+
+  // TODO: Load glyphs from provided vector font (if available),
+  // add them to existing font, regenerating font image and texture
+
+  int updatedCodepointCount = currentRangeSize + rangeSize;
+  int* updatedCodepoints = (int*)RL_CALLOC(updatedCodepointCount, sizeof(int));
+
+  // Get current codepoint list
+  for (int i = 0; i < currentRangeSize; i++)
+    updatedCodepoints[i] = font->glyphs[i].value;
+
+  // Add new codepoints to list (provided range)
+  for (int i = currentRangeSize; i < updatedCodepointCount; i++)
+    updatedCodepoints[i] = start + (i - currentRangeSize);
+
+  UnloadFont(*font);
+  *font = LoadFontEx(fontPath, 32, updatedCodepoints, updatedCodepointCount);
+  RL_FREE(updatedCodepoints);
+}
+
 struct Sim {
   f64 p;
   f64 alpha;
@@ -340,6 +364,7 @@ int main(int argc, char* argv[]) {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
                    FLAG_WINDOW_TRANSPARENT);
     InitWindow(width, height, "raylib test");
+
     SetTargetFPS(60);
 
     std::random_device dev;
@@ -358,18 +383,47 @@ int main(int argc, char* argv[]) {
     double eymin = ymin - 0.05 * (ymax - ymin);
     double exmax = xmax + 0.05 * (xmax - xmin);
     double eymax = ymax + 0.05 * (ymax - ymin);
+    bool start = false;
+    std::array<u32, 6> stepsPerFrame{1, 10, 20, 50, 100, 200};
+    s32 stepOrder = 0;
+    bool showStepsPerFrame = false;
+    std::chrono::time_point<std::chrono::high_resolution_clock>
+        timeWhenStepsShown;
     while (!WindowShouldClose()) {
+      if (IsKeyPressed(KEY_SPACE)) {
+        start = !start;
+      }
+      if (IsKeyPressed(KEY_R)) {
+        for (u32 i = 0; i < points.rows(); ++i) {
+          f64 x = dis(gen);
+          sim.psi(i) = {1e-4 * cos(x), 1e-4 * sin(x)};
+        }
+      }
+      if (IsKeyPressed(KEY_RIGHT)) {
+        ++stepOrder;
+        stepOrder = euclid_mod(stepOrder, 6);
+        showStepsPerFrame = true;
+        timeWhenStepsShown = std::chrono::high_resolution_clock::now();
+      }
+      if (IsKeyPressed(KEY_LEFT)) {
+        --stepOrder;
+        stepOrder = euclid_mod(stepOrder, 6);
+        showStepsPerFrame = true;
+        timeWhenStepsShown = std::chrono::high_resolution_clock::now();
+      }
       width = GetScreenWidth();
       height = GetScreenHeight();
       VectorXd angles = (std::conj(sim.psi(0)) * sim.psi).cwiseArg();
+      VectorXd norms = sim.psi.cwiseAbs2();
+      auto maxnorm = norms.maxCoeff();
       auto colors =
           valuesToColor(angles.cbegin(), angles.cend(), rtwilight, -M_PI, M_PI);
       BeginDrawing();
       ClearBackground(WHITE);
       for (u32 i = 0; i < points.rows(); ++i) {
         DrawCircle(toScreenX(points(i, 0), exmin, exmax, width),
-                   toScreenY(points(i, 1), eymin, eymax, height), 12.0f,
-                   colors[i]);
+                   toScreenY(points(i, 1), eymin, eymax, height),
+                   norms(i) * 12.0 / maxnorm, colors[i]);
       }
       // for (const auto& nb : couplings.rowwise()) {
       //   auto startx = toScreenX(points[nb[0]][0], exmin, exmax, width);
@@ -378,12 +432,26 @@ int main(int argc, char* argv[]) {
       //   auto endy = toScreenY(points[nb[1]][1], eymin, eymax, height);
       //   DrawLine(startx, starty, endx, endy, BLUE);
       // }
+      if (showStepsPerFrame) {
+        DrawText(TextFormat("Steps per frame: %d", stepsPerFrame[stepOrder]),
+                 static_cast<f32>(width) - 230, 10, 20, BLACK);
+        auto now = std::chrono::high_resolution_clock::now();
+        showStepsPerFrame = std::chrono::duration_cast<std::chrono::seconds>(
+                                now - timeWhenStepsShown)
+                                .count() < 3;
+      }
+      if (!start) {
+        DrawLineEx({10, 5}, {10, 45}, 10, BLACK);
+        DrawLineEx({25, 5}, {25, 45}, 10, BLACK);
+      }
       EndDrawing();
       if (IsKeyPressed(KEY_P)) {
         TakeScreenshot("graph.png");
       }
-      for (u32 i = 0; i < 100; ++i) {
-        sim.rk4step();
+      if (start) {
+        for (u32 i = 0; i < stepsPerFrame[stepOrder]; ++i) {
+          sim.rk4step();
+        }
       }
     }
     CloseWindow();

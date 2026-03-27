@@ -1,9 +1,10 @@
-pointPath = "../punktar/monotile404couplings.h5"
+pointPath = "../punktar/square400couplings.h5"
+# pointPath = "../punktar/monotile404couplings.h5"
 outfile = "../gögn/square400scaletimescanr3.3.h5"
 p = 0.2
 alpha = 1
 j = 1
-rscale = 3.5
+rscale = 1.8
 dt = 0.01
 
 # pointPath = "../punktar/monotile404couplings.h5"
@@ -13,4 +14,3 @@ dt = 0.01
 # j = 1
 # rscale = 3.5
 # dt = 0.01
-
