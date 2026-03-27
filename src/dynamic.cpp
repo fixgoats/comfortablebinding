@@ -2,6 +2,7 @@
 #include "Eigen/Core"
 #include "SDF.h"
 #include "geometry.h"
+#include "hermEigen.h"
 #include "highfive/eigen.hpp"
 #include "highfive/highfive.hpp"
 #include "io.h"
@@ -12,6 +13,7 @@
 #include "vkcore.hpp"
 #include "vulkan/vulkan.hpp"
 #include <algorithm>
+#include <chrono>
 #include <complex>
 #include <cstddef>
 #include <cstring>
@@ -458,7 +460,9 @@ HIGHFIVE_REGISTER_TYPE(Params, compoundParams);
 
 int doBasicHankelDD(const std::vector<TETMConf>& confs) {
   spdlog::debug("Function: doBasicHankelDD.");
+#pragma omp parallel for
   for (const auto& conf : confs) {
+    const auto start = std::chrono::high_resolution_clock::now();
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
@@ -507,7 +511,10 @@ int doBasicHankelDD(const std::vector<TETMConf>& confs) {
       spdlog::debug("Copying to psipdata.");
       psidata(Eigen::indexing::all, i) = psi;
     }
-    spdlog::debug("Finished calculating.");
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::debug("Simulation took {} ms", duration.count());
 
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing psip to file.");
@@ -526,6 +533,8 @@ int doBasicHankelDD(const std::vector<TETMConf>& confs) {
 int doHankelScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
+    const auto start = std::chrono::high_resolution_clock::now();
+    spdlog::info("");
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
@@ -538,7 +547,7 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
     std::mt19937 gen(dev());
     std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
 
-    s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
+    const s64 samples = conf.ps.n * conf.alphas.n * conf.js.n * conf.rscales.n;
     std::vector<c64> data(samples * points.rows());
     s64 datasize = data.size();
     spdlog::debug("data has {} elements in total.", datasize);
@@ -551,7 +560,7 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
     s64 rscalesize = conf.rscales.n;
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
-    for (u64 o = 0; o < init_psi.size(); ++o) {
+    for (u64 o = 0; o < static_cast<u64>(init_psi.size()); ++o) {
       auto x = dis(gen);
       *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
@@ -594,6 +603,10 @@ int doHankelScan(const std::vector<HankelScanConf>& confs) {
         }
       }
     }
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    spdlog::info("Simulation took {} seconds", duration.count());
 
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
@@ -665,9 +678,10 @@ struct DrivenDiss {
   }
 };
 
-/* int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
+    const auto start = std::chrono::high_resolution_clock::now();
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
@@ -696,12 +710,11 @@ struct DrivenDiss {
     VectorXcd init_psi(points.rows());
     for (u64 o = 0; o < (u64)init_psi.size(); ++o) {
       auto x = dis(gen);
-      *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
+      init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
     const size_t byteSize = init_psi.size() * sizeof(c64);
 #pragma omp parallel for collapse(4)
     for (s64 m = 0; m < jsize; ++m) {
-      s64 idx = m * rscalesize * psize * alphasize * (conf.t.n + 1) * 2;
       const f64 j = conf.js.ith(m);
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = conf.rscales.ith(n);
@@ -728,6 +741,8 @@ struct DrivenDiss {
             auto rhs = hankelDD(J, eff_p, alpha);
             spdlog::debug("Running rk4 for {} steps.", conf.t.n);
             c64 psisum = psi.sum();
+            s64 idx = 2 * (conf.t.n + 1) *
+                      (l + alphasize * (k + psize * (n + rscalesize * m)));
             data[idx] = psisum;
             data[idx + 1] = psi[0];
             idx += 2;
@@ -746,6 +761,10 @@ struct DrivenDiss {
         }
       }
     }
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    spdlog::info("Simulation took {} s.", duration.count());
 
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
@@ -774,11 +793,12 @@ struct DrivenDiss {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}*/
+}
 
-int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
+/* int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   spdlog::debug("Function: doHankelScan.");
   for (const auto& conf : confs) {
+    const auto start = std::chrono::high_resolution_clock::now();
     HighFive::File pc(conf.pointPath, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
@@ -787,7 +807,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
         pc.getDataSet("couplings").read<Eigen::MatrixX2i>();
     spdlog::debug("Read couplings.");
 
-    auto J = spsh(points, couplings, [](Vector2d d) { return c64{1, 0}; });
+    auto J = spsh(points, couplings, [](Vector2d) { return c64{1, 0}; });
     DrivenDiss rk4sim(points.rows());
     rk4sim.J = J;
 
@@ -799,7 +819,6 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     std::vector<c64> data(samples * 2 * (conf.t.n + 1));
     s64 datasize = data.size();
     std::vector<c64> snapshotdata(samples * points.rows());
-    s64 snapshotsize = snapshotdata.size();
     spdlog::debug("data has {} elements in total.", datasize);
     s64 psize = conf.ps.n;
     spdlog::debug("number of ps is {}.", psize);
@@ -810,7 +829,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
     s64 rscalesize = conf.rscales.n;
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
-    for (u64 o = 0; o < init_psi.size(); ++o) {
+    for (u64 o = 0; o < static_cast<u64>(init_psi.size()); ++o) {
       auto x = dis(gen);
       init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
@@ -868,6 +887,10 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
         }
       }
     }
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    spdlog::info("Simulation took {} s.", duration.count());
 
     HighFive::File file(conf.outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
@@ -896,7 +919,7 @@ int doHankelTimeScan(const std::vector<HankelScanConf>& confs) {
   }
   spdlog::debug("Exiting doHankelTimeScan.");
   return 0;
-}
+}*/
 
 struct SpecConsts {
   u32 len;

@@ -20,6 +20,7 @@ int main(const int argc, const char* const* argv) {
                         cxxopts::value<std::string>())(
       "v,verbose", "Verbose output", cxxopts::value<bool>());
   cxxopts::ParseResult result;
+  spdlog::set_level(spdlog::level::info);
   try {
     result = options.parse(argc, argv);
   } catch (const std::exception& exc) {
