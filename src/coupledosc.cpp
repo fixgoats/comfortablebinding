@@ -34,34 +34,11 @@ int main(const int argc, const char* const* argv) {
 
   if (result["c"].count()) {
     std::string fname = result["c"].as<std::string>();
-    DynConf conf;
-    if (auto opt = tomlToDynConf(fname); opt.has_value()) {
-      conf = opt.value();
-    } else {
-      return 1;
-    }
-    if (conf.kuramoto.has_value()) {
-      doKuramoto(conf.kuramoto.value());
-    }
-    if (conf.basic.has_value()) {
-      doBasic(conf.basic.value());
-    }
-    if (conf.basicnlin.has_value()) {
-      doBasicNLin(conf.basicnlin.value());
-    }
-    if (!conf.tetm.empty()) {
-      doBasicHankelDD(conf.tetm);
-    }
-    if (!conf.hscs.empty()) {
-      // GPUHankelTimeScan(conf.hscs);
-      doHankelTimeScan(conf.hscs);
-    }
-    // if (!conf.hscs.empty()) {
-    //   // GPUDrivenDiss(conf.hscs);
-    //   doHankelTimeScan(conf.hscs);
-    // }
-    if (conf.bd.has_value()) {
-      doDistanceScan(conf.bd.value());
+    auto confs = tomlToDynConf(fname);
+    spdlog::debug("Got {} confs", confs.size());
+    for (const auto& conf : confs) {
+      spdlog::debug("Running conf's run function");
+      conf->run();
     }
   }
 }

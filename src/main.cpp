@@ -1,7 +1,6 @@
 #include "Eigen/Dense"
 #include "SDF.h"
 #include "approximant.h"
-#include "dynamic.h"
 #include "geometry.h"
 #include "hermEigen.h"
 #include "io.h"
@@ -27,8 +26,7 @@ int main(const int argc, const char* const* argv) {
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
       "c,config", "TOML configuration", cxxopts::value<std::string>())(
       "t,test", "Test whatever feature I'm working on rn.",
-      cxxopts::value<std::string>())("d,dynamic", "Dynamic simulation",
-                                     cxxopts::value<std::string>());
+      cxxopts::value<std::string>());
 
   cxxopts::ParseResult result;
   try {
@@ -36,25 +34,6 @@ int main(const int argc, const char* const* argv) {
   } catch (const std::exception& exc) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return 1;
-  }
-  if (result["d"].count()) {
-    std::string fname = result["d"].as<std::string>();
-    DynConf conf;
-    if (auto opt = tomlToDynConf(fname); opt.has_value()) {
-      conf = opt.value();
-    } else {
-      return 1;
-    }
-    if (conf.kuramoto.has_value()) {
-      doKuramoto(conf.kuramoto.value());
-    }
-    if (conf.basic.has_value()) {
-      doBasic(conf.basic.value());
-    }
-    if (conf.basicnlin.has_value()) {
-      doBasicNLin(conf.basicnlin.value());
-    }
-    // doExactBasic(conf);
   }
   if (result["c"].count()) {
     std::string fname = result["c"].as<std::string>();
