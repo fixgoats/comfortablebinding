@@ -1,3 +1,4 @@
+#include "Eigen/Core"
 #include "Eigen/Dense"
 #include "geometry.h"
 #include "highfive/highfive.hpp"
@@ -10,6 +11,8 @@
 #include <iostream>
 #include <random>
 #include <vector>
+
+using Eigen::Vector3d;
 
 template <class T, class... Arrs>
 void add(T* __restrict__ c, u64 n, Arrs... a) {
@@ -193,8 +196,8 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  constexpr s32 a = -1;
-  constexpr s32 b = 6;
-  std::cout << 0xfff << '\n';
+  auto p1 = new f64[10];
+  p1[4] = 2.;
+  std::cout << p1[4] << '\n';
   return 0;
 }
