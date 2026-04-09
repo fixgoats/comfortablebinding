@@ -3,6 +3,7 @@
 #include "betterexc.h"
 #include "kdtree.h"
 #include "raylib.h"
+#include "spdlog/spdlog.h"
 #include "typedefs.h"
 #include <cmath>
 #include <cstddef>
@@ -50,6 +51,32 @@ struct HatTile {
       return transform * hat1;
     }
     return transform * hat;
+  }
+};
+
+// template <>
+// struct std::formatter<Matrix3d> {
+//   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin();
+//   } auto format(const Matrix3d& m, std::format_context& ctx) {
+//     return std::format_to(
+//         ctx.out(), "Matrix3d: [[{}, {}, {}], [{}, {}, {}], [{}, {}, {}]]",
+//         m(0, 0), m(0, 1), m(0, 2), m(1, 0), m(1, 1), m(1, 2), m(2, 0), m(2,
+//         1), m(2, 2));
+//   }
+// };
+
+template <>
+struct std::formatter<HatTile> {
+  constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+
+  auto format(const HatTile& d, std::format_context& ctx) {
+    return std::format_to(
+        ctx.out(),
+        "HatTile: {{ transform: {{Matrix3d: [[{}, {}, {}], [{}, {}, {}], [{}, "
+        "{}, {}]]}}, mirrored: {} }}",
+        d.transform(0, 0), d.transform(0, 1), d.transform(0, 2),
+        d.transform(1, 0), d.transform(1, 1), d.transform(1, 2),
+        d.transform(2, 0), d.transform(2, 1), d.transform(2, 2), d.mirrored);
   }
 };
 
@@ -141,22 +168,33 @@ struct MetaTile {
   void hats_recursive(Matrix3d trans, std::vector<HatTile>& hat_vec) const {
     if (children.size() == 0) {
       switch (type) {
-      case H:
-        hat_vec.insert(
-            hat_vec.end(),
+      case MetaType::H: {
+        std::array<HatTile, 4> hat_arr{
             {{trans * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}), true},
-             {trans * translate_by(sixth_rot(4), {10., sq3}), false},
+             {trans * translate_by(sixth_rot(4), {1., sq3}), false},
              {trans * translate_by(sixth_rot(4), {4., sq3}), false},
-             {trans * translate_by(sixth_rot(2), {2.5, 1.5 * sq3}), false}});
-      case T:
+             {trans * translate_by(sixth_rot(2), {2.5, 1.5 * sq3}), false}}};
+        // for (u32 i = 0; i < 4; ++i) {
+        //   spdlog::debug("Adding hat: {}", hat_arr[i]);
+        // }
+        hat_vec.insert(hat_vec.end(), hat_arr.begin(), hat_arr.end());
+        break;
+      }
+      case MetaType::T: {
+        // spdlog::debug("Inserting hat: {}",
+        //               HatTile{trans * transl2({0.5, 0.5 * sq3}), false});
         hat_vec.insert(hat_vec.end(),
                        {{trans * transl2({0.5, 0.5 * sq3}), false}});
+        break;
+      }
       case P:
-      case F:
+      case F: {
         hat_vec.insert(
             hat_vec.end(),
             {{trans * transl2({1.5, 0.5 * sq3}), false},
              {trans * translate_by(sixth_rot(5), {0., sq3}), false}});
+        break;
+      }
       }
     } else {
       for (const auto& ch : children) {
@@ -206,21 +244,25 @@ struct MetaTile {
       return 5;
     }
   }
-  void clearRecursive(MetaTile* mt) {
-    if (mt == nullptr)
-      return;
-    for (auto ch : mt->children) {
-      clearRecursive(ch);
-    }
-    delete mt;
-  }
-  void clear() {
-    for (auto ch : children) {
-      clearRecursive(ch);
-    }
-    children.clear();
-  }
-  ~MetaTile() { clear(); }
+  // void clearRecursive(MetaTile* mt) {
+  //   if (mt == nullptr)
+  //     return;
+  //   for (auto ch : mt->children) {
+  //     clearRecursive(ch);
+  //   }
+  //   delete mt;
+  // }
+  // void clear() {
+  //   for (auto ch : children) {
+  //     clearRecursive(ch);
+  //   }
+  //   children.clear();
+  // }
+  // ~MetaTile() {
+  //   for (auto ch : children) {
+  //     delete ch;
+  //   }
+  // }
 };
 
 constexpr Vector3d affsub(Vector3d v, Vector3d u) {
@@ -365,32 +407,37 @@ s32 toScreen(f64 r, f64 min, f64 max, s32 dim) {
   return (s32)(((r - min) / (max - min)) * (f64)dim);
 }
 
+s32 toScreenIsotropic(f64 r, f64 start, f64 scale, s32 dim) {
+  return (s32)(((r - start) / scale) * (f64)dim);
+}
+
 int main(int argc, char* argv[]) {
-  auto init_h = MetaTile{(Matrix3Xd(3, 6) << 0., 4., 4.5, 2.5, 1.5, -0.5, 0.,
-                          0., 0.5 * sq3, 2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1.,
-                          1., 1., 1., 1., 1.)
-                             .finished(),
-                         Matrix3d::Identity(),
-                         MetaType::H,
-                         {}};
-  auto init_t =
+  auto tiles = new MetaTile[4]{
+      {(Matrix3Xd(3, 6) << 0., 4., 4.5, 2.5, 1.5, -0.5, 0., 0., 0.5 * sq3,
+        2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1.)
+           .finished(),
+       Matrix3d::Identity(),
+       MetaType::H,
+       {}},
       MetaTile{(Matrix3Xd(3, 3) << 0., 3., 1.5, 0., 0., 1.5 * sq3, 1., 1., 1.)
                    .finished(),
                Matrix3d::Identity(),
                MetaType::T,
-               {}};
-  auto init_p = MetaTile{
-      (Matrix3Xd(3, 4) << 0., 4., 3., -1., 0., 0., sq3, sq3, 1., 1., 1., 1.)
-          .finished(),
-      Matrix3d::Identity(),
-      MetaType::P,
-      {}};
-  auto init_f = MetaTile{(Matrix3Xd(3, 4) << 0., 3., 3.5, 3., -1., 0., 0.,
-                          0.5 * sq3, sq3, sq3, 1., 1., 1., 1., 1.)
-                             .finished(),
-                         Matrix3d::Identity(),
-                         MetaType::F,
-                         {}};
+               {}},
+      MetaTile{
+          (Matrix3Xd(3, 4) << 0., 4., 3., -1., 0., 0., sq3, sq3, 1., 1., 1., 1.)
+              .finished(),
+          Matrix3d::Identity(),
+          MetaType::P,
+          {}},
+      MetaTile{(Matrix3Xd(3, 4) << 0., 3., 3.5, 3., -1., 0., 0., 0.5 * sq3, sq3,
+                sq3, 1., 1., 1., 1., 1.)
+                   .finished(),
+               Matrix3d::Identity(),
+               MetaType::F,
+               {}}};
+  auto patch = construct_patch(tiles);
+  tiles = construct_metatiles(patch);
 
   s32 width = 800;
   s32 height = 800;
@@ -399,34 +446,39 @@ int main(int argc, char* argv[]) {
   InitWindow(width, height, "raylib test");
 
   SetTargetFPS(10);
-  const auto points = init_h.to_points();                 // hat;
-  const std::vector<Matrix3Xd> polys = init_h.to_polys(); // {hat};
+  const auto points = tiles[0].to_points();                 // hat;
+  const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
   f64 xmin = points(0, all).minCoeff();
   f64 xmax = points(0, all).maxCoeff();
   f64 ymin = points(1, all).minCoeff();
   f64 ymax = points(1, all).maxCoeff();
-  double exmin = xmin - 0.05 * (xmax - xmin);
-  double eymin = ymin - 0.05 * (ymax - ymin);
-  double exmax = xmax + 0.05 * (xmax - xmin);
-  double eymax = ymax + 0.05 * (ymax - ymin);
+  f64 exmin = xmin - 0.05 * (xmax - xmin);
+  f64 eymin = ymin - 0.05 * (ymax - ymin);
+  f64 exmax = xmax + 0.05 * (xmax - xmin);
+  f64 eymax = ymax + 0.05 * (ymax - ymin);
+  f64 max_of_exey = std::max(eymax - eymin, exmax - exmin);
   while (!WindowShouldClose()) {
     width = GetScreenWidth();
     height = GetScreenHeight();
+    f64 min_of_wh = std::min(width, height);
     BeginDrawing();
     ClearBackground(WHITE);
     for (s32 i = 0; i < points.cols(); ++i) {
-      DrawCircle(toScreen(points(0, i), exmin, exmax, width),
-                 toScreen(points(1, i), eymin, eymax, height), 12.0, BLACK);
+      DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey, min_of_wh),
+                 toScreenIsotropic(points(1, i), eymin, max_of_exey, min_of_wh),
+                 12.0, BLACK);
     }
     for (u32 i = 0; i < polys.size(); ++i) {
-      for (s32 j = 0; j < polys[i].cols(); ++j) {
-        DrawLine(toScreen(polys[i](0, j), exmin, exmax, width),
-                 toScreen(polys[i](1, j), eymin, eymax, height),
-                 toScreen(polys[i](0, (j + 1) % polys[i].cols()), exmin, exmax,
-                          width),
-                 toScreen(polys[i](1, (j + 1) % polys[i].cols()), eymin, eymax,
-                          height),
-                 BLACK);
+      s32 npolys = polys[i].cols();
+      for (s32 j = 0; j < npolys; ++j) {
+        DrawLine(
+            toScreenIsotropic(polys[i](0, j), exmin, max_of_exey, min_of_wh),
+            toScreenIsotropic(polys[i](1, j), eymin, max_of_exey, min_of_wh),
+            toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin, max_of_exey,
+                              min_of_wh),
+            toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin, max_of_exey,
+                              min_of_wh),
+            BLACK);
       }
     }
     EndDrawing();
