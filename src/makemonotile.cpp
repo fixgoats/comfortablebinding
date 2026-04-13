@@ -160,91 +160,97 @@ Vector3d intersection(Vector3d p1, Vector3d q1, Vector3d p2, Vector3d q2) {
       .finished();
 }
 
+template <class T>
+struct Node {
+  Node<T>** children;
+  size_t n_children;
+  T data;
+};
+
+template <class T>
+struct Tree {
+  // struct Node {
+  //   Node<T> **children;
+  //   size_t n_children;
+  //   T data;
+  // };
+  Node<T>* root;
+};
+
 struct MetaTile {
   Eigen::Matrix3Xd shape;
   Matrix3d transform;
   MetaType type;
-  std::vector<MetaTile*> children;
+  // std::vector<MetaTile*> children;
 
-  void hats_recursive(Matrix3d trans, std::vector<HatTile>& hat_vec) const {
-    if (children.size() == 0) {
-      switch (type) {
-      case MetaType::H: {
-        std::array<HatTile, 4> hat_arr{
-            {{trans * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}), true},
-             {trans * translate_by(sixth_rot(4), {1., sq3}), false},
-             {trans * translate_by(sixth_rot(4), {4., sq3}), false},
-             {trans * translate_by(sixth_rot(2), {2.5, 1.5 * sq3}), false}}};
-        // for (u32 i = 0; i < 4; ++i) {
-        //   spdlog::debug("Adding hat: {}", hat_arr[i]);
-        // }
-        hat_vec.insert(hat_vec.end(), hat_arr.begin(), hat_arr.end());
-        break;
-      }
-      case MetaType::T: {
-        // spdlog::debug("Inserting hat: {}",
-        //               HatTile{trans * transl2({0.5, 0.5 * sq3}), false});
-        hat_vec.insert(hat_vec.end(),
-                       {{trans * transl2({0.5, 0.5 * sq3}), false}});
-        break;
-      }
-      case P:
-      case F: {
-        hat_vec.insert(
-            hat_vec.end(),
-            {{trans * transl2({1.5, 0.5 * sq3}), false},
-             {trans * translate_by(sixth_rot(5), {0., sq3}), false}});
-        break;
-      }
-      }
-    } else {
-      for (const auto& ch : children) {
-        hats_recursive(trans * ch->transform, hat_vec);
-      }
-    }
-  }
-  std::vector<HatTile> hats() const {
-    std::vector<HatTile> hats;
-    hats.reserve(10000);
-    hats_recursive(transform, hats);
-    return hats;
-  }
+  // void hats_recursive(Matrix3d trans, std::vector<HatTile>& hat_vec) const {
+  //   if (children.size() == 0) {
+  //     switch (type) {
+  //     case H:
+  //       hat_vec.insert(
+  //           hat_vec.end(),
+  //           {{trans * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}), true},
+  //            {trans * translate_by(sixth_rot(4), {10., sq3}), false},
+  //            {trans * translate_by(sixth_rot(4), {4., sq3}), false},
+  //            {trans * translate_by(sixth_rot(2), {2.5, 1.5 * sq3}), false}});
+  //     case T:
+  //       hat_vec.insert(hat_vec.end(),
+  //                      {{trans * transl2({0.5, 0.5 * sq3}), false}});
+  //     case P:
+  //     case F:
+  //       hat_vec.insert(
+  //           hat_vec.end(),
+  //           {{trans * transl2({1.5, 0.5 * sq3}), false},
+  //            {trans * translate_by(sixth_rot(5), {0., sq3}), false}});
+  //     }
+  //   } else {
+  //     for (const auto& ch : children) {
+  //       hats_recursive(trans * ch->transform, hat_vec);
+  //     }
+  //   }
+  // }
+  // std::vector<HatTile> hats() const {
+  //   std::vector<HatTile> hats;
+  //   hats.reserve(10000);
+  //   hats_recursive(transform, hats);
+  //   return hats;
+  // }
 
-  constexpr Vector3d eval_child(size_t i, size_t j) const {
-    return children[i]->transform * children[i]->shape(all, j);
-  }
+  // constexpr Vector3d eval_child(size_t i, size_t j) const {
+  //   return children[i]->transform * children[i]->shape(all, j);
+  // }
 
-  Matrix3Xd to_points() const {
-    const auto hat_vec = hats();
-    Matrix3Xd ret(3, hat_vec.size() * 13);
-    for (u64 i = 0; i < hat_vec.size(); ++i) {
-      ret(all, Eigen::seq(i * 13, (i + 1) * 13 - 1)) = hat_vec[i].points();
-    }
-    return ret;
-  }
+  // Matrix3Xd to_points() const {
+  //   const auto hat_vec = hats();
+  //   Matrix3Xd ret(3, hat_vec.size() * 13);
+  //   for (u64 i = 0; i < hat_vec.size(); ++i) {
+  //     ret(all, Eigen::seq(i * 13, (i + 1) * 13 - 1)) = hat_vec[i].points();
+  //   }
+  //   return ret;
+  // }
 
-  std::vector<Matrix3Xd> to_polys() const {
-    const auto hat_vec = hats();
-    std::vector<Matrix3Xd> ret_vec(hat_vec.size());
-    for (u64 i = 0; i < hat_vec.size(); ++i) {
-      ret_vec[i] = hat_vec[i].points();
-    }
+  // std::vector<Matrix3Xd> to_polys() const {
+  //   const auto hat_vec = hats();
+  //   std::vector<Matrix3Xd> ret_vec(hat_vec.size());
+  //   for (u64 i = 0; i < hat_vec.size(); ++i) {
+  //     ret_vec[i] = hat_vec[i].points();
+  //   }
 
-    return ret_vec;
-  }
+  //   return ret_vec;
+  // }
 
-  size_t shape_len() const {
-    switch (type) {
-    case H:
-      return 6;
-    case T:
-      return 3;
-    case P:
-      return 4;
-    case F:
-      return 5;
-    }
-  }
+  // size_t shape_len() const {
+  //   switch (type) {
+  //   case H:
+  //     return 6;
+  //   case T:
+  //     return 3;
+  //   case P:
+  //     return 4;
+  //   case F:
+  //     return 5;
+  //   }
+  // }
   // void clearRecursive(MetaTile* mt) {
   //   if (mt == nullptr)
   //     return;
@@ -259,11 +265,7 @@ struct MetaTile {
   //   }
   //   children.clear();
   // }
-  // ~MetaTile() {
-  //   for (auto ch : children) {
-  //     delete ch;
-  //   }
-  // }
+  // ~MetaTile() { clear(); }
 };
 
 constexpr Vector3d affsub(Vector3d v, Vector3d u) {
@@ -304,10 +306,10 @@ static const std::vector<std::vector<size_t>> rules{{0},
                                                     {1, 9, 4, 0, 2, 2},
                                                     {3, 4, 0, 3}};
 
-MetaTile* construct_patch(MetaTile* shapes) {
-  spdlog::debug("Function: construct_patch");
-  MetaTile* ret = new MetaTile();
-  ret->children.reserve(29);
+Node<MetaTile>** construct_patch(Tree<MetaTile>* shapes) {
+  Node<MetaTile>** ret = new Node<MetaTile>*[29];
+  size_t ch_count = 0;
+  // ret.children.reserve(29);
   for (const auto& r : rules) {
     // for (const auto& ch : ret->children) {
     //   spdlog::debug("ch.shape[]: [{}, {}, {}]", ch->shape(0, 2),
@@ -318,11 +320,8 @@ MetaTile* construct_patch(MetaTile* shapes) {
     //       ch->transform(1, 1), ch->transform(0, 2), ch->transform(1, 2));
     // }
     if (r.size() == 1) {
-      spdlog::debug("pushing first shape");
-      MetaTile* nshp = new MetaTile(shapes[0]);
-      spdlog::debug("nshp address: {}", fmt::ptr(nshp));
-      spdlog::debug("shape address: {}", fmt::ptr(shapes));
-      ret->children.push_back(nshp);
+      Node<MetaTile>* nshp = shapes[0];
+      ret[ch_count] = nshp;
     } else if (r.size() == 4) {
       // const Eigen::Matrix3Xd poly = ret->children[r[1]]->shape;
       spdlog::debug("pushing shape from 4 number rules");
