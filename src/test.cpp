@@ -14,176 +14,32 @@
 
 using Eigen::Vector3d;
 
-template <class T, class... Arrs>
-void add(T* __restrict__ c, u64 n, Arrs... a) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = (0 + ... + a[i]);
+template <class T>
+struct Node {
+  std::vector<std::shared_ptr<Node<T>>> children;
+  T data{};
+
+  Node(T obj) : data{obj} { std::cout << "Node(T) constructor.\n"; }
+  Node(std::vector<std::shared_ptr<Node<T>>> ch, T obj)
+      : children{ch}, data{obj} {}
+};
+
+template <class T>
+struct Tree {
+  std::shared_ptr<Node<T>> root;
+  Tree<T>(Node<T>* r) : root{r} {
+    std::cout << "Tree<T>(Node<T>) constructor.\n";
   }
+  Tree<T>(std::shared_ptr<Node<T>> r) : root{r} {}
+  Tree<T>(T r) : root{std::make_shared<Node<T>>(r)} {}
+};
+
+Tree<u64> add_trees(Tree<u64>& a, Tree<u64>& b) {
+  spdlog::debug("Function: add_trees.");
+  spdlog::debug("Making array of pointers to a and b roots.");
+  return Tree<u64>{
+      new Node<u64>{{a.root, b.root}, a.root->data + b.root->data}};
 }
-
-template <class T, class... Arrs>
-void sub(T* __restrict__ c, u64 n, Arrs... a) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = (... - a[i]);
-  }
-}
-
-template <class T, class... Arrs>
-void mul(T* __restrict__ c, u64 n, Arrs... a) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = (1 * ... * a[i]);
-  }
-}
-
-void mul_add(f64* __restrict__ c, const f64* a, const f64* b, const f64* d,
-             u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] + d[i] * b[i];
-  }
-}
-
-void mul_sub(f64* __restrict__ c, const f64* a, const f64* b, const f64* d,
-             u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] - d[i] * b[i];
-  }
-}
-
-void mul_add(f64* __restrict__ c, const f64* a, const f64* b, f64 d, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] + d * b[i];
-  }
-}
-
-void div(f64* __restrict__ c, const f64* a, const f64* b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] / b[i];
-  }
-}
-
-void add(f64* __restrict__ c, const f64* a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] + b;
-  }
-}
-
-void sub(f64* __restrict__ c, const f64* a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] - b;
-  }
-}
-
-void mul(f64* __restrict__ c, const f64* a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] * b;
-  }
-}
-
-void div(f64* __restrict__ c, const f64* a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    c[i] = a[i] / b;
-  }
-}
-
-void inplace_add(f64* __restrict__ a, const f64* b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] += b[i];
-  }
-}
-
-void inplace_add(f64* __restrict__ a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] += b;
-  }
-}
-
-void inplace_mul_add(f64* __restrict__ a, const f64* b, const f64* c, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] += b[i] * c[i];
-  }
-}
-
-void inplace_mul_add(f64* __restrict__ a, const f64* b, f64 c, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] += b[i] * c;
-  }
-}
-
-void inplace_sub(f64* __restrict__ a, const f64* b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] -= b[i];
-  }
-}
-
-void inplace_mul_sub(f64* __restrict__ a, const f64* b, const f64* c, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] -= b[i] * c[i];
-  }
-}
-
-void inplace_sub(f64* __restrict__ a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] -= b;
-  }
-}
-
-void inplace_mul(f64* __restrict__ a, const f64* b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] *= b[i];
-  }
-}
-
-void inplace_mul(f64* __restrict__ a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] *= b;
-  }
-}
-
-void inplace_div(f64* __restrict__ a, const f64* b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] /= b[i];
-  }
-}
-
-void inplace_div(f64* __restrict__ a, f64 b, u64 n) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    a[i] /= b;
-  }
-}
-
-template <class Func, class... Args>
-void apply(Func f, u64 n, f64* __restrict__ dest, Args... a) {
-#pragma omp parallel for
-  for (u64 i = 0; i < n; ++i) {
-    dest[i] = f(a[i]...);
-  }
-}
-
-void rk4step(f64* y, f64* k1, f64* k2, f64* k3, f64* k4, u64 n) {}
-
-// f64 hooke()
 
 int main(int argc, char* argv[]) {
   cxxopts::Options options("test program", "bleh");
@@ -195,9 +51,28 @@ int main(int argc, char* argv[]) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return EXIT_FAILURE;
   }
+  if (result["v"].count()) {
+    spdlog::set_level(spdlog::level::trace);
+  }
 
-  auto p1 = new f64[10];
-  p1[4] = 2.;
-  std::cout << p1[4] << '\n';
+  Tree<u64> x{1};
+  Tree<u64> y{2};
+  Tree<u64> u{1};
+  Tree<u64> v{3};
+
+  auto d = add_trees(x, y);
+  auto e = add_trees(u, v);
+  auto f = add_trees(d, e);
+  std::cout << "x num: " << x.root->data << '\n';
+  std::cout << "y num: " << y.root->data << '\n';
+  std::cout << "u num: " << u.root->data << '\n';
+  std::cout << "v num: " << v.root->data << '\n';
+  std::cout << "d num: " << d.root->data << '\n';
+  std::cout << "e num: " << e.root->data << '\n';
+  std::cout << "f num: " << f.root->data << '\n';
+  // auto cur_node = pascal.root;
+  // for (u64 i = 0; i < 5; ++i) {
+  //   cur_node = cur_node->children
+  // }
   return 0;
 }

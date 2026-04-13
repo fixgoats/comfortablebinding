@@ -9,6 +9,7 @@
 #include <cxxopts.hpp>
 #include <exception>
 #include <iostream>
+#include <variant>
 #include <vector>
 
 using Eigen::Vector2d, Eigen::Matrix3d, Eigen::Matrix3Xd, Eigen::Vector3d,
@@ -28,6 +29,15 @@ static const Matrix3Xd hat =
 //     c64{0.75, 0.75 * sq3}, c64{0.5, 0.5 * sq3}, c64 {
 //   0., 0.5 * sq3
 // }
+
+union Shape {
+  Eigen::Matrix<f64, 3, 3> tri;
+  Eigen::Matrix<f64, 3, 4> para;
+  Eigen::Matrix<f64, 3, 5> penta;
+  Eigen::Matrix<f64, 3, 6> hexa;
+  Eigen::Matrix<f64, 3, 13> hat;
+  Eigen::Matrix<f64, 3, 13> hat1;
+};
 
 static const Matrix3Xd hat1 =
     (Eigen::Matrix3Xd(3, 13) << 0., 0.75, 0.5, -0.5, -0.75, -1.5, -2.25, -2.,
@@ -53,6 +63,15 @@ struct HatTile {
     }
     return transform * hat;
   }
+};
+
+struct ShapeMaker {
+  Matrix3d transform;
+  std::shared_ptr<
+      std::variant<Eigen::Matrix<f64, 3, 3>, Eigen::Matrix<f64, 3, 4>,
+                   Eigen::Matrix<f64, 3, 5>, Eigen::Matrix<f64, 3, 6>,
+                   Eigen::Matrix<f64, 3, 13>>>
+      p_shape;
 };
 
 // template <>
@@ -162,111 +181,140 @@ Vector3d intersection(Vector3d p1, Vector3d q1, Vector3d p2, Vector3d q2) {
 
 template <class T>
 struct Node {
-  Node<T>** children;
-  size_t n_children;
-  T data;
+  std::vector<std::shared_ptr<Node<T>>> children;
+  T data{};
+
+  Node(T obj) : data{obj} { std::cout << "Node(T) constructor.\n"; }
+  Node(std::vector<std::shared_ptr<Node<T>>> ch, T obj)
+      : children{ch}, data{obj} {}
 };
 
 template <class T>
 struct Tree {
-  // struct Node {
-  //   Node<T> **children;
-  //   size_t n_children;
-  //   T data;
-  // };
-  Node<T>* root;
+  std::shared_ptr<Node<T>> root;
+  Tree<T>(Node<T>* r) : root{r} {
+    std::cout << "Tree<T>(Node<T>) constructor.\n";
+  }
+  Tree<T>(std::shared_ptr<Node<T>> r) : root{r} {}
+  Tree<T>(T r) : root{std::make_shared<Node<T>>(r)} {}
 };
 
-struct MetaTile {
-  Eigen::Matrix3Xd shape;
-  Matrix3d transform;
-  MetaType type;
-  // std::vector<MetaTile*> children;
+template <class T, class Func>
+void apply_down(Node<T>* nd, Func f) {
+  f(nd);
+  for (auto ch : nd->children) {
+    apply_down(ch, f);
+  }
+}
 
-  // void hats_recursive(Matrix3d trans, std::vector<HatTile>& hat_vec) const {
-  //   if (children.size() == 0) {
-  //     switch (type) {
-  //     case H:
-  //       hat_vec.insert(
-  //           hat_vec.end(),
-  //           {{trans * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}), true},
-  //            {trans * translate_by(sixth_rot(4), {10., sq3}), false},
-  //            {trans * translate_by(sixth_rot(4), {4., sq3}), false},
-  //            {trans * translate_by(sixth_rot(2), {2.5, 1.5 * sq3}), false}});
-  //     case T:
-  //       hat_vec.insert(hat_vec.end(),
-  //                      {{trans * transl2({0.5, 0.5 * sq3}), false}});
-  //     case P:
-  //     case F:
-  //       hat_vec.insert(
-  //           hat_vec.end(),
-  //           {{trans * transl2({1.5, 0.5 * sq3}), false},
-  //            {trans * translate_by(sixth_rot(5), {0., sq3}), false}});
-  //     }
-  //   } else {
-  //     for (const auto& ch : children) {
-  //       hats_recursive(trans * ch->transform, hat_vec);
-  //     }
-  //   }
-  // }
-  // std::vector<HatTile> hats() const {
-  //   std::vector<HatTile> hats;
-  //   hats.reserve(10000);
-  //   hats_recursive(transform, hats);
-  //   return hats;
-  // }
+template <class T, class Func>
+void apply_to_tree(Tree<T>& nd, Func f) {
+  apply_down(nd.root, f);
+}
 
-  // constexpr Vector3d eval_child(size_t i, size_t j) const {
-  //   return children[i]->transform * children[i]->shape(all, j);
-  // }
+template <class T, class X, class Func>
+std::vector<X> gather_down(const Node<T>* nd, Func f) {}
 
-  // Matrix3Xd to_points() const {
-  //   const auto hat_vec = hats();
-  //   Matrix3Xd ret(3, hat_vec.size() * 13);
-  //   for (u64 i = 0; i < hat_vec.size(); ++i) {
-  //     ret(all, Eigen::seq(i * 13, (i + 1) * 13 - 1)) = hat_vec[i].points();
-  //   }
-  //   return ret;
-  // }
+// struct MetaTile {
+//   Eigen::Matrix3Xd shape;
+//   Matrix3d transform;
+//   MetaType type;
 
-  // std::vector<Matrix3Xd> to_polys() const {
-  //   const auto hat_vec = hats();
-  //   std::vector<Matrix3Xd> ret_vec(hat_vec.size());
-  //   for (u64 i = 0; i < hat_vec.size(); ++i) {
-  //     ret_vec[i] = hat_vec[i].points();
-  //   }
+//   std::vector<HatTile> meta_to_hats(Matrix3d transf) const {
+//     switch (type) {
+//     case H:
+//       return {
+//           {transf * transform * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}),
+//            true},
+//           {transf * transform * translate_by(sixth_rot(4), {10., sq3}),
+//           false}, {transf * transform * translate_by(sixth_rot(4), {4.,
+//           sq3}), false}, {transf * transform * translate_by(sixth_rot(2),
+//           {2.5, 1.5 * sq3}),
+//            false}};
+//     case T:
+//       return {{transf * transform * transl2({0.5, 0.5 * sq3}), false}};
+//     case P:
+//     case F:
+//       return {
+//           {transf * transform * transl2({1.5, 0.5 * sq3}), false},
+//           {transf * transform * translate_by(sixth_rot(5), {0., sq3}),
+//           false}};
+//     }
+//   }
+//
+//   constexpr Vector3d eval_shape_pt(size_t i) const {
+//     return transform * shape(all, i);
+//   }
+//
+//   constexpr Matrix3Xd eval_shape() const { return transform * shape; }
 
-  //   return ret_vec;
-  // }
+// Matrix3Xd to_points() const {
+//   const auto hat_vec = hats();
+//   Matrix3Xd ret(3, hat_vec.size() * 13);
+//   for (u64 i = 0; i < hat_vec.size(); ++i) {
+//     ret(all, Eigen::seq(i * 13, (i + 1) * 13 - 1)) = hat_vec[i].points();
+//   }
+//   return ret;
+// }
 
-  // size_t shape_len() const {
-  //   switch (type) {
-  //   case H:
-  //     return 6;
-  //   case T:
-  //     return 3;
-  //   case P:
-  //     return 4;
-  //   case F:
-  //     return 5;
-  //   }
-  // }
-  // void clearRecursive(MetaTile* mt) {
-  //   if (mt == nullptr)
-  //     return;
-  //   for (auto ch : mt->children) {
-  //     clearRecursive(ch);
-  //   }
-  //   delete mt;
-  // }
-  // void clear() {
-  //   for (auto ch : children) {
-  //     clearRecursive(ch);
-  //   }
-  //   children.clear();
-  // }
-  // ~MetaTile() { clear(); }
-};
+// std::vector<Matrix3Xd> to_polys() const {
+//   const auto hat_vec = hats();
+//   std::vector<Matrix3Xd> ret_vec(hat_vec.size());
+//   for (u64 i = 0; i < hat_vec.size(); ++i) {
+//     ret_vec[i] = hat_vec[i].points();
+//   }
+
+//   return ret_vec;
+// }
+
+//   constexpr size_t shape_len() const {
+//     switch (type) {
+//     case H:
+//       return 6;
+//     case T:
+//       return 3;
+//     case P:
+//       return 4;
+//     case F:
+//       return 5;
+//     }
+//   }
+// void clearRecursive(MetaTile* mt) {
+//   if (mt == nullptr)
+//     return;
+//   for (auto ch : mt->children) {
+//     clearRecursive(ch);
+//   }
+//   delete mt;
+// }
+// void clear() {
+//   for (auto ch : children) {
+//     clearRecursive(ch);
+//   }
+//   children.clear();
+// }
+// ~MetaTile() { clear(); }
+//};
+
+void nodes_to_hats(const Node<ShapeMaker>& nd, Matrix3d transf,
+                   std::vector<HatTile>& hats) {
+  if (nd.children.size() == 0) {
+    std::vector<HatTile> hs = nd.data.meta_to_hats(transf);
+    hats.insert(hats.end(), hs.begin(), hs.end());
+  } else {
+    for (const auto& ch : nd.children) {
+      nodes_to_hats(*ch, transf * nd.data.transform, hats);
+    }
+  }
+}
+
+std::vector<HatTile> tree_to_hats(const Tree<MetaTile>& tree,
+                                  size_t init_size = 1000) {
+  std::vector<HatTile> hats;
+  hats.reserve(init_size);
+  nodes_to_hats(*tree.root, Matrix3d::Identity(), hats);
+  return hats;
+}
 
 constexpr Vector3d affsub(Vector3d v, Vector3d u) {
   return {v[0] - u[0], v[1] - u[1], 1.};
@@ -306,49 +354,55 @@ static const std::vector<std::vector<size_t>> rules{{0},
                                                     {1, 9, 4, 0, 2, 2},
                                                     {3, 4, 0, 3}};
 
-Node<MetaTile>** construct_patch(Tree<MetaTile>* shapes) {
-  Node<MetaTile>** ret = new Node<MetaTile>*[29];
-  size_t ch_count = 0;
-  // ret.children.reserve(29);
+// std::vector<std::shared_ptr<Node<MetaTile>>>
+void construct_patch(Tree<MetaTile>* shapes) {
+  std::vector<std::pair<Matrix3d, std::shared_ptr<Node<MetaTile>>>> ret;
+  ret.reserve(29);
+  //   size_t ch_count = 0;
+  //   // ret.children.reserve(29);
   for (const auto& r : rules) {
     // for (const auto& ch : ret->children) {
     //   spdlog::debug("ch.shape[]: [{}, {}, {}]", ch->shape(0, 2),
     //                 ch->shape(1, 2), ch->shape(2, 2));
     //   spdlog::debug(
-    //       "ch.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{}, {}]",
+    //       "ch.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
+    // {}]",
     //       ch->transform(0, 0), ch->transform(0, 1), ch->transform(1, 0),
     //       ch->transform(1, 1), ch->transform(0, 2), ch->transform(1, 2));
     // }
     if (r.size() == 1) {
-      Node<MetaTile>* nshp = shapes[0];
-      ret[ch_count] = nshp;
+      // Node<MetaTile>* nshp = shapes[0];
+      ret.emplace_back(Matrix3d::Identity(), shapes[0].root);
     } else if (r.size() == 4) {
       // const Eigen::Matrix3Xd poly = ret->children[r[1]]->shape;
       spdlog::debug("pushing shape from 4 number rules");
-      const Vector3d p =
-          ret->eval_child(r[1], (r[2] + 1) % ret->children[r[1]]->shape_len());
+      const Vector3d p = ret[r[1]]->data.eval_shape_pt(
+          (r[2] + 1) % ret[r[1]]->data.shape_len());
       spdlog::debug("p: [{}, {}]", p(0), p(1));
-      const Vector3d q = ret->eval_child(r[1], r[2]);
+      const Vector3d q = ret[r[1]]->data.eval_shape_pt(r[2]);
       spdlog::debug("q: [{}, {}]", q(0), q(1));
-      MetaTile* nshp = new MetaTile(shapes[r[0]]);
+      auto nshp = shapes[r[0]].root;
       spdlog::debug("nshp address: {}", fmt::ptr(nshp));
       spdlog::debug("shape address: {}", fmt::ptr(shapes));
-      const auto match_transf =
-          match_segs(nshp->shape(all, r[3]),
-                     nshp->shape(all, (r[3] + 1) % nshp->shape_len()), p, q);
-      nshp->transform = match_transf;
+      const auto match_transf = match_segs(
+          nshp->data.shape(all, r[3]),
+          nshp->data.shape(all, (r[3] + 1) % nshp->data.shape_len()), p, q);
+      nshp->data.transform = match_transf;
       // spdlog::debug(
-      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{}, {}]",
+      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
+      // {}]",
       //     nshp->transform(0, 0), nshp->transform(0, 1), nshp->transform(1,
       //     0), nshp->transform(1, 1), nshp->transform(0, 2),
       //     nshp->transform(1, 2));
       // spdlog::debug("shapes[...].transform: Mat: [[{}, {}], [{}, {}]], "
       //               "Translation: [{}, {}]",
-      //               shapes[r[0]].transform(0, 0), shapes[r[0]].transform(0,
+      //               shapes[r[0]].transform(0, 0),
+      // shapes[r[0]].transform(0,
       //               1), shapes[r[0]].transform(1, 0),
-      //               shapes[r[0]].transform(1, 1), shapes[r[0]].transform(0,
+      //               shapes[r[0]].transform(1, 1),
+      // shapes[r[0]].transform(0,
       //               2), shapes[r[0]].transform(1, 2));
-      ret->children.push_back(nshp);
+      ret.push_back(nshp);
     } else {
       spdlog::debug("Pulling children number {} and {}", r[1], r[3]);
       const auto ch_q = ret->children[r[1]];
@@ -368,110 +422,115 @@ Node<MetaTile>** construct_patch(Tree<MetaTile>* shapes) {
                      nshp->shape(all, (r[5] + 1) % nshp->shape_len()), p, q);
       nshp->transform = match_trans;
       // spdlog::debug(
-      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{}, {}]",
+      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
+      {}]",
       //     nshp->transform(0, 0), nshp->transform(0, 1), nshp->transform(1,
       //     0), nshp->transform(1, 1), nshp->transform(0, 2),
       //     nshp->transform(1, 2));
       // spdlog::debug("shapes[...].transform: Mat: [[{}, {}], [{}, {}]], "
       //               "Translation: [{}, {}]",
-      //               shapes[r[0]].transform(0, 0), shapes[r[0]].transform(0,
+      //               shapes[r[0]].transform(0, 0),
+      shapes[r[0]].transform(0,
       //               1), shapes[r[0]].transform(1, 0),
-      //               shapes[r[0]].transform(1, 1), shapes[r[0]].transform(0,
+      //               shapes[r[0]].transform(1, 1),
+      shapes[r[0]].transform(0,
       //               2), shapes[r[0]].transform(1, 2));
       ret->children.push_back(nshp);
     }
   }
-  return ret;
+  // return ret;
 }
 
-MetaTile* construct_metatiles(const MetaTile* patch) {
-  spdlog::debug("Function: construct_metatiles");
-  spdlog::debug("Allocating MetaTile");
-  MetaTile* ret = new MetaTile[4];
-  spdlog::debug("Evaluating children");
-  const auto bps1 = patch->eval_child(8, 2);
-  spdlog::debug("bps1: [{}, {}]", bps1(0), bps1(1));
-  const auto bps2 = patch->eval_child(21, 2);
-  spdlog::debug("bps2: [{}, {}]", bps2(0), bps2(1));
-  const auto rbps = rot_about(bps1, 4) * bps2;
-  spdlog::debug("rbps: [{}, {}]", rbps(0), rbps(1));
-  const auto p72 = patch->eval_child(7, 2);
-  const auto p252 = patch->eval_child(25, 2);
-  const auto llc = intersection(bps1, rbps, patch->eval_child(6, 2), p72);
-
-  auto w = affsub(patch->eval_child(6, 2), llc);
-
-  spdlog::debug("Making H outline");
-  Matrix3Xd new_h_outline(3, 6);
-  new_h_outline(all, 0) = llc;
-  new_h_outline(all, 1) = bps1;
-  w = sixth_rot(5) * w;
-  new_h_outline(all, 2) = affadd(new_h_outline(all, 1), w);
-  new_h_outline(all, 3) = patch->eval_child(14, 2);
-  w = sixth_rot(5) * w;
-  new_h_outline(all, 4) = affsub(new_h_outline(all, 3), w);
-  new_h_outline(all, 5) = patch->eval_child(6, 2);
-  ret[0] =
-      MetaTile{new_h_outline,
-               Matrix3d::Identity(),
-               MetaType::H,
-               {patch->children[0], patch->children[9], patch->children[16],
-                patch->children[27], patch->children[26], patch->children[6],
-                patch->children[1], patch->children[8], patch->children[10],
-                patch->children[15]}};
-
-  const Vector3d aaa = new_h_outline(all, 2);
-  const Vector3d bbb =
-      affadd(new_h_outline(all, 1),
-             affsub(new_h_outline(all, 4), new_h_outline(all, 5)));
-  const Vector3d ccc = rot_about(bbb, 5) * aaa;
-  Matrix3d t_shape;
-  t_shape(all, 0) = bbb;
-  t_shape(all, 1) = ccc;
-  t_shape(all, 2) = aaa;
-  ret[1] = MetaTile{t_shape,
-                    Matrix3d::Identity(),
-                    MetaType::T,
-                    {
-                        patch->children[11],
-                    }
-
-  };
-
-  spdlog::debug("Making P outline");
-  Matrix3Xd p_shape;
-  p_shape(all, 0) = p72;
-  p_shape(all, 1) = affadd(p72, affsub(bps1, llc));
-  p_shape(all, 2) = bps1;
-  p_shape(all, 3) = llc;
-  ret[2] = MetaTile{p_shape,
-                    Matrix3d::Identity(),
-                    MetaType::P,
-                    {
-                        patch->children[7],
-                        patch->children[2],
-                        patch->children[3],
-                        patch->children[4],
-                        patch->children[28],
-                    }
-
-  };
-
-  spdlog::debug("Making F outline");
-  Matrix3Xd f_shape;
-  f_shape(all, 0) = bps2;
-  f_shape(all, 1) = patch->eval_child(24, 2);
-  f_shape(all, 2) = patch->eval_child(25, 0);
-  f_shape(all, 3) = p252;
-  f_shape(all, 4) = affadd(p252, affsub(llc, bps1));
-  ret[3] =
-      MetaTile{f_shape,
-               Matrix3d::Identity(),
-               MetaType::P,
-               {patch->children[21], patch->children[20], patch->children[22],
-                patch->children[23], patch->children[24], patch->children[25]}};
-  return ret;
-}
+// MetaTile* construct_metatiles(const MetaTile* patch) {
+//   spdlog::debug("Function: construct_metatiles");
+//   spdlog::debug("Allocating MetaTile");
+//   MetaTile* ret = new MetaTile[4];
+//   spdlog::debug("Evaluating children");
+//   const auto bps1 = patch->eval_child(8, 2);
+//   spdlog::debug("bps1: [{}, {}]", bps1(0), bps1(1));
+//   const auto bps2 = patch->eval_child(21, 2);
+//   spdlog::debug("bps2: [{}, {}]", bps2(0), bps2(1));
+//   const auto rbps = rot_about(bps1, 4) * bps2;
+//   spdlog::debug("rbps: [{}, {}]", rbps(0), rbps(1));
+//   const auto p72 = patch->eval_child(7, 2);
+//   const auto p252 = patch->eval_child(25, 2);
+//   const auto llc = intersection(bps1, rbps, patch->eval_child(6, 2), p72);
+//
+//   auto w = affsub(patch->eval_child(6, 2), llc);
+//
+//   spdlog::debug("Making H outline");
+//   Matrix3Xd new_h_outline(3, 6);
+//   new_h_outline(all, 0) = llc;
+//   new_h_outline(all, 1) = bps1;
+//   w = sixth_rot(5) * w;
+//   new_h_outline(all, 2) = affadd(new_h_outline(all, 1), w);
+//   new_h_outline(all, 3) = patch->eval_child(14, 2);
+//   w = sixth_rot(5) * w;
+//   new_h_outline(all, 4) = affsub(new_h_outline(all, 3), w);
+//   new_h_outline(all, 5) = patch->eval_child(6, 2);
+//   ret[0] =
+//       MetaTile{new_h_outline,
+//                Matrix3d::Identity(),
+//                MetaType::H,
+//                {patch->children[0], patch->children[9], patch->children[16],
+//                 patch->children[27], patch->children[26], patch->children[6],
+//                 patch->children[1], patch->children[8], patch->children[10],
+//                 patch->children[15]}};
+//
+//   const Vector3d aaa = new_h_outline(all, 2);
+//   const Vector3d bbb =
+//       affadd(new_h_outline(all, 1),
+//              affsub(new_h_outline(all, 4), new_h_outline(all, 5)));
+//   const Vector3d ccc = rot_about(bbb, 5) * aaa;
+//   Matrix3d t_shape;
+//   t_shape(all, 0) = bbb;
+//   t_shape(all, 1) = ccc;
+//   t_shape(all, 2) = aaa;
+//   ret[1] = MetaTile{t_shape,
+//                     Matrix3d::Identity(),
+//                     MetaType::T,
+//                     {
+//                         patch->children[11],
+//                     }
+//
+//   };
+//
+//   spdlog::debug("Making P outline");
+//   Matrix3Xd p_shape;
+//   p_shape(all, 0) = p72;
+//   p_shape(all, 1) = affadd(p72, affsub(bps1, llc));
+//   p_shape(all, 2) = bps1;
+//   p_shape(all, 3) = llc;
+//   ret[2] = MetaTile{p_shape,
+//                     Matrix3d::Identity(),
+//                     MetaType::P,
+//                     {
+//                         patch->children[7],
+//                         patch->children[2],
+//                         patch->children[3],
+//                         patch->children[4],
+//                         patch->children[28],
+//                     }
+//
+//   };
+//
+//   spdlog::debug("Making F outline");
+//   Matrix3Xd f_shape;
+//   f_shape(all, 0) = bps2;
+//   f_shape(all, 1) = patch->eval_child(24, 2);
+//   f_shape(all, 2) = patch->eval_child(25, 0);
+//   f_shape(all, 3) = p252;
+//   f_shape(all, 4) = affadd(p252, affsub(llc, bps1));
+//   ret[3] =
+//       MetaTile{f_shape,
+//                Matrix3d::Identity(),
+//                MetaType::P,
+//                {patch->children[21], patch->children[20],
+//                patch->children[22],
+//                 patch->children[23], patch->children[24],
+//                 patch->children[25]}};
+//   return ret;
+// }
 
 s32 toScreen(f64 r, f64 min, f64 max, s32 dim) {
   return (s32)(((r - min) / (max - min)) * (f64)dim);
@@ -509,82 +568,80 @@ int main(int argc, char* argv[]) {
   spdlog::debug("d (should be [-1., 3., 1.]): [{}, {}, {}]", d(0), d(1), d(2));
 
   spdlog::debug("Making initial tiles");
-  auto tiles = new MetaTile[4]{
-      {(Matrix3Xd(3, 6) << 0., 4., 4.5, 2.5, 1.5, -0.5, 0., 0., 0.5 * sq3,
-        2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1.)
-           .finished(),
-       Matrix3d::Identity(),
-       MetaType::H,
-       {}},
-      MetaTile{(Matrix3Xd(3, 3) << 0., 3., 1.5, 0., 0., 1.5 * sq3, 1., 1., 1.)
+  Tree<MetaTile> tiles[4] = {
+      MetaTile{(Matrix3Xd(3, 6) << 0., 4., 4.5, 2.5, 1.5, -0.5, 0., 0.,
+                0.5 * sq3, 2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1.,
+                1.)
                    .finished(),
-               Matrix3d::Identity(),
-               MetaType::T,
-               {}},
+               Matrix3d::Identity(), MetaType::H},
+      MetaTile{
+          (Matrix3Xd(3, 3) << 0., 3., 1.5, 0., 0., 1.5 * sq3, 1., 1., 1.)
+              .finished(),
+          Matrix3d::Identity(),
+          MetaType::T,
+      },
       MetaTile{
           (Matrix3Xd(3, 4) << 0., 4., 3., -1., 0., 0., sq3, sq3, 1., 1., 1., 1.)
               .finished(),
           Matrix3d::Identity(),
           MetaType::P,
-          {}},
-      MetaTile{(Matrix3Xd(3, 5) << 0., 3., 3.5, 3., -1., 0., 0., 0.5 * sq3, sq3,
-                sq3, 1., 1., 1., 1., 1.)
-                   .finished(),
-               Matrix3d::Identity(),
-               MetaType::F,
-               {}}};
-  spdlog::debug("Making patch");
-  auto patch = construct_patch(tiles);
-  spdlog::debug("EEE {}", tiles->shape(0, 1));
-  tiles = construct_metatiles(patch);
+      },
+      MetaTile{
+          (Matrix3Xd(3, 5) << 0., 3., 3.5, 3., -1., 0., 0., 0.5 * sq3, sq3, sq3,
+           1., 1., 1., 1., 1.)
+              .finished(),
+          Matrix3d::Identity(),
+          MetaType::F,
+      }};
+  // spdlog::debug("Making patch");
+  // auto patch = construct_patch(tiles);
+  // spdlog::debug("EEE {}", tiles->shape(0, 1));
+  // tiles = construct_metatiles(patch);
 
-  // s32 width = 800;
-  // s32 height = 800;
-  // SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
-  //                FLAG_WINDOW_TRANSPARENT);
-  // InitWindow(width, height, "raylib test");
+  s32 width = 800;
+  s32 height = 800;
+  SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
+                 FLAG_WINDOW_TRANSPARENT);
+  InitWindow(width, height, "raylib test");
 
-  // SetTargetFPS(10);
-  // const auto points = tiles[0].to_points();                 // hat;
-  // const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
-  // f64 xmin = points(0, all).minCoeff();
-  // f64 xmax = points(0, all).maxCoeff();
-  // f64 ymin = points(1, all).minCoeff();
-  // f64 ymax = points(1, all).maxCoeff();
-  // f64 exmin = xmin - 0.05 * (xmax - xmin);
-  // f64 eymin = ymin - 0.05 * (ymax - ymin);
-  // f64 exmax = xmax + 0.05 * (xmax - xmin);
-  // f64 eymax = ymax + 0.05 * (ymax - ymin);
-  // f64 max_of_exey = std::max(eymax - eymin, exmax - exmin);
-  // while (!WindowShouldClose()) {
-  //   width = GetScreenWidth();
-  //   height = GetScreenHeight();
-  //   f64 min_of_wh = std::min(width, height);
-  //   BeginDrawing();
-  //   ClearBackground(WHITE);
-  //   for (s32 i = 0; i < points.cols(); ++i) {
-  //     DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey,
-  //     min_of_wh),
-  //                toScreenIsotropic(points(1, i), eymin, max_of_exey,
-  //                min_of_wh), 12.0, BLACK);
-  //   }
-  //   for (u32 i = 0; i < polys.size(); ++i) {
-  //     s32 npolys = polys[i].cols();
-  //     for (s32 j = 0; j < npolys; ++j) {
-  //       DrawLine(
-  //           toScreenIsotropic(polys[i](0, j), exmin, max_of_exey, min_of_wh),
-  //           toScreenIsotropic(polys[i](1, j), eymin, max_of_exey, min_of_wh),
-  //           toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin,
-  //           max_of_exey,
-  //                             min_of_wh),
-  //           toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin,
-  //           max_of_exey,
-  //                             min_of_wh),
-  //           BLACK);
-  //     }
-  //   }
-  //   EndDrawing();
-  // }
-  // CloseWindow();
+  SetTargetFPS(10);
+  const auto points = tiles[0].to_points();                 // hat;
+  const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
+  f64 xmin = points(0, all).minCoeff();
+  f64 xmax = points(0, all).maxCoeff();
+  f64 ymin = points(1, all).minCoeff();
+  f64 ymax = points(1, all).maxCoeff();
+  f64 exmin = xmin - 0.05 * (xmax - xmin);
+  f64 eymin = ymin - 0.05 * (ymax - ymin);
+  f64 exmax = xmax + 0.05 * (xmax - xmin);
+  f64 eymax = ymax + 0.05 * (ymax - ymin);
+  f64 max_of_exey = std::max(eymax - eymin, exmax - exmin);
+  while (!WindowShouldClose()) {
+    width = GetScreenWidth();
+    height = GetScreenHeight();
+    f64 min_of_wh = std::min(width, height);
+    BeginDrawing();
+    ClearBackground(WHITE);
+    for (s32 i = 0; i < points.cols(); ++i) {
+      DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey, min_of_wh),
+                 toScreenIsotropic(points(1, i), eymin, max_of_exey, min_of_wh),
+                 12.0, BLACK);
+    }
+    for (u32 i = 0; i < polys.size(); ++i) {
+      s32 npolys = polys[i].cols();
+      for (s32 j = 0; j < npolys; ++j) {
+        DrawLine(
+            toScreenIsotropic(polys[i](0, j), exmin, max_of_exey, min_of_wh),
+            toScreenIsotropic(polys[i](1, j), eymin, max_of_exey, min_of_wh),
+            toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin, max_of_exey,
+                              min_of_wh),
+            toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin, max_of_exey,
+                              min_of_wh),
+            BLACK);
+      }
+    }
+    EndDrawing();
+  }
+  CloseWindow();
   return 0;
 }
