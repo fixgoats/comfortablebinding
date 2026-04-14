@@ -17,88 +17,19 @@ using Eigen::Vector2d, Eigen::Matrix3d, Eigen::Matrix3Xd, Eigen::Vector3d,
 
 constexpr double sq3 = 1.7320508075688772935;
 
-static const Matrix3Xd hat =
-    (Matrix3Xd(3, 13) << 0., -0.75, -0.5, 0.5, 0.75, 1.5, 2.25, 2., 1.5, 1.5,
-     0.75, 0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3, -0.25 * sq3,
-     -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3, 0.5 * sq3,
-     0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
-        .finished();
-// c64{0., 0.}, c64{-0.75, -0.25 * sq3}, c64{-0.5, -0.5 * sq3},
-//     c64{0.5, -0.5 * sq3}, c64{0.75, -0.25 * sq3}, c64{1.5, -0.5 * sq3},
-//     c64{2.25, -0.25 * sq3}, c64{2., 0.}, c64{1.5, 0.}, c64{1.5, 0.5 * sq3},
-//     c64{0.75, 0.75 * sq3}, c64{0.5, 0.5 * sq3}, c64 {
-//   0., 0.5 * sq3
-// }
-
-union Shape {
-  Eigen::Matrix<f64, 3, 3> tri;
-  Eigen::Matrix<f64, 3, 4> para;
-  Eigen::Matrix<f64, 3, 5> penta;
-  Eigen::Matrix<f64, 3, 6> hexa;
-  Eigen::Matrix<f64, 3, 13> hat;
-  Eigen::Matrix<f64, 3, 13> hat1;
-};
-
-static const Matrix3Xd hat1 =
-    (Eigen::Matrix3Xd(3, 13) << 0., 0.75, 0.5, -0.5, -0.75, -1.5, -2.25, -2.,
-     -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
+static const Eigen::Matrix<f64, 3, 13> hat =
+    (Eigen::Matrix<f64, 3, 13>() << 0., -0.75, -0.5, 0.5, 0.75, 1.5, 2.25, 2.,
+     1.5, 1.5, 0.75, 0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
      -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
      0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
         .finished();
 
-enum MetaType {
-  H,
-  T,
-  P,
-  F,
-};
-
-struct HatTile {
-  Matrix3d transform;
-  bool mirrored;
-
-  constexpr Matrix3Xd points() const {
-    if (mirrored) {
-      return transform * hat1;
-    }
-    return transform * hat;
-  }
-};
-
-struct ShapeMaker {
-  Matrix3d transform;
-  std::shared_ptr<
-      std::variant<Eigen::Matrix<f64, 3, 3>, Eigen::Matrix<f64, 3, 4>,
-                   Eigen::Matrix<f64, 3, 5>, Eigen::Matrix<f64, 3, 6>,
-                   Eigen::Matrix<f64, 3, 13>>>
-      p_shape;
-};
-
-// template <>
-// struct std::formatter<Matrix3d> {
-//   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin();
-//   } auto format(const Matrix3d& m, std::format_context& ctx) {
-//     return std::format_to(
-//         ctx.out(), "Matrix3d: [[{}, {}, {}], [{}, {}, {}], [{}, {}, {}]]",
-//         m(0, 0), m(0, 1), m(0, 2), m(1, 0), m(1, 1), m(1, 2), m(2, 0), m(2,
-//         1), m(2, 2));
-//   }
-// };
-
-template <>
-struct std::formatter<HatTile> {
-  constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-
-  auto format(const HatTile& d, std::format_context& ctx) {
-    return std::format_to(
-        ctx.out(),
-        "HatTile: {{ transform: {{Matrix3d: [[{}, {}, {}], [{}, {}, {}], [{}, "
-        "{}, {}]]}}, mirrored: {} }}",
-        d.transform(0, 0), d.transform(0, 1), d.transform(0, 2),
-        d.transform(1, 0), d.transform(1, 1), d.transform(1, 2),
-        d.transform(2, 0), d.transform(2, 1), d.transform(2, 2), d.mirrored);
-  }
-};
+static const Eigen::Matrix<f64, 3, 13> hat1 =
+    (Eigen::Matrix<f64, 3, 13>() << 0., 0.75, 0.5, -0.5, -0.75, -1.5, -2.25,
+     -2., -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
+     -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
+     0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+        .finished();
 
 constexpr Matrix3d aff_rot(f64 ang) {
   return (Matrix3d() << cos(ang), -sin(ang), 0., sin(ang), cos(ang), 0., 0., 0.,
@@ -138,7 +69,7 @@ constexpr Matrix3d transl3(Vector3d v) {
 }
 
 constexpr Matrix3d rot_about(Vector3d v, u64 ang) {
-  return transl3(v) * (sixth_rot(ang) * transl3(-v));
+  return Matrix3d{transl3(v) * (sixth_rot(ang) * transl3(-v))};
 }
 
 constexpr Matrix3d from_seg(Vector3d p, Vector3d q) {
@@ -159,7 +90,7 @@ constexpr Matrix3d aff_inv(Matrix3d aff) {
 
 constexpr Matrix3d match_segs(Vector3d p1, Vector3d q1, Vector3d p2,
                               Vector3d q2) {
-  return from_seg(p2, q2) * (aff_inv(from_seg(p1, q1)));
+  return Matrix3d{from_seg(p2, q2) * (aff_inv(from_seg(p1, q1)))};
 }
 
 constexpr Matrix3d translate_by(Matrix3d aff, Vector2d v) {
@@ -179,13 +110,89 @@ Vector3d intersection(Vector3d p1, Vector3d q1, Vector3d p2, Vector3d q2) {
       .finished();
 }
 
+constexpr Vector3d affsub(Vector3d v, Vector3d u) {
+  return Vector3d{v[0] - u[0], v[1] - u[1], 1.};
+}
+
+constexpr Vector3d affadd(Vector3d v, Vector3d u) {
+  return Vector3d{v[0] + u[0], v[1] + u[1], 1.};
+}
+
+template <class... Ts>
+struct overloads : Ts... {
+  using Ts::operator()...;
+};
+
+typedef std::variant<Eigen::Matrix<f64, 3, 3>, Eigen::Matrix<f64, 3, 4>,
+                     Eigen::Matrix<f64, 3, 5>, Eigen::Matrix<f64, 3, 6>>
+    shape_var_t;
+struct ShapeMaker {
+  Matrix3d transform;
+  std::shared_ptr<shape_var_t> p_shape;
+
+  s32 shape_len() const {
+    return std::visit<s32>([](auto a) { return a.cols(); }, *p_shape);
+  }
+  Vector3d eval_shape_pt(s32 i) const {
+    spdlog::debug("Trying to get vector.");
+
+    Vector3d ret = std::visit<Vector3d>(
+        [this, i](auto shape) { return Vector3d{transform * shape(all, i)}; },
+        *p_shape);
+    spdlog::trace("Returning vector: [{}, {}, {}]", ret(0), ret(1), ret(2));
+    return ret;
+  }
+  Vector3d shape_pt(s32 i) const {
+    return std::visit<Vector3d>(
+        [i](auto shape) { return Vector3d{shape(all, i)}; }, *p_shape);
+  }
+  Matrix3Xd to_hats(Matrix3d transf) const {
+    const auto visitor = overloads{
+        [this, transf](Eigen::Matrix<f64, 3, 6>) {
+          spdlog::trace("found hexagon");
+          return Matrix3Xd{
+              transf * transform *
+              (Matrix3Xd(3, 4 * 13)
+                   << translate_by(sixth_rot(5), {2.5, 0.5 * sq3}) * hat1,
+               translate_by(sixth_rot(4), {1., sq3}) * hat,
+               translate_by(sixth_rot(4), {4., sq3}) * hat,
+               translate_by(sixth_rot(2), {2.5, 1.5 * sq3}) * hat)
+                  .finished()};
+        },
+        [this, transf](Eigen::Matrix<f64, 3, 3>) {
+          spdlog::trace("Found triangle");
+          return Matrix3Xd{transf * transform * transl2({0.5, 0.5 * sq3}) *
+                           hat};
+        },
+        [this, transf](Eigen::Matrix<f64, 3, 4>) {
+          spdlog::trace("Found parallellogram");
+          return Matrix3Xd{
+              transf * transform *
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
+               translate_by(sixth_rot(5), {0., sq3}) * hat)
+                  .finished()};
+        },
+        [this, transf](Eigen::Matrix<f64, 3, 5>) {
+          spdlog::trace("Found pentagon");
+          return Matrix3Xd{
+              transf * transform *
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
+               translate_by(sixth_rot(5), {0., sq3}) * hat)
+                  .finished()};
+        }};
+    return std::visit<Matrix3Xd>(visitor, *p_shape); //->visit(visitor);
+  }
+};
+
 template <class T>
 struct Node {
   std::vector<std::shared_ptr<Node<T>>> children;
   T data{};
 
-  Node(T obj) : data{obj} { std::cout << "Node(T) constructor.\n"; }
-  Node(std::vector<std::shared_ptr<Node<T>>> ch, T obj)
+  Node(T obj) : data{obj} {
+    // spdlog::debug("Node(T) constructor.\n");
+  }
+  Node(const std::vector<std::shared_ptr<Node<T>>>& ch, T obj)
       : children{ch}, data{obj} {}
 };
 
@@ -193,114 +200,17 @@ template <class T>
 struct Tree {
   std::shared_ptr<Node<T>> root;
   Tree<T>(Node<T>* r) : root{r} {
-    std::cout << "Tree<T>(Node<T>) constructor.\n";
+    // spdlog::debug("Tree<T>(Node<T>) constructor.");
   }
   Tree<T>(std::shared_ptr<Node<T>> r) : root{r} {}
   Tree<T>(T r) : root{std::make_shared<Node<T>>(r)} {}
 };
 
-template <class T, class Func>
-void apply_down(Node<T>* nd, Func f) {
-  f(nd);
-  for (auto ch : nd->children) {
-    apply_down(ch, f);
-  }
-}
-
-template <class T, class Func>
-void apply_to_tree(Tree<T>& nd, Func f) {
-  apply_down(nd.root, f);
-}
-
-template <class T, class X, class Func>
-std::vector<X> gather_down(const Node<T>* nd, Func f) {}
-
-// struct MetaTile {
-//   Eigen::Matrix3Xd shape;
-//   Matrix3d transform;
-//   MetaType type;
-
-//   std::vector<HatTile> meta_to_hats(Matrix3d transf) const {
-//     switch (type) {
-//     case H:
-//       return {
-//           {transf * transform * translate_by(sixth_rot(5), {2.5, 0.5 * sq3}),
-//            true},
-//           {transf * transform * translate_by(sixth_rot(4), {10., sq3}),
-//           false}, {transf * transform * translate_by(sixth_rot(4), {4.,
-//           sq3}), false}, {transf * transform * translate_by(sixth_rot(2),
-//           {2.5, 1.5 * sq3}),
-//            false}};
-//     case T:
-//       return {{transf * transform * transl2({0.5, 0.5 * sq3}), false}};
-//     case P:
-//     case F:
-//       return {
-//           {transf * transform * transl2({1.5, 0.5 * sq3}), false},
-//           {transf * transform * translate_by(sixth_rot(5), {0., sq3}),
-//           false}};
-//     }
-//   }
-//
-//   constexpr Vector3d eval_shape_pt(size_t i) const {
-//     return transform * shape(all, i);
-//   }
-//
-//   constexpr Matrix3Xd eval_shape() const { return transform * shape; }
-
-// Matrix3Xd to_points() const {
-//   const auto hat_vec = hats();
-//   Matrix3Xd ret(3, hat_vec.size() * 13);
-//   for (u64 i = 0; i < hat_vec.size(); ++i) {
-//     ret(all, Eigen::seq(i * 13, (i + 1) * 13 - 1)) = hat_vec[i].points();
-//   }
-//   return ret;
-// }
-
-// std::vector<Matrix3Xd> to_polys() const {
-//   const auto hat_vec = hats();
-//   std::vector<Matrix3Xd> ret_vec(hat_vec.size());
-//   for (u64 i = 0; i < hat_vec.size(); ++i) {
-//     ret_vec[i] = hat_vec[i].points();
-//   }
-
-//   return ret_vec;
-// }
-
-//   constexpr size_t shape_len() const {
-//     switch (type) {
-//     case H:
-//       return 6;
-//     case T:
-//       return 3;
-//     case P:
-//       return 4;
-//     case F:
-//       return 5;
-//     }
-//   }
-// void clearRecursive(MetaTile* mt) {
-//   if (mt == nullptr)
-//     return;
-//   for (auto ch : mt->children) {
-//     clearRecursive(ch);
-//   }
-//   delete mt;
-// }
-// void clear() {
-//   for (auto ch : children) {
-//     clearRecursive(ch);
-//   }
-//   children.clear();
-// }
-// ~MetaTile() { clear(); }
-//};
-
 void nodes_to_hats(const Node<ShapeMaker>& nd, Matrix3d transf,
-                   std::vector<HatTile>& hats) {
+                   std::vector<Eigen::Matrix3Xd>& hats) {
   if (nd.children.size() == 0) {
-    std::vector<HatTile> hs = nd.data.meta_to_hats(transf);
-    hats.insert(hats.end(), hs.begin(), hs.end());
+    auto hat_pts = nd.data.to_hats(transf);
+    hats.push_back(hat_pts);
   } else {
     for (const auto& ch : nd.children) {
       nodes_to_hats(*ch, transf * nd.data.transform, hats);
@@ -308,20 +218,22 @@ void nodes_to_hats(const Node<ShapeMaker>& nd, Matrix3d transf,
   }
 }
 
-std::vector<HatTile> tree_to_hats(const Tree<MetaTile>& tree,
-                                  size_t init_size = 1000) {
-  std::vector<HatTile> hats;
+Eigen::Matrix3Xd tree_to_hats(const Tree<ShapeMaker>& tree,
+                              size_t init_size = 1000) {
+  std::vector<Eigen::Matrix3Xd> hats;
   hats.reserve(init_size);
   nodes_to_hats(*tree.root, Matrix3d::Identity(), hats);
-  return hats;
-}
-
-constexpr Vector3d affsub(Vector3d v, Vector3d u) {
-  return {v[0] - u[0], v[1] - u[1], 1.};
-}
-
-constexpr Vector3d affadd(Vector3d v, Vector3d u) {
-  return {v[0] + u[0], v[1] + u[1], 1.};
+  u64 n_cols = 0;
+  for (const auto& pts : hats) {
+    n_cols += pts.cols();
+  }
+  Matrix3Xd all_hats(3, n_cols);
+  u64 cur_col = 0;
+  for (const auto& pts : hats) {
+    all_hats(all, Eigen::seqN(cur_col, pts.cols())) = pts;
+    cur_col += pts.cols();
+  }
+  return all_hats;
 }
 
 static const std::vector<std::vector<size_t>> rules{{0},
@@ -354,128 +266,173 @@ static const std::vector<std::vector<size_t>> rules{{0},
                                                     {1, 9, 4, 0, 2, 2},
                                                     {3, 4, 0, 3}};
 
-// std::vector<std::shared_ptr<Node<MetaTile>>>
-void construct_patch(Tree<MetaTile>* shapes) {
-  std::vector<std::pair<Matrix3d, std::shared_ptr<Node<MetaTile>>>> ret;
-  ret.reserve(29);
-  //   size_t ch_count = 0;
-  //   // ret.children.reserve(29);
+void iter_trees(Tree<ShapeMaker>* trees) {
+  std::array<std::shared_ptr<Node<ShapeMaker>>, 29> patch;
+  size_t ch_counter = 0;
   for (const auto& r : rules) {
-    // for (const auto& ch : ret->children) {
-    //   spdlog::debug("ch.shape[]: [{}, {}, {}]", ch->shape(0, 2),
-    //                 ch->shape(1, 2), ch->shape(2, 2));
-    //   spdlog::debug(
-    //       "ch.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
-    // {}]",
-    //       ch->transform(0, 0), ch->transform(0, 1), ch->transform(1, 0),
-    //       ch->transform(1, 1), ch->transform(0, 2), ch->transform(1, 2));
-    // }
     if (r.size() == 1) {
-      // Node<MetaTile>* nshp = shapes[0];
-      ret.emplace_back(Matrix3d::Identity(), shapes[0].root);
+      auto nshp = std::make_shared<Node<ShapeMaker>>(*trees[0].root);
+      patch[ch_counter] = nshp;
+      ++ch_counter;
     } else if (r.size() == 4) {
-      // const Eigen::Matrix3Xd poly = ret->children[r[1]]->shape;
       spdlog::debug("pushing shape from 4 number rules");
-      const Vector3d p = ret[r[1]]->data.eval_shape_pt(
-          (r[2] + 1) % ret[r[1]]->data.shape_len());
+      const Vector3d p = patch[r[1]]->data.eval_shape_pt(
+          (r[2] + 1) % patch[r[1]]->data.shape_len());
       spdlog::debug("p: [{}, {}]", p(0), p(1));
-      const Vector3d q = ret[r[1]]->data.eval_shape_pt(r[2]);
+      const Vector3d q = patch[r[1]]->data.eval_shape_pt(r[2]);
       spdlog::debug("q: [{}, {}]", q(0), q(1));
-      auto nshp = shapes[r[0]].root;
-      spdlog::debug("nshp address: {}", fmt::ptr(nshp));
-      spdlog::debug("shape address: {}", fmt::ptr(shapes));
-      const auto match_transf = match_segs(
-          nshp->data.shape(all, r[3]),
-          nshp->data.shape(all, (r[3] + 1) % nshp->data.shape_len()), p, q);
+      auto nshp = std::make_shared<Node<ShapeMaker>>(*trees[r[0]].root);
+      Vector3d pt1 = nshp->data.shape_pt(r[3]);
+      spdlog::debug("Making match_transf from:");
+      spdlog::debug("Shape point 1: {}", r[3]);
+      spdlog::debug("pt1: [{}, {}, {}]", pt1(0), pt1(1), pt1(2));
+      Vector3d pt2 = nshp->data.shape_pt((r[3] + 1) % nshp->data.shape_len());
+      spdlog::debug("pt2: [{}, {}, {}]", pt2(0), pt2(1), pt2(2));
+      spdlog::debug("Shape point 2: {}", (r[3] + 1) % nshp->data.shape_len());
+      const Matrix3d match_transf = match_segs(pt1, pt2, p, q);
       nshp->data.transform = match_transf;
-      // spdlog::debug(
-      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
-      // {}]",
-      //     nshp->transform(0, 0), nshp->transform(0, 1), nshp->transform(1,
-      //     0), nshp->transform(1, 1), nshp->transform(0, 2),
-      //     nshp->transform(1, 2));
-      // spdlog::debug("shapes[...].transform: Mat: [[{}, {}], [{}, {}]], "
-      //               "Translation: [{}, {}]",
-      //               shapes[r[0]].transform(0, 0),
-      // shapes[r[0]].transform(0,
-      //               1), shapes[r[0]].transform(1, 0),
-      //               shapes[r[0]].transform(1, 1),
-      // shapes[r[0]].transform(0,
-      //               2), shapes[r[0]].transform(1, 2));
-      ret.push_back(nshp);
+      patch[ch_counter] = nshp;
+      ++ch_counter;
     } else {
       spdlog::debug("Pulling children number {} and {}", r[1], r[3]);
-      const auto ch_q = ret->children[r[1]];
-      const auto ch_p = ret->children[r[3]];
       spdlog::debug("pushing shape from 6 number rules");
       spdlog::debug("Getting shape point number {}", r[4]);
-      const Vector3d p = ret->eval_child(r[1], r[4]);
+      const Vector3d p = patch[r[1]]->data.eval_shape_pt(r[4]);
+      spdlog::debug("Shape point 1: {}", r[3]);
       spdlog::debug("p: [{}, {}]", p(0), p(1));
       spdlog::debug("Getting shape point number {}", r[2]);
-      const Vector3d q = ret->eval_child(r[3], r[2]);
+      const Vector3d q = patch[r[3]]->data.eval_shape_pt(r[2]);
       spdlog::debug("q: [{}, {}]", q(0), q(1));
-      MetaTile* nshp = new MetaTile(shapes[r[0]]);
-      spdlog::debug("nshp address: {}", fmt::ptr(nshp));
-      spdlog::debug("shape address: {}", fmt::ptr(shapes));
-      const auto match_trans =
-          match_segs(nshp->shape(all, r[5]),
-                     nshp->shape(all, (r[5] + 1) % nshp->shape_len()), p, q);
-      nshp->transform = match_trans;
-      // spdlog::debug(
-      //     "nshp.transform: Mat: [[{}, {}], [{}, {}]], Translation: [{},
-      {}]",
-      //     nshp->transform(0, 0), nshp->transform(0, 1), nshp->transform(1,
-      //     0), nshp->transform(1, 1), nshp->transform(0, 2),
-      //     nshp->transform(1, 2));
-      // spdlog::debug("shapes[...].transform: Mat: [[{}, {}], [{}, {}]], "
-      //               "Translation: [{}, {}]",
-      //               shapes[r[0]].transform(0, 0),
-      shapes[r[0]].transform(0,
-      //               1), shapes[r[0]].transform(1, 0),
-      //               shapes[r[0]].transform(1, 1),
-      shapes[r[0]].transform(0,
-      //               2), shapes[r[0]].transform(1, 2));
-      ret->children.push_back(nshp);
+      auto nshp = std::make_shared<Node<ShapeMaker>>(*trees[r[0]].root);
+      // spdlog::debug("nshp address: {}", fmt::ptr(nshp));
+      // spdlog::debug("shape address: {}", fmt::ptr(trees));
+      Vector3d pt1 = nshp->data.shape_pt(r[5]);
+      spdlog::debug("Making match_transf from:");
+      spdlog::debug("pt1: [{}, {}, {}]", pt1(0), pt1(1), pt1(2));
+      Vector3d pt2 = nshp->data.shape_pt((r[5] + 1) % nshp->data.shape_len());
+      spdlog::debug("pt2: [{}, {}, {}]", pt2(0), pt2(1), pt2(2));
+      const Matrix3d match_trans = match_segs(pt1, pt2, p, q);
+      nshp->data.transform = match_trans;
+      patch[ch_counter] = nshp;
+      ++ch_counter;
     }
   }
-  // return ret;
+
+  spdlog::debug("Function: construct_metatiles");
+  spdlog::debug("Allocating MetaTile");
+  // Tree<ShapeMaker> ret[4];
+  spdlog::debug("Evaluating children");
+  const Vector3d bps1 = patch[8]->data.eval_shape_pt(2);
+  spdlog::debug("bps1: [{}, {}]", bps1(0), bps1(1));
+  const Vector3d bps2 = patch[21]->data.eval_shape_pt(2);
+  spdlog::debug("bps2: [{}, {}]", bps2(0), bps2(1));
+  const Vector3d rbps = rot_about(bps1, 4) * bps2;
+  spdlog::debug("rbps: [{}, {}]", rbps(0), rbps(1));
+  const Vector3d p72 = patch[7]->data.eval_shape_pt(2);
+  spdlog::debug("p72: [{}, {}]", p72(0), p72(1));
+  const Vector3d p252 = patch[25]->data.eval_shape_pt(2);
+  spdlog::debug("p252: [{}, {}]", p252(0), p252(1));
+  const Vector3d llc =
+      intersection(bps1, rbps, patch[6]->data.eval_shape_pt(2), p72);
+  spdlog::debug("llc: [{}, {}]", llc(0), llc(1));
+
+  auto w = affsub(patch[6]->data.eval_shape_pt(2), llc);
+
+  spdlog::debug("Making H outline");
+  Eigen::Matrix<f64, 3, 6> new_h_outline{};
+  new_h_outline(all, 0) = llc;
+  new_h_outline(all, 1) = bps1;
+  w = sixth_rot(5) * w;
+  new_h_outline(all, 2) = affadd(new_h_outline(all, 1), w);
+  new_h_outline(all, 3) = patch[14]->data.eval_shape_pt(2);
+  w = sixth_rot(5) * w;
+  new_h_outline(all, 4) = affsub(new_h_outline(all, 3), w);
+  new_h_outline(all, 5) = patch[6]->data.eval_shape_pt(2);
+  std::vector<std::shared_ptr<Node<ShapeMaker>>> a{
+      patch[0], patch[9], patch[16], patch[27], patch[26],
+      patch[6], patch[1], patch[8],  patch[10], patch[15]};
+  trees[0].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+      {patch[0], patch[9], patch[16], patch[27], patch[26], patch[6], patch[1],
+       patch[8], patch[10], patch[15]},
+      {Matrix3d::Identity(), std::make_shared<shape_var_t>(new_h_outline)}});
+
+  const Vector3d aaa = new_h_outline(all, 2);
+  const Vector3d bbb =
+      affadd(new_h_outline(all, 1),
+             affsub(new_h_outline(all, 4), new_h_outline(all, 5)));
+  const Vector3d ccc = rot_about(bbb, 5) * aaa;
+  Matrix3d t_shape;
+  t_shape(all, 0) = bbb;
+  t_shape(all, 1) = ccc;
+  t_shape(all, 2) = aaa;
+  trees[1].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+      {patch[11]},
+      {Matrix3d::Identity(), std::make_shared<shape_var_t>(t_shape)}
+
+  });
+
+  spdlog::debug("Making P outline");
+  Eigen::Matrix<f64, 3, 4> p_shape;
+  p_shape(all, 0) = p72;
+  p_shape(all, 1) = affadd(p72, affsub(bps1, llc));
+  p_shape(all, 2) = bps1;
+  p_shape(all, 3) = llc;
+  trees[2].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+      {patch[7], patch[2], patch[3], patch[4], patch[28]},
+      {Matrix3d::Identity(), std::make_shared<shape_var_t>(p_shape)}}
+
+  );
+
+  spdlog::debug("Making F outline");
+  Eigen::Matrix<f64, 3, 5> f_shape;
+  f_shape(all, 0) = bps2;
+  f_shape(all, 1) = patch[24]->data.eval_shape_pt(2);
+  f_shape(all, 2) = patch[25]->data.eval_shape_pt(0);
+  f_shape(all, 3) = p252;
+  f_shape(all, 4) = affadd(p252, affsub(llc, bps1));
+  trees[3].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+      {patch[21], patch[20], patch[22], patch[23], patch[24], patch[25]},
+      {Matrix3d::Identity(), std::make_shared<shape_var_t>(f_shape)}});
 }
 
-// MetaTile* construct_metatiles(const MetaTile* patch) {
+// void construct_metatiles(
+//     const std::vector<std::shared_ptr<Node<ShapeMaker>>>& patch,
+//     Tree<ShapeMaker>* trees) {
 //   spdlog::debug("Function: construct_metatiles");
 //   spdlog::debug("Allocating MetaTile");
-//   MetaTile* ret = new MetaTile[4];
+//   // Tree<ShapeMaker> ret[4];
 //   spdlog::debug("Evaluating children");
-//   const auto bps1 = patch->eval_child(8, 2);
+//   const auto bps1 = patch[8]->data.eval_shape_pt(2);
 //   spdlog::debug("bps1: [{}, {}]", bps1(0), bps1(1));
-//   const auto bps2 = patch->eval_child(21, 2);
+//   const auto bps2 = patch[21]->data.eval_shape_pt(2);
 //   spdlog::debug("bps2: [{}, {}]", bps2(0), bps2(1));
 //   const auto rbps = rot_about(bps1, 4) * bps2;
 //   spdlog::debug("rbps: [{}, {}]", rbps(0), rbps(1));
-//   const auto p72 = patch->eval_child(7, 2);
-//   const auto p252 = patch->eval_child(25, 2);
-//   const auto llc = intersection(bps1, rbps, patch->eval_child(6, 2), p72);
+//   const auto p72 = patch[7]->data.eval_shape_pt(2);
+//   const auto p252 = patch[25]->data.eval_shape_pt(2);
+//   const auto llc =
+//       intersection(bps1, rbps, patch[6]->data.eval_shape_pt(2), p72);
 //
-//   auto w = affsub(patch->eval_child(6, 2), llc);
+//   auto w = affsub(patch[6]->data.eval_shape_pt(2), llc);
 //
 //   spdlog::debug("Making H outline");
-//   Matrix3Xd new_h_outline(3, 6);
+//   Eigen::Matrix<f64, 3, 6> new_h_outline{};
 //   new_h_outline(all, 0) = llc;
 //   new_h_outline(all, 1) = bps1;
 //   w = sixth_rot(5) * w;
 //   new_h_outline(all, 2) = affadd(new_h_outline(all, 1), w);
-//   new_h_outline(all, 3) = patch->eval_child(14, 2);
+//   new_h_outline(all, 3) = patch[14]->data.eval_shape_pt(2);
 //   w = sixth_rot(5) * w;
 //   new_h_outline(all, 4) = affsub(new_h_outline(all, 3), w);
-//   new_h_outline(all, 5) = patch->eval_child(6, 2);
-//   ret[0] =
-//       MetaTile{new_h_outline,
-//                Matrix3d::Identity(),
-//                MetaType::H,
-//                {patch->children[0], patch->children[9], patch->children[16],
-//                 patch->children[27], patch->children[26], patch->children[6],
-//                 patch->children[1], patch->children[8], patch->children[10],
-//                 patch->children[15]}};
+//   new_h_outline(all, 5) = patch[6]->data.eval_shape_pt(2);
+//   std::vector<std::shared_ptr<Node<ShapeMaker>>> a{
+//       patch[0], patch[9], patch[16], patch[27], patch[26],
+//       patch[6], patch[1], patch[8],  patch[10], patch[15]};
+//   trees[0].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+//       {patch[0], patch[9], patch[16], patch[27], patch[26], patch[6],
+//       patch[1],
+//        patch[8], patch[10], patch[15]},
+//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(new_h_outline)}});
 //
 //   const Vector3d aaa = new_h_outline(all, 2);
 //   const Vector3d bbb =
@@ -486,50 +443,34 @@ void construct_patch(Tree<MetaTile>* shapes) {
 //   t_shape(all, 0) = bbb;
 //   t_shape(all, 1) = ccc;
 //   t_shape(all, 2) = aaa;
-//   ret[1] = MetaTile{t_shape,
-//                     Matrix3d::Identity(),
-//                     MetaType::T,
-//                     {
-//                         patch->children[11],
-//                     }
+//   trees[1].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+//       {patch[11]},
+//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(t_shape)}
 //
-//   };
+//   });
 //
 //   spdlog::debug("Making P outline");
-//   Matrix3Xd p_shape;
+//   Eigen::Matrix<f64, 3, 4> p_shape;
 //   p_shape(all, 0) = p72;
 //   p_shape(all, 1) = affadd(p72, affsub(bps1, llc));
 //   p_shape(all, 2) = bps1;
 //   p_shape(all, 3) = llc;
-//   ret[2] = MetaTile{p_shape,
-//                     Matrix3d::Identity(),
-//                     MetaType::P,
-//                     {
-//                         patch->children[7],
-//                         patch->children[2],
-//                         patch->children[3],
-//                         patch->children[4],
-//                         patch->children[28],
-//                     }
+//   trees[2].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+//       {patch[7], patch[2], patch[3], patch[4], patch[28]},
+//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(p_shape)}}
 //
-//   };
+//   );
 //
 //   spdlog::debug("Making F outline");
-//   Matrix3Xd f_shape;
+//   Eigen::Matrix<f64, 3, 5> f_shape;
 //   f_shape(all, 0) = bps2;
-//   f_shape(all, 1) = patch->eval_child(24, 2);
-//   f_shape(all, 2) = patch->eval_child(25, 0);
+//   f_shape(all, 1) = patch[24]->data.eval_shape_pt(2);
+//   f_shape(all, 2) = patch[25]->data.eval_shape_pt(0);
 //   f_shape(all, 3) = p252;
 //   f_shape(all, 4) = affadd(p252, affsub(llc, bps1));
-//   ret[3] =
-//       MetaTile{f_shape,
-//                Matrix3d::Identity(),
-//                MetaType::P,
-//                {patch->children[21], patch->children[20],
-//                patch->children[22],
-//                 patch->children[23], patch->children[24],
-//                 patch->children[25]}};
-//   return ret;
+//   trees[3].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
+//       {patch[21], patch[20], patch[22], patch[23], patch[24], patch[25]},
+//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(f_shape)}});
 // }
 
 s32 toScreen(f64 r, f64 min, f64 max, s32 dim) {
@@ -555,48 +496,36 @@ int main(int argc, char* argv[]) {
   if (result["v"].count()) {
     spdlog::set_level(spdlog::level::trace);
   }
-  spdlog::debug("Size of MetaTile: {}", sizeof(MetaTile));
-
-  const Vector3d a{-0.5, 1 + 0.5 * sq3, 1.};
-  const Vector3d b{0.0, 1., 1.};
-  const Vector3d q{0.5, -4.0, 1.};
-  const Vector3d p{-1., 3., 1.};
-  const auto matching = match_segs(a, b, q, p);
-  const auto c = matching * a;
-  const auto d = matching * b;
-  spdlog::debug("c (should be [0.5, -4., 1.]): [{}, {}, {}]", c(0), c(1), c(2));
-  spdlog::debug("d (should be [-1., 3., 1.]): [{}, {}, {}]", d(0), d(1), d(2));
 
   spdlog::debug("Making initial tiles");
-  Tree<MetaTile> tiles[4] = {
-      MetaTile{(Matrix3Xd(3, 6) << 0., 4., 4.5, 2.5, 1.5, -0.5, 0., 0.,
-                0.5 * sq3, 2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1.,
-                1.)
-                   .finished(),
-               Matrix3d::Identity(), MetaType::H},
-      MetaTile{
-          (Matrix3Xd(3, 3) << 0., 3., 1.5, 0., 0., 1.5 * sq3, 1., 1., 1.)
-              .finished(),
+  std::vector<Tree<ShapeMaker>> tiles = {
+      ShapeMaker{Matrix3d::Identity(),
+                 std::make_shared<shape_var_t>(
+                     (Eigen::Matrix<f64, 3, 6>() << 0., 4., 4.5, 2.5, 1.5, -0.5,
+                      0., 0., 0.5 * sq3, 2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1.,
+                      1., 1., 1., 1., 1.)
+                         .finished())},
+      ShapeMaker{
+
           Matrix3d::Identity(),
-          MetaType::T,
+          std::make_shared<shape_var_t>(Eigen::Matrix3d{
+              {0., 3., 1.5}, {0., 0., 1.5 * sq3}, {1., 1., 1.}}),
       },
-      MetaTile{
-          (Matrix3Xd(3, 4) << 0., 4., 3., -1., 0., 0., sq3, sq3, 1., 1., 1., 1.)
-              .finished(),
+      ShapeMaker{
           Matrix3d::Identity(),
-          MetaType::P,
+          std::make_shared<shape_var_t>((Eigen::Matrix<f64, 3, 4>() << 0., 4.,
+                                         3., -1., 0., 0., sq3, sq3, 1., 1., 1.,
+                                         1.)
+                                            .finished()),
       },
-      MetaTile{
-          (Matrix3Xd(3, 5) << 0., 3., 3.5, 3., -1., 0., 0., 0.5 * sq3, sq3, sq3,
-           1., 1., 1., 1., 1.)
-              .finished(),
+      ShapeMaker{
           Matrix3d::Identity(),
-          MetaType::F,
+          std::make_shared<shape_var_t>((Eigen::Matrix<f64, 3, 5>() << 0., 3.,
+                                         3.5, 3., -1., 0., 0., 0.5 * sq3, sq3,
+                                         sq3, 1., 1., 1., 1., 1.)
+                                            .finished()),
       }};
-  // spdlog::debug("Making patch");
-  // auto patch = construct_patch(tiles);
-  // spdlog::debug("EEE {}", tiles->shape(0, 1));
-  // tiles = construct_metatiles(patch);
+  iter_trees(tiles.data());
 
   s32 width = 800;
   s32 height = 800;
@@ -605,8 +534,8 @@ int main(int argc, char* argv[]) {
   InitWindow(width, height, "raylib test");
 
   SetTargetFPS(10);
-  const auto points = tiles[0].to_points();                 // hat;
-  const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
+  const auto points = tree_to_hats(tiles[0]); // hat;
+  // const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
   f64 xmin = points(0, all).minCoeff();
   f64 xmax = points(0, all).maxCoeff();
   f64 ymin = points(1, all).minCoeff();
@@ -622,24 +551,41 @@ int main(int argc, char* argv[]) {
     f64 min_of_wh = std::min(width, height);
     BeginDrawing();
     ClearBackground(WHITE);
+    for (s32 i = 0; i < points.cols() / 13; ++i) {
+      for (s32 j = 0; j < 13; ++j) {
+        DrawLine(toScreenIsotropic(points(0, i * 13 + j), exmin, max_of_exey,
+                                   min_of_wh),
+                 toScreenIsotropic(points(1, i * 13 + j), eymin, max_of_exey,
+                                   min_of_wh),
+                 toScreenIsotropic(points(0, i * 13 + (j + 1) % 13), exmin,
+                                   max_of_exey, min_of_wh),
+                 toScreenIsotropic(points(1, i * 13 + (j + 1) % 13), eymin,
+                                   max_of_exey, min_of_wh),
+                 BLACK);
+      }
+    }
     for (s32 i = 0; i < points.cols(); ++i) {
       DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey, min_of_wh),
                  toScreenIsotropic(points(1, i), eymin, max_of_exey, min_of_wh),
-                 12.0, BLACK);
+                 6.0, RED);
     }
-    for (u32 i = 0; i < polys.size(); ++i) {
-      s32 npolys = polys[i].cols();
-      for (s32 j = 0; j < npolys; ++j) {
-        DrawLine(
-            toScreenIsotropic(polys[i](0, j), exmin, max_of_exey, min_of_wh),
-            toScreenIsotropic(polys[i](1, j), eymin, max_of_exey, min_of_wh),
-            toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin, max_of_exey,
-                              min_of_wh),
-            toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin, max_of_exey,
-                              min_of_wh),
-            BLACK);
-      }
-    }
+    // for (u32 i = 0; i < polys.size(); ++i) {
+    //   s32 npolys = polys[i].cols();
+    //   for (s32 j = 0; j < npolys; ++j) {
+    //     DrawLine(
+    //         toScreenIsotropic(polys[i](0, j), exmin, max_of_exey,
+    // min_of_wh),
+    //         toScreenIsotropic(polys[i](1, j), eymin, max_of_exey,
+    // min_of_wh),
+    //         toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin,
+    //         max_of_exey,
+    //                           min_of_wh),
+    //         toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin,
+    //         max_of_exey,
+    //                           min_of_wh),
+    //         BLACK);
+    //   }
+    // }
     EndDrawing();
   }
   CloseWindow();
