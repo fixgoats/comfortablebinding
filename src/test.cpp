@@ -1,8 +1,8 @@
 #include "Eigen/Core"
 #include "Eigen/Dense"
-#include "geometry.h"
 #include "highfive/highfive.hpp"
 #include "spdlog/spdlog.h"
+#include "typedefs.h"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -10,9 +10,11 @@
 #include <execution>
 #include <iostream>
 #include <random>
+#include <variant>
 #include <vector>
 
-using Eigen::Vector3d, Eigen::Matrix3Xd, Eigen::Matrix3d, Eigen::Matrix2d;
+using Eigen::Vector3d, Eigen::Vector2d, Eigen::Matrix3Xd, Eigen::Matrix3d,
+    Eigen::Matrix2d;
 
 template <class T>
 struct Node {

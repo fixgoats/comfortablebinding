@@ -162,7 +162,6 @@ public:
   int axisFindMin(int ax) const { return axisFindMinRecursive(root_, ax); }
   int axisFindMax(int ax) const { return axisFindMaxRecursive(root_, ax); }
 
-private:
   /** @brief k-d tree node.
    */
   struct Node {

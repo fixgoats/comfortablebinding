@@ -1,6 +1,5 @@
 #pragma once
 #include "Eigen/Dense"
-#include "geometry.h"
 #include "spdlog/spdlog.h"
 #include "typedefs.h"
 #include <algorithm>
@@ -12,6 +11,8 @@
 #ifndef NDEBUG
 #include <cassert>
 #endif // !DEBUG
+
+using Eigen::MatrixXcd;
 
 constexpr f32 hbar = 6.582119569e-1;
 constexpr f32 muB = 5.7883818060e-2;

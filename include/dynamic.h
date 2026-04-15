@@ -2,16 +2,16 @@
 
 #include "Eigen/Dense"
 #include "Eigen/Sparse"
+#include "geometry.h"
 #include "highfive/eigen.hpp"
 #include "highfive/highfive.hpp"
 #include "io.h"
-#include "mathhelpers.h"
 #include "spdlog/spdlog.h"
 #include "typedefs.h"
 #include <gsl/gsl_sf.h>
 #include <random>
 
-using Eigen::SparseMatrix, Eigen::VectorXcd;
+using Eigen::SparseMatrix, Eigen::VectorXcd, Eigen::MatrixXd;
 
 static const Eigen::IOFormat oneliner(Eigen::StreamPrecision,
                                       Eigen::DontAlignCols, " ", " ", "", "",

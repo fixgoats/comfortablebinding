@@ -1,9 +1,13 @@
 #pragma once
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 
-typedef std::complex<float> c32;
-typedef std::complex<double> c64;
+typedef float f32;
+typedef double f64;
+
+typedef std::complex<f32> c32;
+typedef std::complex<f64> c64;
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -13,5 +17,3 @@ typedef int64_t s64;
 typedef int32_t s32;
 typedef int16_t s16;
 typedef int8_t s8;
-typedef float f32;
-typedef double f64;

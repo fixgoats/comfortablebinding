@@ -11,9 +11,6 @@ set(MAIN_TARGET disp)
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
-# $<$<CONFIG>:-Ofast -march=native> $<$<CONFIG>:-fsanitize=address
-# -static-libasan -g>) add_compile_definitions($<$<CONFIG>:NDEBUG>
-# $<$<CONFIG>:BOOST_DISABLE_ASSERTS>)
 
 add_compile_options(
     -Wall
@@ -99,19 +96,19 @@ set_property(
     PROPERTY LINK_LIBRARIES comp_base tomlpp
 )
 target_link_libraries(test PRIVATE GSL::gsl Vulkan::Vulkan)
-set_property(
-    TARGET disp dynamic couplings test comp_base visual
-    PROPERTY
-        PRECOMPILE_HEADERS
-            hermEigen.h
-            geometry.h
-            io.h
-            SDF.h
-            typedefs.h
-            mathhelpers.h
-            kdtree.h
-            betterexc.h
-)
+# set_property(
+#     TARGET disp dynamic couplings test comp_base visual
+#     PROPERTY
+#         PRECOMPILE_HEADERS
+#             hermEigen.h
+#             geometry.h
+#             io.h
+#             SDF.h
+#             typedefs.h
+#             mathhelpers.h
+#             kdtree.h
+#             betterexc.h
+# )
 
 target_link_libraries(disp PRIVATE GSL::gsl Vulkan::Vulkan)
 target_link_libraries(dynamic PRIVATE GSL::gsl Vulkan::Vulkan)

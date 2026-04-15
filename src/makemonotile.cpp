@@ -407,19 +407,28 @@ s32 toScreenIsotropic(f64 r, f64 start, f64 scale, s32 dim) {
   return (s32)(((r - start) / scale) * (f64)dim);
 }
 
+struct pt2 : std::array<f64, 2> {
+  static const s64 DIM = 2;
+};
+
 Matrix2Xd filterpts(const Matrix3Xd& pts) {
-  std::vector<u32> uniques(pts.cols(), 1);
-  std::cout << "uniques size is: " << uniques.size() << '\n';
-  for (s32 i = 0; i < pts.cols() - 1; ++i) {
-    if (uniques[i]) {
+  std::vector<u8> uniques(pts.cols(), 1);
+
+  kdt::KDTree<pt2> kdtree([](const Matrix3Xd& pts) {
+    std::vector<pt2> kdpts(pts.cols());
 #pragma omp parallel for
-      for (s32 j = i + 1; j < pts.cols(); ++j) {
-        if (uniques[j]) {
-          Vector3d ref = pts(all, i);
-          Vector3d other = pts(all, j);
-          if ((other - ref).squaredNorm() < 1e-5) {
-            uniques[j] = 0;
-          }
+    for (s32 i = 0; i < pts.cols(); ++i) {
+      kdpts[i] = {pts(0, i), pts(1, i)};
+    }
+    return kdpts;
+  }(pts));
+
+  for (s32 i = 0; i < pts.cols(); ++i) {
+    if (uniques[i]) {
+      const auto dupes = kdtree.radiusSearch(kdtree.points_[i], 1e-5);
+      for (const auto& idx : dupes) {
+        if (idx > i) {
+          uniques[idx] = 0;
         }
       }
     }
@@ -438,7 +447,11 @@ Matrix2Xd filterpts(const Matrix3Xd& pts) {
 
 int main(int argc, char* argv[]) {
   cxxopts::Options options("Dynamic Simulations", "bleh");
-  options.add_options()("v,verbose", "Verbose output", cxxopts::value<bool>());
+  options.add_options()("v,verbose", "Verbose output", cxxopts::value<bool>())(
+      "vv,extra-verbose", "Extra verbose output")(
+      "l,level", "Number of metatile iterations", cxxopts::value<u64>())(
+      "o,output", "Point output",
+      cxxopts::value<std::string>()->default_value("monopts"));
   cxxopts::ParseResult result;
   spdlog::set_level(spdlog::level::info);
   try {
@@ -448,8 +461,15 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
+  u64 n_iters = 0;
   if (result["v"].count()) {
+    spdlog::set_level(spdlog::level::debug);
+  }
+  if (result["vv"].count()) {
     spdlog::set_level(spdlog::level::trace);
+  }
+  if (result["l"].count()) {
+    n_iters = result["l"].as<u64>();
   }
 
   spdlog::debug("Making initial tiles");
@@ -480,7 +500,7 @@ int main(int argc, char* argv[]) {
                                          sq3, 1., 1., 1., 1., 1.)
                                             .finished()),
       }};
-  for (u32 i = 0; i < 4; ++i) {
+  for (u32 i = 0; i < n_iters; ++i) {
     iter_trees(tiles.data());
   }
 
@@ -532,7 +552,7 @@ int main(int argc, char* argv[]) {
   CloseWindow();
 
   Matrix2Xd unique_pts = filterpts(points);
-  std::ofstream outfile("mymonopts.txt");
+  std::ofstream outfile(result["o"].as<std::string>());
 
   for (s64 i = 0; i < unique_pts.cols(); ++i) {
     outfile << std::format("{}", unique_pts(0, i)) << ' '
