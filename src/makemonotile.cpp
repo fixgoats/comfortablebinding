@@ -1,3 +1,4 @@
+#include "Eigen/Core"
 #include "Eigen/Dense"
 #include "betterexc.h"
 #include "kdtree.h"
@@ -8,12 +9,16 @@
 #include <cstddef>
 #include <cxxopts.hpp>
 #include <exception>
+#include <format>
+#include <fstream>
 #include <iostream>
+#include <numeric>
 #include <variant>
 #include <vector>
 
 using Eigen::Vector2d, Eigen::Matrix3d, Eigen::Matrix3Xd, Eigen::Vector3d,
-    Eigen::Matrix2d, Eigen::indexing::all, Eigen::MatrixX3d;
+    Eigen::Matrix2d, Eigen::indexing::all, Eigen::MatrixX3d, Eigen::Matrix2Xd,
+    Eigen::MatrixX2d;
 
 constexpr double sq3 = 1.7320508075688772935;
 
@@ -272,6 +277,7 @@ void iter_trees(Tree<ShapeMaker>* trees) {
   for (const auto& r : rules) {
     if (r.size() == 1) {
       auto nshp = std::make_shared<Node<ShapeMaker>>(*trees[0].root);
+      nshp->data.transform = Matrix3d::Identity();
       patch[ch_counter] = nshp;
       ++ch_counter;
     } else if (r.size() == 4) {
@@ -297,15 +303,13 @@ void iter_trees(Tree<ShapeMaker>* trees) {
       spdlog::debug("Pulling children number {} and {}", r[1], r[3]);
       spdlog::debug("pushing shape from 6 number rules");
       spdlog::debug("Getting shape point number {}", r[4]);
-      const Vector3d p = patch[r[1]]->data.eval_shape_pt(r[4]);
+      const Vector3d p = patch[r[3]]->data.eval_shape_pt(r[4]);
       spdlog::debug("Shape point 1: {}", r[3]);
       spdlog::debug("p: [{}, {}]", p(0), p(1));
       spdlog::debug("Getting shape point number {}", r[2]);
-      const Vector3d q = patch[r[3]]->data.eval_shape_pt(r[2]);
+      const Vector3d q = patch[r[1]]->data.eval_shape_pt(r[2]);
       spdlog::debug("q: [{}, {}]", q(0), q(1));
       auto nshp = std::make_shared<Node<ShapeMaker>>(*trees[r[0]].root);
-      // spdlog::debug("nshp address: {}", fmt::ptr(nshp));
-      // spdlog::debug("shape address: {}", fmt::ptr(trees));
       Vector3d pt1 = nshp->data.shape_pt(r[5]);
       spdlog::debug("Making match_transf from:");
       spdlog::debug("pt1: [{}, {}, {}]", pt1(0), pt1(1), pt1(2));
@@ -395,90 +399,41 @@ void iter_trees(Tree<ShapeMaker>* trees) {
       {Matrix3d::Identity(), std::make_shared<shape_var_t>(f_shape)}});
 }
 
-// void construct_metatiles(
-//     const std::vector<std::shared_ptr<Node<ShapeMaker>>>& patch,
-//     Tree<ShapeMaker>* trees) {
-//   spdlog::debug("Function: construct_metatiles");
-//   spdlog::debug("Allocating MetaTile");
-//   // Tree<ShapeMaker> ret[4];
-//   spdlog::debug("Evaluating children");
-//   const auto bps1 = patch[8]->data.eval_shape_pt(2);
-//   spdlog::debug("bps1: [{}, {}]", bps1(0), bps1(1));
-//   const auto bps2 = patch[21]->data.eval_shape_pt(2);
-//   spdlog::debug("bps2: [{}, {}]", bps2(0), bps2(1));
-//   const auto rbps = rot_about(bps1, 4) * bps2;
-//   spdlog::debug("rbps: [{}, {}]", rbps(0), rbps(1));
-//   const auto p72 = patch[7]->data.eval_shape_pt(2);
-//   const auto p252 = patch[25]->data.eval_shape_pt(2);
-//   const auto llc =
-//       intersection(bps1, rbps, patch[6]->data.eval_shape_pt(2), p72);
-//
-//   auto w = affsub(patch[6]->data.eval_shape_pt(2), llc);
-//
-//   spdlog::debug("Making H outline");
-//   Eigen::Matrix<f64, 3, 6> new_h_outline{};
-//   new_h_outline(all, 0) = llc;
-//   new_h_outline(all, 1) = bps1;
-//   w = sixth_rot(5) * w;
-//   new_h_outline(all, 2) = affadd(new_h_outline(all, 1), w);
-//   new_h_outline(all, 3) = patch[14]->data.eval_shape_pt(2);
-//   w = sixth_rot(5) * w;
-//   new_h_outline(all, 4) = affsub(new_h_outline(all, 3), w);
-//   new_h_outline(all, 5) = patch[6]->data.eval_shape_pt(2);
-//   std::vector<std::shared_ptr<Node<ShapeMaker>>> a{
-//       patch[0], patch[9], patch[16], patch[27], patch[26],
-//       patch[6], patch[1], patch[8],  patch[10], patch[15]};
-//   trees[0].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
-//       {patch[0], patch[9], patch[16], patch[27], patch[26], patch[6],
-//       patch[1],
-//        patch[8], patch[10], patch[15]},
-//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(new_h_outline)}});
-//
-//   const Vector3d aaa = new_h_outline(all, 2);
-//   const Vector3d bbb =
-//       affadd(new_h_outline(all, 1),
-//              affsub(new_h_outline(all, 4), new_h_outline(all, 5)));
-//   const Vector3d ccc = rot_about(bbb, 5) * aaa;
-//   Matrix3d t_shape;
-//   t_shape(all, 0) = bbb;
-//   t_shape(all, 1) = ccc;
-//   t_shape(all, 2) = aaa;
-//   trees[1].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
-//       {patch[11]},
-//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(t_shape)}
-//
-//   });
-//
-//   spdlog::debug("Making P outline");
-//   Eigen::Matrix<f64, 3, 4> p_shape;
-//   p_shape(all, 0) = p72;
-//   p_shape(all, 1) = affadd(p72, affsub(bps1, llc));
-//   p_shape(all, 2) = bps1;
-//   p_shape(all, 3) = llc;
-//   trees[2].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
-//       {patch[7], patch[2], patch[3], patch[4], patch[28]},
-//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(p_shape)}}
-//
-//   );
-//
-//   spdlog::debug("Making F outline");
-//   Eigen::Matrix<f64, 3, 5> f_shape;
-//   f_shape(all, 0) = bps2;
-//   f_shape(all, 1) = patch[24]->data.eval_shape_pt(2);
-//   f_shape(all, 2) = patch[25]->data.eval_shape_pt(0);
-//   f_shape(all, 3) = p252;
-//   f_shape(all, 4) = affadd(p252, affsub(llc, bps1));
-//   trees[3].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
-//       {patch[21], patch[20], patch[22], patch[23], patch[24], patch[25]},
-//       {Matrix3d::Identity(), std::make_shared<shape_var_t>(f_shape)}});
-// }
-
 s32 toScreen(f64 r, f64 min, f64 max, s32 dim) {
   return (s32)(((r - min) / (max - min)) * (f64)dim);
 }
 
 s32 toScreenIsotropic(f64 r, f64 start, f64 scale, s32 dim) {
   return (s32)(((r - start) / scale) * (f64)dim);
+}
+
+Matrix2Xd filterpts(const Matrix3Xd& pts) {
+  std::vector<u32> uniques(pts.cols(), 1);
+  std::cout << "uniques size is: " << uniques.size() << '\n';
+  for (s32 i = 0; i < pts.cols() - 1; ++i) {
+    if (uniques[i]) {
+#pragma omp parallel for
+      for (s32 j = i + 1; j < pts.cols(); ++j) {
+        if (uniques[j]) {
+          Vector3d ref = pts(all, i);
+          Vector3d other = pts(all, j);
+          if ((other - ref).squaredNorm() < 1e-5) {
+            uniques[j] = 0;
+          }
+        }
+      }
+    }
+  }
+  u64 num_uniques = std::accumulate(uniques.begin(), uniques.end(), 0);
+  Eigen::Matrix2Xd unique_pts(2, num_uniques);
+  s64 count = 0;
+  for (s64 i = 0; i < pts.cols(); ++i) {
+    if (uniques[i]) {
+      unique_pts(all, count) = pts(Eigen::seq(0, 1), i);
+      ++count;
+    }
+  }
+  return unique_pts;
 }
 
 int main(int argc, char* argv[]) {
@@ -525,7 +480,9 @@ int main(int argc, char* argv[]) {
                                          sq3, 1., 1., 1., 1., 1.)
                                             .finished()),
       }};
-  iter_trees(tiles.data());
+  for (u32 i = 0; i < 4; ++i) {
+    iter_trees(tiles.data());
+  }
 
   s32 width = 800;
   s32 height = 800;
@@ -535,7 +492,7 @@ int main(int argc, char* argv[]) {
 
   SetTargetFPS(10);
   const auto points = tree_to_hats(tiles[0]); // hat;
-  // const std::vector<Matrix3Xd> polys = tiles[0].to_polys(); // {hat};
+  std::cout << "number of points: " << points.cols() << '\n';
   f64 xmin = points(0, all).minCoeff();
   f64 xmax = points(0, all).maxCoeff();
   f64 ymin = points(1, all).minCoeff();
@@ -564,30 +521,25 @@ int main(int argc, char* argv[]) {
                  BLACK);
       }
     }
-    for (s32 i = 0; i < points.cols(); ++i) {
-      DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey, min_of_wh),
-                 toScreenIsotropic(points(1, i), eymin, max_of_exey, min_of_wh),
-                 6.0, RED);
-    }
-    // for (u32 i = 0; i < polys.size(); ++i) {
-    //   s32 npolys = polys[i].cols();
-    //   for (s32 j = 0; j < npolys; ++j) {
-    //     DrawLine(
-    //         toScreenIsotropic(polys[i](0, j), exmin, max_of_exey,
-    // min_of_wh),
-    //         toScreenIsotropic(polys[i](1, j), eymin, max_of_exey,
-    // min_of_wh),
-    //         toScreenIsotropic(polys[i](0, (j + 1) % npolys), exmin,
-    //         max_of_exey,
-    //                           min_of_wh),
-    //         toScreenIsotropic(polys[i](1, (j + 1) % npolys), eymin,
-    //         max_of_exey,
-    //                           min_of_wh),
-    //         BLACK);
-    //   }
+    // for (s32 i = 0; i < points.cols(); ++i) {
+    //   DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey,
+    //   min_of_wh),
+    //              toScreenIsotropic(points(1, i), eymin, max_of_exey,
+    //              min_of_wh), 6.0, RED);
     // }
     EndDrawing();
   }
   CloseWindow();
+
+  Matrix2Xd unique_pts = filterpts(points);
+  std::ofstream outfile("mymonopts.txt");
+
+  for (s64 i = 0; i < unique_pts.cols(); ++i) {
+    outfile << std::format("{}", unique_pts(0, i)) << ' '
+            << std::format("{}", unique_pts(1, i))
+            << '\n'; // << ' '
+                     // << unique_pts(2, i) << '\n';
+  }
+  outfile.close();
   return 0;
 }
