@@ -1,4 +1,3 @@
-#define VMA_IMPLEMENTATION 1003000
 #include "vkcore.hpp"
 // #include "colormaps.h"
 #include "mathhelpers.h"
@@ -768,7 +767,7 @@ void Algorithm::bindData(const std::vector<vk::ImageView>& img_views,
   m_device.updateDescriptorSets(writeDescriptorSets, {});
 }
 
-/* Renderer::Renderer(Manager& manager, u32 nx, u32 ny) {
+Renderer::Renderer(Manager& manager, u32 nx, u32 ny) {
   p_mgr = &manager;
   render_queue_indices = get_graphics_present_queue_family_indices(
       manager.physicalDevice, manager.surface);
@@ -1322,4 +1321,4 @@ Renderer::~Renderer() {
   dev.destroyPipeline(graphicsPipeline);
   dev.destroyPipelineLayout(graphicsPipelineLayout);
   dev.destroyRenderPass(renderPass);
-}*/
+}

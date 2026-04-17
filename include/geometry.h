@@ -45,6 +45,17 @@ struct Point : std::array<f64, 2> {
   }
 };
 
+struct Pt2 : std::array<f64, 2> {
+  static const s64 DIM = 2;
+  double sqdist(const Pt2& p) const {
+    return square((*this)[0] - p[0]) + square((*this)[1] - p[1]);
+  }
+
+  double dist(const Pt2& p) const {
+    return sqrt(square((*this)[0] - p[0]) + square((*this)[1] - p[1]));
+  }
+};
+
 std::vector<Point> readPoints(const std::string& fname);
 inline std::vector<Neighbour> pointsToNbs(const std::vector<Point>& points,
                                           const kdt::KDTree<Point>& kdtree,
@@ -93,10 +104,18 @@ double avgNNDist(kdt::KDTree<PointT>& kdtree,
   }
   double totalnndist =
       std::accumulate(nn_dist.cbegin() + 1, nn_dist.cend(), nn_dist[0]);
-  // double avg_nn_dist = nn_dist[0];
-  // for (size_t i = 1; i < nn_dist.size(); i++) {
-  //   avg_nn_dist += nn_dist[i];
-  // }
+  return totalnndist / (double)nn_dist.size();
+}
+
+template <class PointT>
+f64 maxNNDist(kdt::KDTree<PointT>& kdtree, const std::vector<PointT>& points) {
+  std::vector<f64> nn_dist(points.size());
+  for (size_t i = 0; i < points.size(); i++) {
+    int idx = kdtree.knnSearch(points[i], 2)[1];
+    nn_dist[i] = points[i].dist(points[idx]);
+  }
+  f64 totalnndist = std::accumulate(nn_dist.cbegin() + 1, nn_dist.cend(), 0,
+                                    std::greater_equal<f64>());
   return totalnndist / (double)nn_dist.size();
 }
 

@@ -9,8 +9,10 @@ set(PROJECT_SOURCES src/main.cpp src/SDF.cpp src/periodic.cpp src/vkcore.cpp)
 set(MAIN_TARGET disp)
 
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ ")
+set(CMAKE_EXE_LINKER_FLAGS
+    "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi -lstdc++"
+)
 
 add_compile_options(
     -Wall
@@ -55,27 +57,36 @@ set(EIGEN_USE_LAPACKE)
 
 add_library(comp_base src/geometry.cpp src/io.cpp)
 add_library(tomlpp src/localtomlpp.cpp)
+add_library(vma_impl src/vma_impl.cpp)
 target_link_libraries(
     comp_base
     PUBLIC spdlog hdf5::hdf5 ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES}
 )
+target_link_libraries(vma_impl PRIVATE Vulkan::Vulkan)
 
 add_executable(disp)
 add_executable(test src/test.cpp src/vkcore.cpp)
-add_executable(dynamic)
-add_executable(couplings)
+add_executable(dynamic src/coupledosc.cpp)
+add_executable(couplings src/couplingmaker.cpp)
 add_executable(makemonotile src/makemonotile.cpp)
 add_executable(visual src/visual.cpp)
+add_executable(sim2d src/sim2d.cpp src/vkcore.cpp)
 
-target_sources(dynamic PRIVATE src/coupledosc.cpp)
 target_sources(disp PRIVATE ${PROJECT_SOURCES})
-target_sources(couplings PRIVATE src/couplingmaker.cpp)
 
 # set_property( TARGET disp dynamic couplings test comp_base PROPERTY
 # CXX_STANDARD 26)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipoSupported OUTPUT output)
-target_compile_options(disp PRIVATE -Wall)
+add_definitions(-DVKFFT_BACKEND=0)
+target_include_directories(
+    sim2d
+    PRIVATE
+        deps/vkFFT
+        ${CMAKE_CURRENT_SOURCE_DIR}/deps/glslang/install/include/glslang/Include
+)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/glslang)
+add_subdirectory(deps/sdl)
 
 if(ipoSupported AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO")
@@ -95,7 +106,8 @@ set_property(
     TARGET disp dynamic couplings test visual
     PROPERTY LINK_LIBRARIES comp_base tomlpp
 )
-target_link_libraries(test PRIVATE GSL::gsl Vulkan::Vulkan)
+target_link_libraries(test PRIVATE GSL::gsl Vulkan::Vulkan vma_impl SDL3)
+#set_property(TARGET disp sim2d PROPERTY PRECOMPILE_HEADERS hack.hpp)
 # set_property(
 #     TARGET disp dynamic couplings test comp_base visual
 #     PROPERTY
@@ -110,14 +122,19 @@ target_link_libraries(test PRIVATE GSL::gsl Vulkan::Vulkan)
 #             betterexc.h
 # )
 
-target_link_libraries(disp PRIVATE GSL::gsl Vulkan::Vulkan)
+target_link_libraries(disp PRIVATE GSL::gsl Vulkan::Vulkan vma_impl)
 target_link_libraries(dynamic PRIVATE GSL::gsl Vulkan::Vulkan)
 target_link_libraries(couplings PRIVATE raylib)
 target_link_libraries(makemonotile PRIVATE raylib spdlog)
 target_link_libraries(visual PRIVATE raylib GSL::gsl)
+target_link_libraries(
+    sim2d
+    PRIVATE spdlog Vulkan::Vulkan vma_impl glslang SDL3
+)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(disp PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(dynamic PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(couplings PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(makemonotile PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(sim2d PRIVATE OpenMP::OpenMP_CXX)
 endif()

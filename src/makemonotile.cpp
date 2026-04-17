@@ -1,10 +1,10 @@
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "betterexc.h"
+#include "geometry.h"
 #include "kdtree.h"
 #include "raylib.h"
 #include "spdlog/spdlog.h"
-#include "typedefs.h"
 #include <cmath>
 #include <cstddef>
 #include <cxxopts.hpp>
@@ -407,15 +407,11 @@ s32 toScreenIsotropic(f64 r, f64 start, f64 scale, s32 dim) {
   return (s32)(((r - start) / scale) * (f64)dim);
 }
 
-struct pt2 : std::array<f64, 2> {
-  static const s64 DIM = 2;
-};
-
 Matrix2Xd filterpts(const Matrix3Xd& pts) {
   std::vector<u8> uniques(pts.cols(), 1);
 
-  kdt::KDTree<pt2> kdtree([](const Matrix3Xd& pts) {
-    std::vector<pt2> kdpts(pts.cols());
+  kdt::KDTree<Pt2> kdtree([](const Matrix3Xd& pts) {
+    std::vector<Pt2> kdpts(pts.cols());
 #pragma omp parallel for
     for (s32 i = 0; i < pts.cols(); ++i) {
       kdpts[i] = {pts(0, i), pts(1, i)};

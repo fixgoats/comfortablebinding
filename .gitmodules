@@ -1,3 +1,10 @@
 [submodule "deps/spdlog"]
 	path = deps/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "deps/glslang"]
+	path = deps/glslang
+	url = https://github.com/KhronosGroup/glslang.git
+[submodule "deps/sdl"]
+	path = deps/sdl
+	url = https://github.com/libsdl-org/SDL.git
+	branch = release-3.4.x

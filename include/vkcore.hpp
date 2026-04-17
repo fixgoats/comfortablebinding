@@ -1,5 +1,6 @@
 #pragma once
 #include "betterexc.h"
+#include "colormaps.hpp"
 #include "hack.hpp"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
@@ -293,7 +294,7 @@ struct Manager {
   ~Manager();
 };
 
-/*struct Renderer {
+struct Renderer {
   // non-owned
   Manager* p_mgr;
   //  owned
@@ -335,12 +336,13 @@ struct Manager {
   u32 n_images;
   bool frameBufferResized;
   u32 currentFrame = 0;
+
   Renderer(Manager& manager, u32 nx, u32 ny);
   void cleanupSwapchain();
   void recreateSwapchain();
   void drawFrame();
   ~Renderer();
-};*/
+};
 
 std::vector<u32> readFile(const std::string& filename);
 vk::PhysicalDevice pickPhysicalDevice(const vk::Instance& instance,

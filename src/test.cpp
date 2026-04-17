@@ -1,8 +1,9 @@
-#include "Eigen/Core"
 #include "Eigen/Dense"
+#include "SDL3/SDL.h"
 #include "highfive/highfive.hpp"
 #include "spdlog/spdlog.h"
 #include "typedefs.h"
+#include "vkcore.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -228,29 +229,15 @@ int main(int argc, char* argv[]) {
   if (result["v"].count()) {
     spdlog::set_level(spdlog::level::trace);
   }
+  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+  auto window = SDL_CreateWindow("test", 800, 800, SDL_WINDOW_RESIZABLE);
 
-  ShapeMaker bleh{Matrix3d::Identity(),
-                  std::make_shared<shape_var_t>(shape_var_t{
-                      Matrix3d{{0., 0., 0.}, {0., 0., 0.}, {1., 1., 1.}}})};
-  auto hex = std::make_shared<shape_var_t>(
-      shape_var_t{(Eigen::Matrix<f64, 3, 6>() << 0., 0., 0., 0., 0., 0., 0., 0.,
-                   0., 0., 0., 0., 1., 1., 1., 1., 1., 1.)
-                      .finished()});
-  ShapeMaker blah{Matrix3d::Identity(), hex};
-  auto para = std::make_shared<shape_var_t>(
-      shape_var_t{(Eigen::Matrix<f64, 3, 4>() << 0., 0., 0., 0., 0., 0., 0., 0.,
-                   1., 1., 1., 1.)
-                      .finished()});
-  ShapeMaker bloh{Matrix3d::Identity(), para};
-  auto penta = std::make_shared<shape_var_t>(
-      shape_var_t{(Eigen::Matrix<f64, 3, 5>() << 0., 0., 0., 0., 0., 0., 0., 0.,
-                   0., 0., 1., 1., 1., 1., 1.)
-                      .finished()});
-  ShapeMaker bluh{Matrix3d::Identity(), penta};
-  std::cout << bleh.to_hats(Matrix3d::Identity()) << '\n';
-  std::cout << blah.to_hats(Matrix3d::Identity()) << '\n';
-  std::cout << bloh.to_hats(Matrix3d::Identity()) << '\n';
-  std::cout << bluh.to_hats(Matrix3d::Identity()) << '\n';
+  SDL_Event event;
+  bool should_quit = false;
+  while (event.type != SDL_EVENT_QUIT) {
+    while (SDL_PollEvent(&event)) {
+    }
+  }
 
   return 0;
 }

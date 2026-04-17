@@ -1,6 +1,6 @@
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
-#include "colormaps.h"
+#include "colormaps.hpp"
 #include "geometry.h"
 #include "highfive/eigen.hpp"
 #include "highfive/highfive.hpp"
