@@ -135,6 +135,11 @@ struct SSBO430 {
   MetaBuffer b;
 };
 
+template <class Addr>
+constexpr std::span<const f32> spec_span(Addr begin, Addr end) {
+  return {bit_cast<f32*>(begin), bit_cast<f32*>(end)};
+}
+
 struct Algorithm {
   // Attention, device is used for destroying owned objects, the device will be
   // destroyed by the manager.
@@ -147,27 +152,64 @@ struct Algorithm {
   vk::PipelineLayout m_PipelineLayout;
   vk::Pipeline m_Pipeline;
   Algorithm() = default;
-  Algorithm(vk::Device device, u32 img_views, u32 buffers, u32 n_ubo,
-            const std::vector<u32>& spirv, const u8* spec_consts = nullptr,
-            const size_t* sizes = nullptr, size_t n_consts = 0,
-            const size_t* push_sizes = nullptr, size_t n_push_constants = 0);
-  void initialize(vk::Device device, u32 n_imgs, u32 n_buffers, u32 n_ubo,
-                  const std::vector<u32>& spirv,
-                  const u8* spec_consts = nullptr,
-                  const size_t* sizes = nullptr, size_t n_consts = 0,
-                  const size_t* push_sizes = nullptr,
+  Algorithm(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+            u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts = {},
+            size_t n_push_constants = 0);
+  void initialize(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+                  u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
                   size_t n_push_constants = 0);
-  void bind_data(const std::vector<vk::ImageView>& img_views,
-                 const std::vector<MetaBuffer*>& buffers,
-                 const std::vector<MetaBuffer*>& ubos) const;
+  // Algorithm(vk::Device device, u32 img_views, u32 buffers, u32 n_ubo,
+  //           const std::vector<u32>& spirv, const u8* spec_consts = nullptr,
+  //           const size_t* sizes = nullptr, size_t n_consts = 0,
+  //           const size_t* push_sizes = nullptr, size_t n_push_constants = 0);
+  // void initialize(vk::Device device, u32 n_imgs, u32 n_buffers, u32 n_ubo,
+  //                 const std::vector<u32>& spirv,
+  //                 const u8* spec_consts = nullptr,
+  //                 const size_t* sizes = nullptr, size_t n_consts = 0,
+  //                 const size_t* push_sizes = nullptr,
+  //                 size_t n_push_constants = 0);
+  void bind_data(std::span<const vk::ImageView> img_views,
+                 std::span<const MetaBuffer* const> buffers,
+                 std::span<const MetaBuffer* const> ubos) const;
   ~Algorithm();
 };
 
 static const std::vector<std::string> DEVICE_EXTENSIONS = {
     vk::KHRSwapchainExtensionName};
+static const std::string APP_NAME{"Vulkan GPE Simulator"};
+static const std::string ENGINE_NAME{"argablarg"};
+
+struct AutoInstance {
+  vk::Instance instance;
+  vk::SurfaceKHR surface = nullptr;
+
+  AutoInstance(std::span<const char*> inst_exts, bool use_layers) {
+    vk::ApplicationInfo app_info{APP_NAME.c_str(), 1, ENGINE_NAME.c_str(), 1,
+                                 VK_API_VERSION_1_3};
+    if (use_layers) {
+      spdlog::warn("Vulkan: Validation layers are on");
+    }
+    const auto layers =
+        use_layers ? std::vector<const char*>{"VK_LAYER_KHRONOS_validation"}
+                   : std::vector<const char*>{};
+    vk::InstanceCreateInfo ici(vk::InstanceCreateFlags(), &app_info, layers,
+                               inst_exts);
+    try {
+      instance = vk::createInstance(ici);
+    } catch (vk::SystemError& err) {
+      spdlog::error("Manager: {}", err.what());
+      exit(-1);
+    }
+  }
+  vk::Instance operator*() const { return instance; }
+  [[nodiscard]] constexpr bool has_surface() const {
+    return static_cast<bool>(surface);
+  }
+  ~AutoInstance() { instance.destroy(surface); }
+};
 
 struct Manager {
-  vk::Instance instance;
+  // vk::Instance instance;
   vk::PhysicalDevice physical_device;
   vk::Device device;
   vk::Queue queue;
@@ -177,11 +219,14 @@ struct Manager {
   VmaAllocation staging_allocation;
   VmaAllocationInfo staging_info;
   u32 c_qfi = UINT32_MAX;
+  u32 g_qfi = UINT32_MAX;
+  u32 p_qfi = UINT32_MAX;
   vk::CommandPool command_pool;
-  vk::SurfaceKHR surface;
+  // vk::SurfaceKHR surface;
 
-  Manager(size_t staging_size);
-  void finish_setup(size_t staging_size, vk::SurfaceKHR& surface);
+  Manager(const AutoInstance& instance, size_t staging_size,
+          std::span<const char*> extra_device_extensions = {});
+  // void finish_setup(size_t staging_size, vk::SurfaceKHR& surface);
   // Manager uses a single staging buffer for efficient copies.
   void copy_buffer(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
                    u32 buffer_size, u32 src_offset = 0,
@@ -198,7 +243,7 @@ struct Manager {
   void execute(vk::CommandBuffer& b);
   void execute_no_sync(vk::CommandBuffer& b) const;
   void queue_wait_idle() const;
-  void get_queue_family_indices(vk::SurfaceKHR& surface);
+  // void get_queue_family_indices(vk::SurfaceKHR& surface);
   void write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
                        size_t src_offset = 0, size_t dst_offset = 0);
   template <class T>
@@ -265,41 +310,42 @@ struct Manager {
     write_to_buffer(buffer, v);
     return buffer;
   }
-  [[nodiscard]] Algorithm make_algorithm_raw(
-      std::string spirvname, const std::vector<vk::ImageView>& images,
-      const std::vector<MetaBuffer*>& buffers, const u8* spec_consts = nullptr,
-      const size_t* spec_const_offsets = nullptr, size_t n_consts = 0,
-      const size_t* push_sizes = nullptr, size_t n_push_constants = 0) const;
 
-  template <class T>
-  [[nodiscard]] Algorithm
-  make_algorithm(std::string spirvname,
-                 const std::vector<vk::ImageView>& images,
-                 std::vector<MetaBuffer*> buffers, const T spec_consts) {
-    constexpr auto sizes = struct_field_sizes<T>();
-    constexpr auto n_fields = sizes.size();
-    return make_algorithm_raw(spirvname, images, buffers,
-                              bit_cast<const u8*>(&spec_consts), sizes.data(),
-                              sizes.size());
-  }
-  template <class PushType, class T>
-  [[nodiscard]] Algorithm make_algorithm(std::string spirvname,
-                                         std::vector<MetaBuffer*> buffers,
-                                         const T spec_consts) {
-    constexpr size_t n_spec_consts = boost::pfr::tuple_size_v<T>;
-    std::array<size_t, n_spec_consts> sizes;
-    constexpr_for<0, n_spec_consts, 1>([&sizes](auto i) {
-      sizes[i] = sizeof(boost::pfr::tuple_element_t<i, T>);
-    });
-    constexpr size_t n_push_consts = boost::pfr::tuple_size_v<PushType>;
-    std::array<size_t, n_push_consts> push_sizes;
-    constexpr_for<0, n_push_consts, 1>([&push_sizes](auto i) {
-      push_sizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
-    });
-    return make_algorithm_raw(
-        spirvname, {}, buffers, bit_cast<const u8*>(&spec_consts), sizes.data(),
-        sizes.size(), push_sizes.data(), push_sizes.size());
-  }
+  // In practice you'll always use 4 byte specialization and push constants, so
+  // I'll just assume that here. If you use a non-float constant, just bit_cast
+  // it to a float.
+  [[nodiscard]] Algorithm make_algorithm(
+      std::string spirvname, const std::vector<vk::ImageView>& images,
+      const std::vector<MetaBuffer*>& buffers,
+      std::span<const f32> spec_consts = {}, size_t n_push_constants = 0) const;
+
+  // [[nodiscard]] Algorithm
+  // make_algorithm(std::string spirvname,
+  //                const std::vector<vk::ImageView>& images,
+  //                std::vector<MetaBuffer*> buffers, std::span<f32>
+  //                spec_consts) {
+  //   return make_algorithm_raw(spirvname, images, buffers,
+  //                             bit_cast<const u8*>(&spec_consts),
+  //                             sizes.data(), sizes.size());
+  // }
+  // template <class PushType, class T>
+  // [[nodiscard]] Algorithm make_algorithm(std::string spirvname,
+  //                                        std::vector<MetaBuffer*> buffers,
+  //                                        const T spec_consts) {
+  //   constexpr size_t n_spec_consts = boost::pfr::tuple_size_v<T>;
+  //   std::array<size_t, n_spec_consts> sizes;
+  //   constexpr_for<0, n_spec_consts, 1>([&sizes](auto i) {
+  //     sizes[i] = sizeof(boost::pfr::tuple_element_t<i, T>);
+  //   });
+  //   constexpr size_t n_push_consts = boost::pfr::tuple_size_v<PushType>;
+  //   std::array<size_t, n_push_consts> push_sizes;
+  //   constexpr_for<0, n_push_consts, 1>([&push_sizes](auto i) {
+  //     push_sizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
+  //   });
+  //   return make_algorithm_raw(
+  //       spirvname, {}, buffers, bit_cast<const u8*>(&spec_consts),
+  //       sizes.data(), sizes.size(), push_sizes.data(), push_sizes.size());
+  // }
   ~Manager();
 };
 
@@ -311,6 +357,7 @@ struct Renderer {
   vk::Pipeline graphics_pipeline;
   vk::PipelineLayout graphics_pipeline_layout;
   vk::SwapchainKHR swapchain;
+  vk::SurfaceKHR surface;
   std::vector<vk::Framebuffer> swapchain_fbs;
   std::vector<vk::Image> swapchain_imgs;
   vk::Format swapchain_img_fmt;
@@ -346,7 +393,7 @@ struct Renderer {
   bool frame_buffer_resized;
   u32 current_frame = 0;
 
-  Renderer(Manager& manager, u32 nx, u32 ny);
+  Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny);
   void cleanup_swapchain();
   void recreate_swapchain();
   void draw_frame();

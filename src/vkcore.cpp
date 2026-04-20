@@ -77,6 +77,25 @@ void record_drawing_commands(
   command_buffer.endRenderPass();
 }
 
+// constexpr vk::SpecializationInfo
+// span_to_spec_consts(std::span<const f32> spec_consts) {
+//   std::vector<vk::SpecializationMapEntry> spec_entries(spec_consts.size());
+//   u32 spec_offset = 0;
+//   for (u32 i = 0; i < spec_entries.size(); i++) {
+//     spec_entries[i].constantID = i;
+//     spdlog::debug("Setting spec_entries[{}].offset to {}", i, spec_offset);
+//     spec_entries[i].offset = spec_offset;
+//     spec_entries[i].size = 4;
+//     spec_offset += 4;
+//   }
+//   vk::SpecializationInfo spec_info;
+//   spec_info.mapEntryCount = spec_consts.size();
+//   spec_info.pMapEntries = spec_entries.data();
+//   spec_info.dataSize = spec_offset;
+//   spec_info.pData = spec_consts.data();
+//   return spec_info;
+// }
+
 void record_nondestructive_parallel_reduction(
     vk::CommandBuffer cb, u32 org_size, const Algorithm& reduction,
     const Algorithm& first_reduction) {
@@ -194,6 +213,84 @@ std::set<std::string> get_supported_extensions() {
 
   return extensions;
 }
+
+void copy_buffer_now(vk::Device device, vk::CommandPool command_pool,
+                     vk::Queue queue, vk::Fence fence, vk::Buffer& src_buffer,
+                     vk::Buffer& dst_buffer, u32 buffer_size, u32 src_offset,
+                     u32 dst_offset) {
+  auto cmd_buffer = device
+                        .allocateCommandBuffers(
+                            {command_pool, vk::CommandBufferLevel::ePrimary, 1})
+                        .front();
+  vk::CommandBufferBeginInfo cbbi(
+      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+  cmd_buffer.begin(cbbi);
+  cmd_buffer.copyBuffer(src_buffer, dst_buffer,
+                        vk::BufferCopy(src_offset, dst_offset, buffer_size));
+  cmd_buffer.end();
+  vk::SubmitInfo submit_info(nullptr, nullptr, cmd_buffer);
+  queue.submit(submit_info, fence);
+  auto result = device.waitForFences(fence, vk::True, -1);
+  result = device.resetFences(1, &fence);
+  device.freeCommandBuffers(command_pool, cmd_buffer);
+}
+
+vk::SwapchainKHR create_swapchain(vk::Device device, vk::SurfaceKHR surface,
+                                  vk::SurfaceCapabilitiesKHR capabilities,
+                                  vk::SurfaceFormatKHR surface_format,
+                                  vk::PresentModeKHR present_mode,
+                                  vk::Extent2D swapchain_extent, u32 n_images,
+                                  std::array<u32, 2> qfis,
+                                  vk::SwapchainKHR old_swapchain = nullptr) {
+  vk::SurfaceTransformFlagBitsKHR pre_transform =
+      (capabilities.supportedTransforms &
+       vk::SurfaceTransformFlagBitsKHR::eIdentity)
+          ? vk::SurfaceTransformFlagBitsKHR::eIdentity
+          : capabilities.currentTransform;
+
+  vk::CompositeAlphaFlagBitsKHR composite_alpha =
+      (capabilities.supportedCompositeAlpha &
+       vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
+          ? vk::CompositeAlphaFlagBitsKHR::ePreMultiplied
+      : (capabilities.supportedCompositeAlpha &
+         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
+          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
+      : (capabilities.supportedCompositeAlpha &
+         vk::CompositeAlphaFlagBitsKHR::eInherit)
+          ? vk::CompositeAlphaFlagBitsKHR::eInherit
+          : vk::CompositeAlphaFlagBitsKHR::eOpaque;
+  vk::SwapchainCreateInfoKHR create_info(
+      {}, surface, n_images, surface_format.format, surface_format.colorSpace,
+      swapchain_extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
+      vk::SharingMode::eExclusive, {}, pre_transform, composite_alpha,
+      present_mode, vk::True, old_swapchain);
+  if (qfis[0] != qfis[1]) {
+    // If the graphics and present queues are from different queue families,
+    // we either have to explicitly transfer ownership of images between the
+    // queues, or we have to create the swapchain with imageSharingMode as
+    // VK_SHARING_MODE_CONCURRENT
+    create_info.imageSharingMode = vk::SharingMode::eConcurrent;
+    create_info.queueFamilyIndexCount = 2;
+    create_info.pQueueFamilyIndices = qfis.data();
+  }
+  return device.createSwapchainKHR(create_info);
+}
+
+std::vector<vk::ImageView>
+create_image_views(vk::Device device, vk::SurfaceFormatKHR surface_format,
+                   std::vector<vk::Image> images) {
+  std::vector<vk::ImageView> swapchain_image_views;
+  swapchain_image_views.reserve(images.size());
+  vk::ImageViewCreateInfo img_view_create_info(
+      {}, {}, vk::ImageViewType::e2D, surface_format.format, {},
+      {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+  for (auto img : images) {
+    img_view_create_info.image = img;
+    swapchain_image_views.push_back(
+        device.createImageView(img_view_create_info));
+  }
+  return swapchain_image_views;
+}
 } // namespace
 
 MetaBuffer::MetaBuffer() : allocation{}, aInfo{} {}
@@ -249,12 +346,11 @@ AllocatedImage::~AllocatedImage() {
   vmaDestroyImage(*p_allocator, img, allocation);
 }
 
-Algorithm::Algorithm(vk::Device device, u32 img_views, u32 buffers, u32 n_ubo,
-                     const std::vector<u32>& spirv, const u8* spec_consts,
-                     const size_t* sizes, size_t n_consts,
-                     const size_t* push_sizes, size_t n_push_constants) {
-  initialize(device, img_views, buffers, n_ubo, spirv, spec_consts, sizes,
-             n_consts, push_sizes, n_push_constants);
+Algorithm::Algorithm(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+                     u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
+                     size_t n_push_constants) {
+  initialize(device, spirv, n_imgs, n_buffers, n_ubo, spec_consts,
+             n_push_constants);
 }
 
 Algorithm::~Algorithm() {
@@ -266,7 +362,7 @@ Algorithm::~Algorithm() {
 }
 
 vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
-                                        const int32_t desired_gpu) {
+                                        const s32 desired_gpu) {
   // check if there are GPUs that support Vulkan and "intelligently" select
   // one. Prioritises discrete GPUs, and after that VRAM size.
   std::vector<vk::PhysicalDevice> p_devices =
@@ -279,17 +375,19 @@ vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
             vk::PhysicalDeviceType::eIntegratedGpu or
         p_devices[0].getProperties().deviceType ==
             vk::PhysicalDeviceType::eCpu) {
-      std::cout << "Only integrated GPU or CPU detected, you may not see much "
-                   "benefit from GPU acceleration.\n";
+      spdlog::warn(
+          "pick_physical_device: Only integrated GPU or CPU detected, "
+          "you may not see much benefit from hardware 'acceleration.'");
     }
     return p_devices[0];
   }
+
   // Try to select desired GPU if specified.
   if (desired_gpu > -1) {
     if (desired_gpu < static_cast<int32_t>(n_devices)) {
       return p_devices[desired_gpu];
     }
-    std::cout << "Selected device is not available.\n";
+    spdlog::warn("pick_physical_device: Selected device is not available.");
   }
 
   std::vector<uint32_t> discrete; // the indices of the available discrete gpus
@@ -314,69 +412,56 @@ vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
     if (discrete.size() == 1) {
       return p_devices[discrete[0]];
     }
-    uint32_t max = 0;
-    uint32_t selected_gpu = 0;
-    for (const auto& index : discrete) {
-      if (vram[index] > max) {
-        max = vram[index];
-        selected_gpu = index;
-      }
-    }
-    return p_devices[selected_gpu];
+    const auto max_vram_ptr = std::ranges::max_element(vram);
+    return p_devices[std::ranges::distance(vram.begin(), max_vram_ptr)];
   }
-  uint32_t max = 0;
-  uint32_t selected_gpu = 0;
-  for (uint32_t i = 0; i < n_devices; i++) {
-    if (vram[i] > max) {
-      max = vram[i];
-      selected_gpu = i;
-    }
-  }
-  return p_devices[selected_gpu];
+
+  // Otherwise pick integrated with the highest VRAM
+  const auto max_vram_ptr = std::ranges::max_element(vram);
+  return p_devices[std::ranges::distance(vram.begin(), max_vram_ptr)];
 }
 
-static const std::string APP_NAME{"Vulkan GPE Simulator"};
-static const std::string ENGINE_NAME{"argablarg"};
-Manager::Manager(size_t staging_size) {
-  vk::ApplicationInfo app_info{APP_NAME.c_str(), 1, ENGINE_NAME.c_str(), 1,
-                               VK_API_VERSION_1_3};
+Manager::Manager(const AutoInstance& instance, size_t staging_size,
+                 std::span<const char*> extra_device_extensions)
+    : physical_device(pick_physical_device(*instance)),
+      c_qfi(get_compute_queue_family_index(physical_device)) {
   // Validation layers are extremely helpful, we'll only turn them off if we
   // want absolute maximum performance.
-#ifdef NO_LAYERS
-  const std::vector<const char*> layers;
-#else
-  const std::vector<const char*> layers = {"VK_LAYER_KHRONOS_validation"};
-  std::cout << "Running debug build\n";
-#endif // DEBUG
-  u32 instance_extension_count = 0;
-  char const* const* instance_extensions = [&]() {
-    return (char const* const*)nullptr;
-  }();
-  // const std::vector<const char*> instanceExtensions = ;
-  const std::vector<const char*> device_extensions = [&]() {
-    return std::vector<const char*>{"VK_KHR_maintenance4"};
-  }();
-  vk::InstanceCreateInfo ici(vk::InstanceCreateFlags(), &app_info,
-                             layers.size(), layers.data(),
-                             instance_extension_count, instance_extensions);
-  try {
-    instance = vk::createInstance(ici);
-  } catch (vk::SystemError& err) {
-    std::cout << "Error: " << err.what() << std::endl;
-    exit(-1);
-  }
-  physical_device = pick_physical_device(instance);
 
-  std::vector<u32> qfis;
-  qfis.push_back(get_compute_queue_family_index(physical_device));
-  c_qfi = qfis[0];
+  std::vector<const char*> device_extensions{"VK_KHR_maintenance4"};
+  for (const auto& ext : extra_device_extensions) {
+    device_extensions.push_back(ext);
+  }
+
+  // physical_device = pick_physical_device(*instance);
+
+  // c_qfi = get_compute_queue_family_index(physical_device);
+  std::set<u32> qfis;
+  qfis.insert(c_qfi);
+  spdlog::debug("Manager: Does instance have surface?: {}",
+                instance.has_surface());
+  if (instance.has_surface()) {
+    const auto gp_qfis = get_graphics_present_queue_family_indices(
+        physical_device, instance.surface);
+    g_qfi = gp_qfis[0];
+    p_qfi = gp_qfis[1];
+    qfis.insert({g_qfi, p_qfi});
+    device_extensions.push_back("VK_KHR_swapchain");
+  }
+
+  spdlog::debug("Manager: qfis size: {}", qfis.size());
+  spdlog::debug("Manager: queue family indices:");
+  for (const auto& idx : qfis) {
+    spdlog::debug("Queue family index: {}", idx);
+  }
 
   float queue_priority = 1.0F;
 
-  std::vector<vk::DeviceQueueCreateInfo> dqci(qfis.size());
-  std::ranges::transform(qfis.begin(), qfis.end(), dqci.begin(), [&](u32 qfi) {
-    return vk::DeviceQueueCreateInfo({}, qfi, 1, &queue_priority);
-  });
+  std::vector<vk::DeviceQueueCreateInfo> dqci;
+  dqci.reserve(qfis.size());
+  for (const auto idx : qfis) {
+    dqci.push_back(vk::DeviceQueueCreateInfo({}, idx, 1, &queue_priority));
+  }
   vk::PhysicalDeviceVulkan13Features phys_dev_features13;
   phys_dev_features13.maintenance4 = vk::True;
   vk::PhysicalDeviceFeatures phys_dev_features;
@@ -394,7 +479,7 @@ Manager::Manager(size_t staging_size) {
   allocator_info.physicalDevice = physical_device;
   allocator_info.vulkanApiVersion = physical_device.getProperties().apiVersion;
   allocator_info.device = device;
-  allocator_info.instance = instance;
+  allocator_info.instance = *instance;
   vmaCreateAllocator(&allocator_info, &allocator);
   vk::BufferCreateInfo staging_bci({}, round_up_x16(staging_size),
                                    vk::BufferUsageFlagBits::eTransferSrc |
@@ -410,29 +495,6 @@ Manager::Manager(size_t staging_size) {
                   &alloc_create_info, bit_cast<VkBuffer*>(&staging),
                   &staging_allocation, &staging_info);
 }
-
-namespace {
-void copy_buffer_now(vk::Device device, vk::CommandPool command_pool,
-                     vk::Queue queue, vk::Fence fence, vk::Buffer& src_buffer,
-                     vk::Buffer& dst_buffer, u32 buffer_size, u32 src_offset,
-                     u32 dst_offset) {
-  auto cmd_buffer = device
-                        .allocateCommandBuffers(
-                            {command_pool, vk::CommandBufferLevel::ePrimary, 1})
-                        .front();
-  vk::CommandBufferBeginInfo cbbi(
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-  cmd_buffer.begin(cbbi);
-  cmd_buffer.copyBuffer(src_buffer, dst_buffer,
-                        vk::BufferCopy(src_offset, dst_offset, buffer_size));
-  cmd_buffer.end();
-  vk::SubmitInfo submit_info(nullptr, nullptr, cmd_buffer);
-  queue.submit(submit_info, fence);
-  auto result = device.waitForFences(fence, vk::True, -1);
-  result = device.resetFences(1, &fence);
-  device.freeCommandBuffers(command_pool, cmd_buffer);
-}
-} // namespace
 
 vk::CommandBuffer Manager::copy_op(vk::Buffer src_buffer, vk::Buffer dst_buffer,
                                    u32 buffer_size, u32 src_offset,
@@ -531,20 +593,32 @@ void Manager::execute_no_sync(vk::CommandBuffer& b) const {
 
 void Manager::queue_wait_idle() const { queue.waitIdle(); }
 
-Algorithm Manager::make_algorithm_raw(std::string spirvname,
-                                      const std::vector<vk::ImageView>& images,
-                                      const std::vector<MetaBuffer*>& buffers,
-                                      const u8* spec_consts,
-                                      const size_t* spec_const_offsets,
-                                      size_t n_consts, const size_t* push_sizes,
-                                      size_t n_push_constants) const {
-  const auto spirv = read_file<u32>(spirvname);
-  auto retalg =
-      Algorithm(device, images.size(), buffers.size(), 0, spirv, spec_consts,
-                spec_const_offsets, n_consts, push_sizes, n_push_constants);
-  retalg.bind_data(images, buffers, {});
+Algorithm Manager::make_algorithm(std::string spirvname,
+                                  const std::vector<vk::ImageView>& images,
+                                  const std::vector<MetaBuffer*>& buffers,
+                                  std::span<const f32> spec_consts,
+                                  size_t n_push_constants) const {
+  const std::vector<u32> spirv = read_file<u32>(spirvname);
+  auto retalg = Algorithm(device, spirv, images.size(), buffers.size(), 0,
+                          spec_consts, n_push_constants);
+  retalg.bind_data({images.begin(), images.end()}, buffers, {});
   return retalg;
 }
+
+// Algorithm Manager::make_algorithm_raw(std::string spirvname,
+//                                       const std::vector<vk::ImageView>&
+//                                       images, const std::vector<MetaBuffer*>&
+//                                       buffers, const u8* spec_consts, const
+//                                       size_t* spec_const_offsets, size_t
+//                                       n_consts, const size_t* push_sizes,
+//                                       size_t n_push_constants) const {
+//   const auto spirv = read_file<u32>(spirvname);
+//   auto retalg =
+//       Algorithm(device, images.size(), buffers.size(), 0, spirv, spec_consts,
+//                 spec_const_offsets, n_consts, push_sizes, n_push_constants);
+//   retalg.bind_data(images, buffers, {});
+//   return retalg;
+// }
 
 void append_op_no_barrier(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y,
                           u32 z) {
@@ -571,72 +645,11 @@ Manager::~Manager() {
   vmaDestroyAllocator(allocator);
   device.destroyCommandPool(command_pool);
   device.destroy();
-  instance.destroy();
 }
 
-namespace {
-vk::SwapchainKHR create_swapchain(vk::Device device, vk::SurfaceKHR surface,
-                                  vk::SurfaceCapabilitiesKHR capabilities,
-                                  vk::SurfaceFormatKHR surface_format,
-                                  vk::PresentModeKHR present_mode,
-                                  vk::Extent2D swapchain_extent, u32 n_images,
-                                  std::array<u32, 2> qfis,
-                                  vk::SwapchainKHR old_swapchain = nullptr) {
-  vk::SurfaceTransformFlagBitsKHR pre_transform =
-      (capabilities.supportedTransforms &
-       vk::SurfaceTransformFlagBitsKHR::eIdentity)
-          ? vk::SurfaceTransformFlagBitsKHR::eIdentity
-          : capabilities.currentTransform;
-
-  vk::CompositeAlphaFlagBitsKHR composite_alpha =
-      (capabilities.supportedCompositeAlpha &
-       vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePreMultiplied
-      : (capabilities.supportedCompositeAlpha &
-         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
-      : (capabilities.supportedCompositeAlpha &
-         vk::CompositeAlphaFlagBitsKHR::eInherit)
-          ? vk::CompositeAlphaFlagBitsKHR::eInherit
-          : vk::CompositeAlphaFlagBitsKHR::eOpaque;
-  vk::SwapchainCreateInfoKHR create_info(
-      {}, surface, n_images, surface_format.format, surface_format.colorSpace,
-      swapchain_extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
-      vk::SharingMode::eExclusive, {}, pre_transform, composite_alpha,
-      present_mode, vk::True, old_swapchain);
-  if (qfis[0] != qfis[1]) {
-    // If the graphics and present queues are from different queue families,
-    // we either have to explicitly transfer ownership of images between the
-    // queues, or we have to create the swapchain with imageSharingMode as
-    // VK_SHARING_MODE_CONCURRENT
-    create_info.imageSharingMode = vk::SharingMode::eConcurrent;
-    create_info.queueFamilyIndexCount = 2;
-    create_info.pQueueFamilyIndices = qfis.data();
-  }
-  return device.createSwapchainKHR(create_info);
-}
-
-std::vector<vk::ImageView>
-create_image_views(vk::Device device, vk::SurfaceFormatKHR surface_format,
-                   std::vector<vk::Image> images) {
-  std::vector<vk::ImageView> swapchain_image_views;
-  swapchain_image_views.reserve(images.size());
-  vk::ImageViewCreateInfo img_view_create_info(
-      {}, {}, vk::ImageViewType::e2D, surface_format.format, {},
-      {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-  for (auto img : images) {
-    img_view_create_info.image = img;
-    swapchain_image_views.push_back(
-        device.createImageView(img_view_create_info));
-  }
-  return swapchain_image_views;
-}
-} // namespace
-
-void Algorithm::initialize(vk::Device device, u32 n_imgs, u32 n_buffers,
-                           u32 n_ubo, const std::vector<u32>& spirv,
-                           const u8* spec_consts, const size_t* sizes,
-                           size_t n_consts, const size_t* push_sizes,
+void Algorithm::initialize(vk::Device device, std::span<const u32> spirv,
+                           u32 n_imgs, u32 n_buffers, u32 n_ubo,
+                           std::span<const f32> spec_consts,
                            size_t n_push_constants) {
   m_device = device;
   vk::ShaderModuleCreateInfo shader_mci(vk::ShaderModuleCreateFlags(), spirv);
@@ -664,30 +677,40 @@ void Algorithm::initialize(vk::Device device, u32 n_imgs, u32 n_buffers,
   u32 push_offsets = 0;
   for (u32 i = 0; i < n_push_constants; i++) {
     ranges[i] = vk::PushConstantRange(vk::ShaderStageFlagBits::eCompute,
-                                      push_offsets, push_sizes[i]);
-    push_offsets += push_sizes[i];
+                                      push_offsets, 4);
+    push_offsets += 4;
   }
   vk::PipelineLayoutCreateInfo plci(vk::PipelineLayoutCreateFlags(), m_DSL,
                                     ranges);
   m_PipelineLayout = device.createPipelineLayout(plci);
-  std::vector<vk::SpecializationMapEntry> spec_entries(n_consts);
-  // spec_consts needs to have no gaps. This can be done with field ordering or,
-  // if the field order is important, with a packing directive. Packing was
-  // quite inefficient for a long time since it can force unaligned accesses,
-  // but modern systems are quite good at unaligned accesses, and this probably
-  // won't be a hot path either way.
-  u32 offset = 0;
-  for (u32 i = 0; i < spec_entries.size(); i++) {
+  // std::vector<vk::SpecializationMapEntry> spec_entries(spec_consts.size());
+  // u32 spec_offset = 0;
+  // for (u32 i = 0; i < spec_entries.size(); i++) {
+  //   spec_entries[i].constantID = i;
+  //   spec_entries[i].offset = spec_offset;
+  //   spec_entries[i].size = 4;
+  //   spec_offset += 4;
+  // }
+  // vk::SpecializationInfo spec_info;
+  // spec_info.mapEntryCount = spec_consts.size();
+  // spec_info.pMapEntries = spec_entries.data();
+  // spec_info.dataSize = spec_offset;
+  // spec_info.pData = spec_consts.data();
+  // const auto spec_info = span_to_spec_consts(spec_consts);
+  std::vector<vk::SpecializationMapEntry> spec_entries(spec_consts.size());
+  u32 spec_offset = 0;
+  for (u32 i = 0; i < spec_entries.size(); ++i) {
     spec_entries[i].constantID = i;
-    spec_entries[i].offset = offset;
-    spec_entries[i].size = sizes[i];
-    offset += sizes[i];
+    spdlog::debug("Setting spec_entries[{}].offset to {}", i, spec_offset);
+    spec_entries[i].offset = spec_offset;
+    spec_entries[i].size = 4;
+    spec_offset += 4;
   }
   vk::SpecializationInfo spec_info;
-  spec_info.mapEntryCount = n_consts;
+  spec_info.mapEntryCount = spec_consts.size();
   spec_info.pMapEntries = spec_entries.data();
-  spec_info.dataSize = offset;
-  spec_info.pData = spec_consts;
+  spec_info.dataSize = spec_offset;
+  spec_info.pData = spec_consts.data();
 
   vk::PipelineShaderStageCreateInfo csci(vk::PipelineShaderStageCreateFlags(),
                                          vk::ShaderStageFlagBits::eCompute,
@@ -721,9 +744,9 @@ void Algorithm::initialize(vk::Device device, u32 n_imgs, u32 n_buffers,
   m_DescriptorSet = descriptor_sets[0];
 }
 
-void Algorithm::bind_data(const std::vector<vk::ImageView>& img_views,
-                          const std::vector<MetaBuffer*>& buffers,
-                          const std::vector<MetaBuffer*>& ubos) const {
+void Algorithm::bind_data(std::span<const vk::ImageView> img_views,
+                          std::span<const MetaBuffer* const> buffers,
+                          std::span<const MetaBuffer* const> ubos) const {
   std::vector<vk::DescriptorImageInfo> diis(img_views.size());
   std::vector<vk::DescriptorBufferInfo> dbis(buffers.size());
   std::vector<vk::DescriptorBufferInfo> dubis(ubos.size());
@@ -768,24 +791,23 @@ void Algorithm::bind_data(const std::vector<vk::ImageView>& img_views,
   m_device.updateDescriptorSets(write_descriptor_sets, {});
 }
 
-Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
-  render_queue_indices = get_graphics_present_queue_family_indices(
-      manager.physical_device, manager.surface);
+Renderer::Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny)
+    : p_mgr{&manager}, surface{surf} {
+  render_queue_indices = {manager.g_qfi, manager.p_qfi};
   if (render_queue_indices[0] != render_queue_indices[1]) {
     runtime_exc("Graphics queue is different from present queue, I don't want "
                 "to deal with that right now!");
   }
   graphics_queue = manager.device.getQueue(render_queue_indices[0], 0);
   present_queue = manager.device.getQueue(render_queue_indices[1], 0);
-  capabilities =
-      manager.physical_device.getSurfaceCapabilitiesKHR(manager.surface);
-  auto formats = manager.physical_device.getSurfaceFormatsKHR(manager.surface);
+  capabilities = manager.physical_device.getSurfaceCapabilitiesKHR(surface);
+  auto formats = manager.physical_device.getSurfaceFormatsKHR(surface);
   if (formats.empty()) {
     runtime_exc("Fatal: No surface formats found");
   }
   surface_format = pick_surface_format(formats);
   auto present_modes =
-      manager.physical_device.getSurfacePresentModesKHR(manager.surface);
+      manager.physical_device.getSurfacePresentModesKHR(surface);
   if (present_modes.empty()) {
     runtime_exc("Fatal: No present modes found");
   }
@@ -827,7 +849,7 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
           : capabilities.currentTransform;
   capabilities.currentTransform = pre_transform;
 
-  swapchain = create_swapchain(manager.device, manager.surface, capabilities,
+  swapchain = create_swapchain(manager.device, surface, capabilities,
                                surface_format, present_mode, swapchain_extent,
                                n_images, render_queue_indices);
 
@@ -872,9 +894,9 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
   swapchain_fbs = create_framebuffers(manager.device, swapchain_img_views,
                                       render_pass, swapchain_extent);
 
-  std::string base_path = "build/";
-  auto vert_code = read_file<u32>(base_path + "Shaders/quad.vert.spv");
-  auto frag_code = read_file<u32>(base_path + "Shaders/quad.frag.spv");
+  // std::string base_path = "build/";
+  auto vert_code = read_file<u32>("Shaders/quad.vert.spv");
+  auto frag_code = read_file<u32>("Shaders/quad.frag.spv");
 
   vk::ShaderModuleCreateInfo vert_mci(vk::ShaderModuleCreateFlags(), vert_code);
   vk::ShaderModule vert_module = manager.device.createShaderModule(vert_mci);
@@ -984,13 +1006,19 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
   manager.device.destroyShaderModule(vert_module, nullptr);
 
   std::vector<PositionTextureVertex> vertices = {
-      {{-1.0F, -1.0F}, {0.0F, 0.0F}}, {{0.8F, -1.0F}, {1.0F, 0.0F}},
-      {{0.8F, 1.0F}, {1.0F, 1.0F}},   {{0.8F, 1.0F}, {1.0F, 1.0F}},
-      {{-1.0F, 1.0F}, {0.0F, 1.0F}},  {{-1.0F, -1.0F}, {0.0F, 0.0F}},
-      {{0.8F, -1.0F}, {0.0F, 0.0F}},  {{1.0F, -1.0F}, {0.0F, 0.0F}},
-      {{1.0F, 1.0F}, {0.0F, 1.0F}},   {{0.8F, -1.0F}, {0.0F, 0.0F}},
-      {{0.8F, 1.0F}, {0.0F, 1.0F}},   {{1.0F, -1.0F}, {0.0F, 1.0F}}};
-  vk::BufferCreateInfo vertexBCI(
+      {.pos = {-1.0F, -1.0F}, .uv = {0.0F, 0.0F}},
+      {.pos = {1.0F, -1.0F}, .uv = {1.0F, 0.0F}},
+      {.pos = {1.0F, 1.0F}, .uv = {1.0F, 1.0F}},
+      {.pos = {1.0F, 1.0F}, .uv = {1.0F, 1.0F}},
+      {.pos = {-1.0F, 1.0F}, .uv = {0.0F, 1.0F}},
+      {.pos = {-1.0F, -1.0F}, .uv = {0.0F, 0.0F}},
+      {.pos = {1.0F, -1.0F}, .uv = {0.0F, 0.0F}},
+      {.pos = {1.0F, -1.0F}, .uv = {0.0F, 0.0F}},
+      {.pos = {1.0F, 1.0F}, .uv = {0.0F, 1.0F}},
+      {.pos = {1.0F, -1.0F}, .uv = {0.0F, 0.0F}},
+      {.pos = {1.0F, 1.0F}, .uv = {0.0F, 1.0F}},
+      {.pos = {1.0F, -1.0F}, .uv = {0.0F, 1.0F}}};
+  vk::BufferCreateInfo vertex_bci(
       {}, vertices.size() * sizeof(PositionTextureVertex),
       vk::BufferUsageFlagBits::eVertexBuffer |
           vk::BufferUsageFlagBits::eTransferDst);
@@ -998,7 +1026,7 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
   alloc_create_info.priority = 1.0F;
-  vertex_buffer.allocate(manager.allocator, alloc_create_info, vertexBCI);
+  vertex_buffer.allocate(manager.allocator, alloc_create_info, vertex_bci);
   manager.write_to_buffer(vertex_buffer, vertices);
 
   vk::Format colormap_format = vk::Format::eR32G32B32A32Sfloat;
@@ -1037,25 +1065,26 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
       {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
   colormap_view = manager.device.createImageView(view_info);
 
-  vk::BufferCreateInfo colormapBCI({}, 256 * sizeof(cm::AlignedColor),
-                                   vk::BufferUsageFlagBits::eStorageBuffer |
-                                       vk::BufferUsageFlagBits::eTransferDst |
-                                       vk::BufferUsageFlagBits::eTransferSrc);
-  colormap.allocate(manager.allocator, img_alloc_create_info, colormapBCI);
+  vk::BufferCreateInfo colormap_bci({}, 256 * sizeof(cm::AlignedColor),
+                                    vk::BufferUsageFlagBits::eStorageBuffer |
+                                        vk::BufferUsageFlagBits::eTransferDst |
+                                        vk::BufferUsageFlagBits::eTransferSrc);
+  colormap.allocate(manager.allocator, img_alloc_create_info, colormap_bci);
   manager.write_to_buffer(colormap, cm::viridis.data(),
                           cm::viridis.size() * sizeof(cm::AlignedColor));
-  vk::BufferCreateInfo valueBCI({}, ny * nx * sizeof(f32),
-                                vk::BufferUsageFlagBits::eStorageBuffer |
-                                    vk::BufferUsageFlagBits::eTransferDst |
-                                    vk::BufferUsageFlagBits::eTransferSrc);
-  const u32 n_target = (ny * nx) / 16;
-  vk::BufferCreateInfo minmaxBCI({}, n_target * sizeof(f32),
+  const u32 source_length = nx * ny;
+  vk::BufferCreateInfo value_bci({}, source_length * sizeof(f32),
                                  vk::BufferUsageFlagBits::eStorageBuffer |
                                      vk::BufferUsageFlagBits::eTransferDst |
                                      vk::BufferUsageFlagBits::eTransferSrc);
-  value_buffer.allocate(manager.allocator, img_alloc_create_info, valueBCI);
-  minmax_buffer.allocate(manager.allocator, img_alloc_create_info, minmaxBCI);
-  std::vector<f32> values(ny * nx);
+  const u32 n_target = (ny * nx) / 16;
+  vk::BufferCreateInfo minmax_bci({}, n_target * sizeof(f32),
+                                  vk::BufferUsageFlagBits::eStorageBuffer |
+                                      vk::BufferUsageFlagBits::eTransferDst |
+                                      vk::BufferUsageFlagBits::eTransferSrc);
+  value_buffer.allocate(manager.allocator, img_alloc_create_info, value_bci);
+  minmax_buffer.allocate(manager.allocator, img_alloc_create_info, minmax_bci);
+  std::vector<f32> values(source_length);
   for (u32 j = 0; j < ny; j++) {
     for (u32 i = 0; i < nx; i++) {
       values[nx * j + i] = (f32)(i + j);
@@ -1063,21 +1092,33 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
   }
   manager.write_to_buffer(value_buffer, values);
 
-  auto first_minmax_code =
-      read_file<u32>(std::string(base_path) + "Shaders/firstminmax.spv");
-  auto minmax_code =
-      read_file<u32>(std::string(base_path) + "Shaders/minmax.spv");
-  const size_t reduction_spec_sizes = 4;
-  first_minmax_reduction.initialize(manager.device, 0, 1, 0, first_minmax_code,
-                                    pcast<u8>(&n_target), &reduction_spec_sizes,
-                                    1);
-  minmax_reduction.initialize(manager.device, 0, 1, 0, minmax_code,
-                              pcast<u8>(&n_target), &reduction_spec_sizes, 1);
+  const auto first_minmax_code = read_file<u32>("Shaders/firstminmax.spv");
+  auto minmax_code = read_file<u32>("Shaders/minmax.spv");
+  // const std::vector<f32> first_minmax_specs{bit_cast<f32>(source_length),
+  //                                           bit_cast<f32>(n_target)};
+  std::span<const f32> first_minmax_specs =
+      spec_span(&source_length, &source_length + 1);
+  std::span<const f32> minmax_specs = spec_span(&n_target, &n_target + 1);
+  spdlog::debug("Initializing first minmax reduction algorithm");
+  first_minmax_reduction.initialize(manager.device, first_minmax_code, 0, 2, 0,
+                                    first_minmax_specs);
+  std::vector<const MetaBuffer*> first_minmax_buffers{&value_buffer,
+                                                      &minmax_buffer};
+  first_minmax_reduction.bind_data({}, first_minmax_buffers, {});
+  spdlog::debug("Initializing minmax reduction algorithm");
+  std::vector<const MetaBuffer*> minmax_buffers{&minmax_buffer};
+  minmax_reduction.initialize(manager.device, minmax_code, 0, 1, 0,
+                              minmax_specs);
+  minmax_reduction.bind_data({}, minmax_buffers, {});
 
-  auto fill_code =
-      read_file<u32>(std::string(base_path) + "Shaders/colormap.spv");
-  fill_colormap_img.initialize(p_mgr->device, 1, 3, 0, fill_code,
-                               pcast<u8>(&n_target), &reduction_spec_sizes, 1);
+  auto fill_code = read_file<u32>("Shaders/colormap.spv");
+  spdlog::debug("Initializing colormap algorithm");
+  fill_colormap_img.initialize(manager.device, fill_code, 1, 3, 0,
+                               minmax_specs);
+  std::vector<const MetaBuffer*> colormap_buffers{&colormap, &value_buffer,
+                                                  &minmax_buffer};
+  fill_colormap_img.bind_data({&colormap_view, &colormap_view + 1},
+                              colormap_buffers, {});
 
   vk::SamplerCreateInfo colormap_sampler_info(
       vk::SamplerCreateFlags(), vk::Filter::eNearest, vk::Filter::eNearest,
@@ -1150,7 +1191,7 @@ Renderer::Renderer(Manager& manager, u32 nx, u32 ny) : p_mgr{&manager} {
     x = (x + 31) / 32;
   }
   append_op(reduction_buffer, minmax_reduction, 1, 1, 1);
-  append_op(reduction_buffer, fill_colormap_img, nx / 8, ny / 8, 1);
+  append_op(reduction_buffer, fill_colormap_img, nx / 8, ny / 4, 1);
   vk::ImageMemoryBarrier storage_to_present{};
   storage_to_present.setOldLayout(vk::ImageLayout::eGeneral);
   storage_to_present.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -1194,8 +1235,7 @@ void Renderer::cleanup_swapchain() {
 }
 void Renderer::recreate_swapchain() {
   p_mgr->device.waitIdle();
-  capabilities =
-      p_mgr->physical_device.getSurfaceCapabilitiesKHR(p_mgr->surface);
+  capabilities = p_mgr->physical_device.getSurfaceCapabilitiesKHR(surface);
   if (capabilities.currentExtent.width ==
       std::numeric_limits<uint32_t>::max()) {
     s32 width = 0;
@@ -1220,7 +1260,7 @@ void Renderer::recreate_swapchain() {
                                          capabilities.maxImageExtent.height);
   }
   vk::SwapchainKHR new_swapchain = create_swapchain(
-      p_mgr->device, p_mgr->surface, capabilities, surface_format, present_mode,
+      p_mgr->device, surface, capabilities, surface_format, present_mode,
       swapchain_extent, n_images, render_queue_indices, swapchain);
   cleanup_swapchain();
   swapchain = new_swapchain;
