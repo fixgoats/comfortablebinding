@@ -4,18 +4,24 @@
 #include "spdlog/spdlog.h"
 #include "typedefs.h"
 #include "vkcore.hpp"
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_surface.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <cxxopts.hpp>
 #include <execution>
 #include <iostream>
+#include <numbers>
 #include <random>
+#include <utility>
 #include <variant>
 #include <vector>
 
 using Eigen::Vector3d, Eigen::Vector2d, Eigen::Matrix3Xd, Eigen::Matrix3d,
-    Eigen::Matrix2d;
+    Eigen::Matrix2d, std::numbers::sqrt3;
 
 template <class T>
 struct Node {
@@ -24,7 +30,7 @@ struct Node {
 
   Node(T obj) : data{obj} { std::cout << "Node(T) constructor.\n"; }
   Node(std::vector<std::shared_ptr<Node<T>>> ch, T obj)
-      : children{ch}, data{obj} {}
+      : children{std::move(ch)}, data{obj} {}
 };
 
 template <class T>
@@ -45,30 +51,32 @@ Tree<u64> add_trees(Tree<u64>& a, Tree<u64>& b) {
 }
 
 template <class... Ts>
-struct overloads : Ts... {
+struct Overloads : Ts... {
   using Ts::operator()...;
 };
 
-constexpr double sq3 = 1.7320508075688772935;
+// constexpr double sqrt3 = std::numbers::sqrt3;
 
-static const Eigen::Matrix<f64, 3, 13> hat =
+static const Eigen::Matrix<f64, 3, 13> HAT =
     (Eigen::Matrix<f64, 3, 13>() << 0., -0.75, -0.5, 0.5, 0.75, 1.5, 2.25, 2.,
-     1.5, 1.5, 0.75, 0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
-     -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
-     0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+     1.5, 1.5, 0.75, 0.5, 0., 0., -0.25 * sqrt3, -0.5 * sqrt3, -0.5 * sqrt3,
+     -0.25 * sqrt3, -0.5 * sqrt3, -0.25 * sqrt3, 0., 0., 0.5 * sqrt3,
+     0.75 * sqrt3, 0.5 * sqrt3, 0.5 * sqrt3, 1., 1., 1., 1., 1., 1., 1., 1., 1.,
+     1., 1., 1., 1.)
         .finished();
-// c64{0., 0.}, c64{-0.75, -0.25 * sq3}, c64{-0.5, -0.5 * sq3},
-//     c64{0.5, -0.5 * sq3}, c64{0.75, -0.25 * sq3}, c64{1.5, -0.5 * sq3},
-//     c64{2.25, -0.25 * sq3}, c64{2., 0.}, c64{1.5, 0.}, c64{1.5, 0.5 * sq3},
-//     c64{0.75, 0.75 * sq3}, c64{0.5, 0.5 * sq3}, c64 {
-//   0., 0.5 * sq3
+// c64{0., 0.}, c64{-0.75, -0.25 * sqrt3}, c64{-0.5, -0.5 * sqrt3},
+//     c64{0.5, -0.5 * sqrt3}, c64{0.75, -0.25 * sqrt3}, c64{1.5, -0.5 * sqrt3},
+//     c64{2.25, -0.25 * sqrt3}, c64{2., 0.}, c64{1.5, 0.}, c64{1.5, 0.5 *
+//     sqrt3}, c64{0.75, 0.75 * sqrt3}, c64{0.5, 0.5 * sqrt3}, c64 {
+//   0., 0.5 * sqrt3
 // }
 
-static const Eigen::Matrix<f64, 3, 13> hat1 =
+static const Eigen::Matrix<f64, 3, 13> HAT1 =
     (Eigen::Matrix<f64, 3, 13>() << 0., 0.75, 0.5, -0.5, -0.75, -1.5, -2.25,
-     -2., -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
-     -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
-     0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+     -2., -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sqrt3, -0.5 * sqrt3,
+     -0.5 * sqrt3, -0.25 * sqrt3, -0.5 * sqrt3, -0.25 * sqrt3, 0., 0.,
+     0.5 * sqrt3, 0.75 * sqrt3, 0.5 * sqrt3, 0.5 * sqrt3, 1., 1., 1., 1., 1.,
+     1., 1., 1., 1., 1., 1., 1., 1.)
         .finished();
 
 constexpr Matrix3d aff_rot(f64 ang) {
@@ -82,18 +90,20 @@ constexpr Matrix3d sixth_rot(u64 i) {
   case 0:
     return Matrix3d::Identity();
   case 1:
-    return (Matrix3d() << 0.5, -sq3 / 2., 0., sq3 / 2., 0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << 0.5, -sqrt3 / 2., 0., sqrt3 / 2., 0.5, 0., 0., 0., 1.)
         .finished();
   case 2:
-    return (Matrix3d() << -0.5, -sq3 / 2., 0., sq3 / 2., -0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << -0.5, -sqrt3 / 2., 0., sqrt3 / 2., -0.5, 0., 0., 0.,
+            1.)
         .finished();
   case 3:
     return (Matrix3d() << -1., 0., 0., 0., -1., 0., 0., 0., 1.).finished();
   case 4:
-    return (Matrix3d() << -0.5, sq3 / 2., 0., -sq3 / 2., -0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << -0.5, sqrt3 / 2., 0., -sqrt3 / 2., -0.5, 0., 0., 0.,
+            1.)
         .finished();
   case 5:
-    return (Matrix3d() << 0.5, sq3 / 2., 0., -sq3 / 2., 0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << 0.5, sqrt3 / 2., 0., -sqrt3 / 2., 0.5, 0., 0., 0., 1.)
         .finished();
   default:
     return sixth_rot(i % 6);
@@ -170,51 +180,56 @@ struct ShapeMaker {
   // Eigen::Matrix<f64, 3, 5> penta;
   // Eigen::Matrix<f64, 3, 6> hexa;
   // Eigen::Matrix<f64, 3, 13> hat;
-  // Eigen::Matrix<f64, 3, 13> hat1;
+  // Eigen::Matrix<f64, 3, 13> HAT1;
   // };
   // std::shared_ptr<Shape> p_shape;
 
   std::shared_ptr<shape_var_t> p_shape;
 
-  Matrix3Xd to_hats(Matrix3d transf) {
-    const auto visitor = overloads{
+  [[nodiscard]] Matrix3Xd to_hats(Matrix3d transf) const {
+    const auto visitor = Overloads{
         [this, transf](Eigen::Matrix<f64, 3, 6>) {
           std::cout << "found hexagon\n";
           return Matrix3Xd{
               transf * transform *
               (Matrix3Xd(3, 4 * 13)
-                   << translate_by(sixth_rot(5), {2.5, 0.5 * sq3}) * hat1,
-               translate_by(sixth_rot(4), {10., sq3}) * hat,
-               translate_by(sixth_rot(4), {4., sq3}) * hat,
-               translate_by(sixth_rot(2), {2.5, 1.5 * sq3}) * hat)
+                   << translate_by(sixth_rot(5), {2.5, 0.5 * sqrt3}) * HAT1,
+               translate_by(sixth_rot(4), {10., sqrt3}) * HAT,
+               translate_by(sixth_rot(4), {4., sqrt3}) * HAT,
+               translate_by(sixth_rot(2), {2.5, 1.5 * sqrt3}) * HAT)
                   .finished()};
         },
         [this, transf](Eigen::Matrix<f64, 3, 3>) {
           std::cout << "Found triangle\n";
-          std::cout << "Should output transformed version of:\n" << hat << '\n';
-          return Matrix3Xd(transf * transform * transl2({0.5, 0.5 * sq3}) *
-                           hat);
+          std::cout << "Should output transformed version of:\n" << HAT << '\n';
+          return Matrix3Xd(transf * transform * transl2({0.5, 0.5 * sqrt3}) *
+                           HAT);
         },
         [this, transf](Eigen::Matrix<f64, 3, 4>) {
           std::cout << "Found parallellogram\n";
           return Matrix3Xd{
               transf * transform *
-              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
-               translate_by(sixth_rot(5), {0., sq3}) * hat)
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sqrt3}) * HAT,
+               translate_by(sixth_rot(5), {0., sqrt3}) * HAT)
                   .finished()};
         },
         [this, transf](Eigen::Matrix<f64, 3, 5>) {
           std::cout << "Found pentagon\n";
           return Matrix3Xd{
               transf * transform *
-              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
-               translate_by(sixth_rot(5), {0., sq3}) * hat)
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sqrt3}) * HAT,
+               translate_by(sixth_rot(5), {0., sqrt3}) * HAT)
                   .finished()};
         }};
     return std::visit<Matrix3Xd>(visitor, *p_shape); //->visit(visitor);
-    // return hat;
   }
 };
+
+#define SDLCHECK(cmd)                                                          \
+  if (!(cmd)) {                                                                \
+    SDL_Log("%s", SDL_GetError());                                             \
+    return -1;                                                                 \
+  }
 
 int main(int argc, char* argv[]) {
   cxxopts::Options options("test program", "bleh");
@@ -226,18 +241,41 @@ int main(int argc, char* argv[]) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return EXIT_FAILURE;
   }
-  if (result["v"].count()) {
+  if (static_cast<bool>(result["v"].count())) {
     spdlog::set_level(spdlog::level::trace);
   }
-  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
-  auto window = SDL_CreateWindow("test", 800, 800, SDL_WINDOW_RESIZABLE);
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    SDL_Log("Initializing SDL failed.");
+    return -1;
+  }
+
+  auto* window = SDL_CreateWindow("test", 800, 800, SDL_WINDOW_RESIZABLE);
 
   SDL_Event event;
   bool should_quit = false;
-  while (event.type != SDL_EVENT_QUIT) {
+  SDL_Surface* w_surf = SDL_GetWindowSurface(window);
+  SDL_Surface* img = SDL_LoadBMP("pic.bmp");
+  SDL_Rect win_rect = {0, 0, 800, 800};
+  SDLCHECK(SDL_BlitSurface(img, nullptr, w_surf, nullptr));
+  SDLCHECK(SDL_UpdateWindowSurface(window));
+
+  while (!should_quit) {
+    auto start = std::chrono::high_resolution_clock::now();
     while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+        should_quit = true;
+      }
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    if (auto frame_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+                .count();
+        frame_duration < 16) {
+      SDL_Delay(16 - frame_duration);
     }
   }
 
+  SDL_DestroyWindowSurface(window);
+  SDL_DestroyWindow(window);
   return 0;
 }

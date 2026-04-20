@@ -40,6 +40,17 @@ constexpr bool fleq(auto x, auto y, double tol) {
   return std::abs(y - x) < tol;
 }
 
+constexpr s64 binpow(s64 base, s64 exp) {
+  s64 ret = 1;
+  while (exp > 0) {
+    if (static_cast<bool>(exp & 1)) {
+      ret = ret * base;
+    }
+    base = base * base;
+    exp >>= 1;
+  }
+  return ret;
+}
 // Note: only for x86. Not sure if simd friendly
 static inline u32 uintlog2(u32 x) {
   uint32_t y;

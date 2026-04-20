@@ -5,6 +5,7 @@
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "typedefs.h"
+#include <array>
 #include <boost/pfr/core.hpp>
 #include <chrono>
 #include <cstddef>
@@ -20,13 +21,13 @@ constexpr u32 GRID_HEIGHT = 512;
 constexpr u32 round_up_x16(u32 n) { return ((n + 15) / 16) * 16; }
 
 struct PositionTextureVertex {
-  f32 pos[2];
-  f32 uv[2];
+  std::array<f32, 2> pos;
+  std::array<f32, 2> uv;
 
-  static vk::VertexInputBindingDescription bindingDscr() {
+  static vk::VertexInputBindingDescription binding_dscr() {
     return {0, sizeof(PositionTextureVertex), vk::VertexInputRate::eVertex};
   }
-  static std::array<vk::VertexInputAttributeDescription, 2> attributeDscr() {
+  static std::array<vk::VertexInputAttributeDescription, 2> attribute_dscr() {
     return {{{0, 0, vk::Format::eR32G32Sfloat,
               offsetof(PositionTextureVertex, pos)},
              {1, 0, vk::Format::eR32G32Sfloat,
@@ -35,17 +36,17 @@ struct PositionTextureVertex {
 };
 
 template <typename T>
-std::vector<T> readFile(const std::string& filename) {
+std::vector<T> read_file(const std::string& filename) {
   std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
   if (!file.is_open()) {
     throw runtime_exc("failed to open file: {}!", filename);
   }
 
-  size_t fileSize = static_cast<size_t>(file.tellg());
-  std::vector<T> buffer(fileSize / sizeof(T));
+  size_t file_size = static_cast<size_t>(file.tellg());
+  std::vector<T> buffer(file_size / sizeof(T));
   file.seekg(0);
-  file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
+  file.read(reinterpret_cast<char*>(buffer.data()), file_size);
   file.close();
   return buffer;
 }
@@ -59,9 +60,9 @@ inline std::string tstamp() {
                      local_tm.tm_min);
 }
 
-void saveToFile(std::string fname, const char* buf, size_t size);
+void save_to_file(std::string fname, const char* buf, size_t size);
 
-constexpr u32 maxFramesInFlight = 2;
+constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
 /*struct SimConstants {
   u32 nElementsX;
@@ -91,8 +92,9 @@ constexpr u32 maxFramesInFlight = 2;
 // std::ostream& operator<<(std::ostream& os, const SimConstants& obj);
 // std::ofstream& operator<<(std::ofstream& os, const SimConstants& obj);
 
-const vk::MemoryBarrier fullMemoryBarrier(vk::AccessFlagBits::eMemoryWrite,
-                                          vk::AccessFlagBits::eMemoryRead);
+static const vk::MemoryBarrier
+    FULL_MEMORY_BARRIER(vk::AccessFlagBits::eMemoryWrite,
+                        vk::AccessFlagBits::eMemoryRead);
 
 struct MetaBuffer {
   // A buffer + allocation stuff that you generally need to reference when using
@@ -102,12 +104,13 @@ struct MetaBuffer {
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
   MetaBuffer();
-  MetaBuffer(VmaAllocator& allocator, VmaAllocationCreateInfo& allocCreateInfo,
-             vk::BufferCreateInfo& BCI);
+  MetaBuffer(VmaAllocator& allocator,
+             VmaAllocationCreateInfo& alloc_create_info,
+             vk::BufferCreateInfo& bci);
   // To call on default constructed metabuffer
   void allocate(VmaAllocator& allocator,
-                VmaAllocationCreateInfo& allocCreateInfo,
-                vk::BufferCreateInfo& BCI);
+                VmaAllocationCreateInfo& alloc_create_info,
+                vk::BufferCreateInfo& bci);
   ~MetaBuffer();
 };
 
@@ -118,11 +121,11 @@ struct AllocatedImage {
   VmaAllocationInfo aInfo;
   AllocatedImage();
   AllocatedImage(VmaAllocator& allocator,
-                 VmaAllocationCreateInfo& allocCreateInfo,
-                 vk::ImageCreateInfo& iCI);
+                 VmaAllocationCreateInfo& alloc_create_info,
+                 vk::ImageCreateInfo& ici);
   void allocate(VmaAllocator& allocator,
-                VmaAllocationCreateInfo& allocCreateInfo,
-                vk::ImageCreateInfo& iCI);
+                VmaAllocationCreateInfo& alloc_create_info,
+                vk::ImageCreateInfo& ici);
   ~AllocatedImage();
 };
 
@@ -145,151 +148,157 @@ struct Algorithm {
   vk::Pipeline m_Pipeline;
   Algorithm() = default;
   Algorithm(vk::Device device, u32 img_views, u32 buffers, u32 n_ubo,
-            const std::vector<u32>& spirv, const u8* specConsts = nullptr,
-            const size_t* sizes = nullptr, size_t nConsts = 0,
-            const size_t* pushSizes = nullptr, size_t nPushConstants = 0);
+            const std::vector<u32>& spirv, const u8* spec_consts = nullptr,
+            const size_t* sizes = nullptr, size_t n_consts = 0,
+            const size_t* push_sizes = nullptr, size_t n_push_constants = 0);
   void initialize(vk::Device device, u32 n_imgs, u32 n_buffers, u32 n_ubo,
-                  const std::vector<u32>& spirv, const u8* specConsts = nullptr,
-                  const size_t* sizes = nullptr, size_t nConsts = 0,
-                  const size_t* pushSizes = nullptr, size_t nPushConstants = 0);
-  void bindData(const std::vector<vk::ImageView>& img_views,
-                const std::vector<MetaBuffer*>& buffers,
-                const std::vector<MetaBuffer*>& ubos);
+                  const std::vector<u32>& spirv,
+                  const u8* spec_consts = nullptr,
+                  const size_t* sizes = nullptr, size_t n_consts = 0,
+                  const size_t* push_sizes = nullptr,
+                  size_t n_push_constants = 0);
+  void bind_data(const std::vector<vk::ImageView>& img_views,
+                 const std::vector<MetaBuffer*>& buffers,
+                 const std::vector<MetaBuffer*>& ubos) const;
   ~Algorithm();
 };
 
-static const std::vector<std::string> deviceExtensions = {
+static const std::vector<std::string> DEVICE_EXTENSIONS = {
     vk::KHRSwapchainExtensionName};
 
 struct Manager {
   vk::Instance instance;
-  vk::PhysicalDevice physicalDevice;
+  vk::PhysicalDevice physical_device;
   vk::Device device;
   vk::Queue queue;
   vk::Fence fence;
   VmaAllocator allocator;
   vk::Buffer staging;
-  VmaAllocation stagingAllocation;
-  VmaAllocationInfo stagingInfo;
-  u32 cQFI = UINT32_MAX;
-  vk::CommandPool commandPool;
+  VmaAllocation staging_allocation;
+  VmaAllocationInfo staging_info;
+  u32 c_qfi = UINT32_MAX;
+  vk::CommandPool command_pool;
   vk::SurfaceKHR surface;
 
-  Manager(size_t stagingSize);
-  void finishSetup(size_t stagingSize, vk::SurfaceKHR& surface);
+  Manager(size_t staging_size);
+  void finish_setup(size_t staging_size, vk::SurfaceKHR& surface);
   // Manager uses a single staging buffer for efficient copies.
-  void copyBuffer(vk::Buffer& srcBuffer, vk::Buffer& dstBuffer, u32 bufferSize,
-                  u32 src_offset = 0, u32 dst_offset = 0);
-  void copyInBatches(vk::Buffer& srcBuffer, vk::Buffer& dstBuffer,
-                     u32 batchSize, u32 numBatches);
-  vk::CommandBuffer copyOp(vk::Buffer srcBuffer, vk::Buffer dstBuffer,
-                           u32 bufferSize, u32 src_offset = 0,
-                           u32 dst_offset = 0);
+  void copy_buffer(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
+                   u32 buffer_size, u32 src_offset = 0,
+                   u32 dst_offset = 0) const;
+  void copy_in_batches(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
+                       u32 batch_size, u32 num_batches);
+  [[nodiscard]] vk::CommandBuffer copy_op(vk::Buffer src_buffer,
+                                          vk::Buffer dst_buffer,
+                                          u32 buffer_size, u32 src_offset = 0,
+                                          u32 dst_offset = 0) const;
 
-  vk::CommandBuffer beginRecord(vk::CommandBufferUsageFlagBits bits = {});
+  [[nodiscard]] vk::CommandBuffer
+  begin_record(vk::CommandBufferUsageFlagBits bits = {}) const;
   void execute(vk::CommandBuffer& b);
-  void executeNoSync(vk::CommandBuffer& b);
-  void queueWaitIdle();
-  void getQueueFamilyIndices(vk::SurfaceKHR& surface);
-  void writeToBuffer(MetaBuffer& buffer, const void* input, size_t size,
-                     size_t src_offset = 0, size_t dst_offset = 0);
+  void execute_no_sync(vk::CommandBuffer& b) const;
+  void queue_wait_idle() const;
+  void get_queue_family_indices(vk::SurfaceKHR& surface);
+  void write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
+                       size_t src_offset = 0, size_t dst_offset = 0);
   template <class T>
-  void writeToBuffer(MetaBuffer& buffer, std::vector<T> vec) {
-    writeToBuffer(buffer, vec.data(), vec.size() * sizeof(T));
+  void write_to_buffer(MetaBuffer& buffer, std::vector<T> vec) {
+    write_to_buffer(buffer, vec.data(), vec.size() * sizeof(T));
   }
-  void writeFromBuffer(MetaBuffer& buffer, void* output, size_t size);
+  void write_from_buffer(MetaBuffer& source, void* dest, size_t size);
   template <class T>
-  void writeFromBuffer(MetaBuffer& buffer, std::vector<T>& v) {
-    writeFromBuffer(buffer, v.data(), v.size() * sizeof(T));
+  void write_from_buffer(MetaBuffer& buffer, std::vector<T>& v) {
+    write_from_buffer(buffer, v.data(), v.size() * sizeof(T));
   }
   template <class T>
-  void defaultInitBuffer(MetaBuffer& buffer, u32 nElements) {
-    T* TStagingPtr = bit_cast<T*>(stagingInfo.pMappedData);
-    for (u32 i = 0; i < nElements; i++) {
-      TStagingPtr[i] = {};
+  void default_init_buffer(MetaBuffer& buffer, u32 n_elements) {
+    T* staging_ptr = bit_cast<T*>(staging_info.pMappedData);
+    for (u32 i = 0; i < n_elements; i++) {
+      staging_ptr[i] = {};
     }
-    copyBuffer(staging, buffer.buffer, nElements * sizeof(T));
+    copy_buffer(staging, buffer.buffer, n_elements * sizeof(T));
   }
   template <typename T>
-  [[nodiscard]] MetaBuffer makeRawBuffer(u32 nElements) {
-    vk::BufferCreateInfo bCI{vk::BufferCreateFlags(),
-                             round_up_x16(nElements * sizeof(T)),
+  [[nodiscard]] MetaBuffer make_raw_buffer(u32 n_elements) {
+    vk::BufferCreateInfo bci{vk::BufferCreateFlags(),
+                             round_up_x16(n_elements * sizeof(T)),
                              vk::BufferUsageFlagBits::eStorageBuffer |
                                  vk::BufferUsageFlagBits::eTransferDst |
                                  vk::BufferUsageFlagBits::eTransferSrc,
                              vk::SharingMode::eExclusive,
                              1,
-                             &cQFI};
-    VmaAllocationCreateInfo allocCreateInfo{};
-    allocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocCreateInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-    allocCreateInfo.priority = 1.0f;
-    return MetaBuffer{allocator, allocCreateInfo, bCI};
+                             &c_qfi};
+    VmaAllocationCreateInfo alloc_create_info{};
+    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.priority = 1.0F;
+    return MetaBuffer{allocator, alloc_create_info, bci};
   }
   template <typename T>
-  MetaBuffer makeUniformObject(T obj) {
-    vk::BufferCreateInfo bCI{vk::BufferCreateFlags(),
+  MetaBuffer make_uniform_object() {
+    vk::BufferCreateInfo bci{vk::BufferCreateFlags(),
                              sizeof(T),
                              vk::BufferUsageFlagBits::eUniformBuffer |
                                  vk::BufferUsageFlagBits::eTransferDst |
                                  vk::BufferUsageFlagBits::eTransferSrc,
                              vk::SharingMode::eExclusive,
                              1,
-                             &cQFI};
-    VmaAllocationCreateInfo allocCreateInfo{};
-    allocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocCreateInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-    allocCreateInfo.priority = 1.0f;
-    return MetaBuffer{allocator, allocCreateInfo, bCI};
+                             &c_qfi};
+    VmaAllocationCreateInfo alloc_create_info{};
+    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.priority = 1.0F;
+    return MetaBuffer{allocator, alloc_create_info, bci};
   }
 
-  void freeCommandBuffer(vk::CommandBuffer& b) {
-    device.freeCommandBuffers(commandPool, 1, &b);
+  void free_command_buffer(vk::CommandBuffer& b) const {
+    device.freeCommandBuffers(command_pool, 1, &b);
   }
 
-  void freeCommandBuffers(vk::CommandBuffer* b, u32 n) {
-    device.freeCommandBuffers(commandPool, n, b);
+  void free_command_buffers(vk::CommandBuffer* b, u32 n) const {
+    device.freeCommandBuffers(command_pool, n, b);
   }
 
   template <typename T>
-  [[nodiscard]] MetaBuffer vecToBuffer(const std::vector<T>& v) {
-    auto buffer = makeRawBuffer<T>(v.size());
-    writeToBuffer(buffer, v);
+  [[nodiscard]] MetaBuffer vec_to_buffer(const std::vector<T>& v) {
+    auto buffer = make_raw_buffer<T>(v.size());
+    write_to_buffer(buffer, v);
     return buffer;
   }
-  [[nodiscard]] Algorithm makeAlgorithmRaw(
+  [[nodiscard]] Algorithm make_algorithm_raw(
       std::string spirvname, const std::vector<vk::ImageView>& images,
-      const std::vector<MetaBuffer*>& buffers, const u8* specConsts = nullptr,
-      const size_t* specConstOffsets = nullptr, size_t nConsts = 0,
-      const size_t* pushSizes = nullptr, size_t nPushConstants = 0);
+      const std::vector<MetaBuffer*>& buffers, const u8* spec_consts = nullptr,
+      const size_t* spec_const_offsets = nullptr, size_t n_consts = 0,
+      const size_t* push_sizes = nullptr, size_t n_push_constants = 0) const;
 
   template <class T>
   [[nodiscard]] Algorithm
-  makeAlgorithm(std::string spirvname, const std::vector<vk::ImageView>& images,
-                std::vector<MetaBuffer*> buffers, const T specConsts) {
+  make_algorithm(std::string spirvname,
+                 const std::vector<vk::ImageView>& images,
+                 std::vector<MetaBuffer*> buffers, const T spec_consts) {
     constexpr auto sizes = struct_field_sizes<T>();
     constexpr auto n_fields = sizes.size();
-    return makeAlgorithmRaw(spirvname, images, buffers,
-                            bit_cast<const u8*>(&specConsts), sizes.data(),
-                            sizes.size());
+    return make_algorithm_raw(spirvname, images, buffers,
+                              bit_cast<const u8*>(&spec_consts), sizes.data(),
+                              sizes.size());
   }
   template <class PushType, class T>
-  [[nodiscard]] Algorithm makeAlgorithm(std::string spirvname,
-                                        std::vector<MetaBuffer*> buffers,
-                                        const T specConsts) {
-    constexpr size_t nSpecConsts = boost::pfr::tuple_size_v<T>;
-    std::array<size_t, nSpecConsts> sizes;
-    constexpr_for<0, nSpecConsts, 1>([&sizes](auto i) {
+  [[nodiscard]] Algorithm make_algorithm(std::string spirvname,
+                                         std::vector<MetaBuffer*> buffers,
+                                         const T spec_consts) {
+    constexpr size_t n_spec_consts = boost::pfr::tuple_size_v<T>;
+    std::array<size_t, n_spec_consts> sizes;
+    constexpr_for<0, n_spec_consts, 1>([&sizes](auto i) {
       sizes[i] = sizeof(boost::pfr::tuple_element_t<i, T>);
     });
-    constexpr size_t nPushConsts = boost::pfr::tuple_size_v<PushType>;
-    std::array<size_t, nPushConsts> pushSizes;
-    constexpr_for<0, nPushConsts, 1>([&pushSizes](auto i) {
-      pushSizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
+    constexpr size_t n_push_consts = boost::pfr::tuple_size_v<PushType>;
+    std::array<size_t, n_push_consts> push_sizes;
+    constexpr_for<0, n_push_consts, 1>([&push_sizes](auto i) {
+      push_sizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
     });
-    return makeAlgorithmRaw(spirvname, {}, buffers,
-                            bit_cast<const u8*>(&specConsts), sizes.data(),
-                            sizes.size(), pushSizes.data(), pushSizes.size());
+    return make_algorithm_raw(
+        spirvname, {}, buffers, bit_cast<const u8*>(&spec_consts), sizes.data(),
+        sizes.size(), push_sizes.data(), push_sizes.size());
   }
   ~Manager();
 };
@@ -298,33 +307,33 @@ struct Renderer {
   // non-owned
   Manager* p_mgr;
   //  owned
-  vk::RenderPass renderPass;
-  vk::Pipeline graphicsPipeline;
-  vk::PipelineLayout graphicsPipelineLayout;
+  vk::RenderPass render_pass;
+  vk::Pipeline graphics_pipeline;
+  vk::PipelineLayout graphics_pipeline_layout;
   vk::SwapchainKHR swapchain;
-  std::vector<vk::Framebuffer> swapChainFrameBuffers;
-  std::vector<vk::Image> swapChainImages;
-  vk::Format swapChainImageFormat;
-  vk::Extent2D swapChainExtent;
+  std::vector<vk::Framebuffer> swapchain_fbs;
+  std::vector<vk::Image> swapchain_imgs;
+  vk::Format swapchain_img_fmt;
+  vk::Extent2D swapchain_extent;
   std::array<u32, 2> render_queue_indices = {UINT32_MAX, UINT32_MAX};
-  vk::Queue graphicsQueue;
-  vk::Queue presentQueue;
-  std::vector<vk::ImageView> swapChainImageViews;
-  std::vector<vk::Semaphore> imageAvailableSemaphores;
-  std::vector<vk::Semaphore> renderFinishedSemaphores;
-  std::vector<vk::Fence> imageInFlightFences;
-  std::vector<vk::Fence> inFlightFences;
+  vk::Queue graphics_queue;
+  vk::Queue present_queue;
+  std::vector<vk::ImageView> swapchain_img_views;
+  std::vector<vk::Semaphore> image_available_semaphores;
+  std::vector<vk::Semaphore> render_finished_semaphores;
+  std::vector<vk::Fence> image_in_flight_fences;
+  std::vector<vk::Fence> in_flight_fences;
   vk::CommandPool command_pool;
-  std::vector<vk::CommandBuffer> commandBuffers;
+  std::vector<vk::CommandBuffer> command_buffers;
   vk::CommandBuffer reduction_buffer;
-  MetaBuffer vertexBuffer;
+  MetaBuffer vertex_buffer;
   AllocatedImage colormap_img;
   MetaBuffer colormap;
   vk::ImageView colormap_view;
   vk::Sampler colormap_sampler;
-  vk::DescriptorSetLayout descriptorSetLayout;
-  vk::DescriptorPool descriptorPool;
-  vk::DescriptorSet descriptorSet;
+  vk::DescriptorSetLayout descriptor_set_layout;
+  vk::DescriptorPool descriptor_pool;
+  vk::DescriptorSet descriptor_set;
   vk::SurfaceCapabilitiesKHR capabilities;
   vk::SurfaceFormatKHR surface_format;
   vk::PresentModeKHR present_mode;
@@ -334,37 +343,37 @@ struct Renderer {
   Algorithm minmax_reduction;
   Algorithm fill_colormap_img;
   u32 n_images;
-  bool frameBufferResized;
-  u32 currentFrame = 0;
+  bool frame_buffer_resized;
+  u32 current_frame = 0;
 
   Renderer(Manager& manager, u32 nx, u32 ny);
-  void cleanupSwapchain();
-  void recreateSwapchain();
-  void drawFrame();
+  void cleanup_swapchain();
+  void recreate_swapchain();
+  void draw_frame();
   ~Renderer();
 };
 
-std::vector<u32> readFile(const std::string& filename);
-vk::PhysicalDevice pickPhysicalDevice(const vk::Instance& instance,
-                                      const s32 desiredGPU = -1);
+std::vector<u32> read_file(const std::string& filename);
+vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
+                                        s32 desired_gpu = -1);
 
 template <typename Func>
-void oneTimeSubmit(const vk::Device& device, const vk::CommandPool& commandPool,
-                   const vk::Queue& queue, const Func& func) {
-  vk::CommandBuffer commandBuffer =
+void one_time_submit(vk::Device device, vk::CommandPool cmd_pool,
+                     vk::Queue queue, Func func) {
+  vk::CommandBuffer cmd_buffer =
       device
           .allocateCommandBuffers(
-              {commandPool, vk::CommandBufferLevel::ePrimary, 1})
+              {cmd_pool, vk::CommandBufferLevel::ePrimary, 1})
           .front();
-  commandBuffer.begin(vk::CommandBufferBeginInfo(
+  cmd_buffer.begin(vk::CommandBufferBeginInfo(
       vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-  func(commandBuffer);
-  commandBuffer.end();
-  vk::SubmitInfo submitInfo(nullptr, nullptr, commandBuffer);
-  queue.submit(submitInfo, nullptr);
+  func(cmd_buffer);
+  cmd_buffer.end();
+  vk::SubmitInfo submit_info(nullptr, nullptr, cmd_buffer);
+  queue.submit(submit_info, nullptr);
   queue.waitIdle();
 }
 
-void appendOp(vk::CommandBuffer& b, Algorithm& a, u32 X, u32 Y, u32 Z);
-void appendOpNoBarrier(vk::CommandBuffer& b, Algorithm& a, u32 X, u32 Y = 1,
-                       u32 Z = 1);
+void append_op(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
+void append_op_no_barrier(vk::CommandBuffer b, const Algorithm& a, u32 x,
+                          u32 y = 1, u32 z = 1);
