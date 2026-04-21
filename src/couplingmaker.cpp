@@ -71,12 +71,11 @@ int main(int argc, char* argv[]) {
       "containing Nx2 dataset \"points\" with the points, and Nx2 dataset "
       "\"couplings\" containing the indices of points in the first column and "
       "the indices of points they connect to in the second.");
-  options.add_options()("points", "TOML configuration",
+  options.add_options()("points", "File containing points",
                         cxxopts::value<std::string>())(
       "r,radius", "Search radius", cxxopts::value<f64>())(
       "o,out", "Output file", cxxopts::value<std::string>())(
-      "w,window", "View in window", cxxopts::value<std::string>())("h,help",
-                                                                   "Help");
+      "w,window", "View in window")("h,help", "Help");
   options.parse_positional({"points"});
   cxxopts::ParseResult result;
   try {
@@ -92,7 +91,7 @@ int main(int argc, char* argv[]) {
   if (result["points"].count()) {
     std::string fname = result["points"].as<std::string>();
     std::vector<Pt2> points;
-    if (fname.substr(fname.find_last_of(".") + 1) == "h5") {
+    if (fname.substr(fname.find_last_of('.') + 1) == "h5") {
       HighFive::File pfile(fname, HighFive::File::ReadOnly);
       spdlog::debug("Read file {}", fname);
       auto space = pfile.getDataSet("points").getSpace();
@@ -107,7 +106,7 @@ int main(int argc, char* argv[]) {
       u32 m = 0;
       std::ifstream f(fname);
       if (!f.good()) {
-        runtime_exc("File {} doesn't exist", fname);
+        throw runtime_exc("File {} doesn't exist", fname);
       }
       std::vector<std::string> allLines{std::istream_iterator<Line>(f),
                                         std::istream_iterator<Line>()};

@@ -12,28 +12,29 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <numbers>
 #include <numeric>
 #include <variant>
 #include <vector>
 
 using Eigen::Vector2d, Eigen::Matrix3d, Eigen::Matrix3Xd, Eigen::Vector3d,
     Eigen::Matrix2d, Eigen::indexing::all, Eigen::MatrixX3d, Eigen::Matrix2Xd,
-    Eigen::MatrixX2d;
-
-constexpr double sq3 = 1.7320508075688772935;
+    Eigen::MatrixX2d, std::numbers::sqrt3;
 
 static const Eigen::Matrix<f64, 3, 13> hat =
     (Eigen::Matrix<f64, 3, 13>() << 0., -0.75, -0.5, 0.5, 0.75, 1.5, 2.25, 2.,
-     1.5, 1.5, 0.75, 0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
-     -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
-     0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+     1.5, 1.5, 0.75, 0.5, 0., 0., -0.25 * sqrt3, -0.5 * sqrt3, -0.5 * sqrt3,
+     -0.25 * sqrt3, -0.5 * sqrt3, -0.25 * sqrt3, 0., 0., 0.5 * sqrt3,
+     0.75 * sqrt3, 0.5 * sqrt3, 0.5 * sqrt3, 1., 1., 1., 1., 1., 1., 1., 1., 1.,
+     1., 1., 1., 1.)
         .finished();
 
 static const Eigen::Matrix<f64, 3, 13> hat1 =
     (Eigen::Matrix<f64, 3, 13>() << 0., 0.75, 0.5, -0.5, -0.75, -1.5, -2.25,
-     -2., -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sq3, -0.5 * sq3, -0.5 * sq3,
-     -0.25 * sq3, -0.5 * sq3, -0.25 * sq3, 0., 0., 0.5 * sq3, 0.75 * sq3,
-     0.5 * sq3, 0.5 * sq3, 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+     -2., -1.5, -1.5, -0.75, -0.5, 0., 0., -0.25 * sqrt3, -0.5 * sqrt3,
+     -0.5 * sqrt3, -0.25 * sqrt3, -0.5 * sqrt3, -0.25 * sqrt3, 0., 0.,
+     0.5 * sqrt3, 0.75 * sqrt3, 0.5 * sqrt3, 0.5 * sqrt3, 1., 1., 1., 1., 1.,
+     1., 1., 1., 1., 1., 1., 1., 1.)
         .finished();
 
 constexpr Matrix3d aff_rot(f64 ang) {
@@ -47,18 +48,20 @@ constexpr Matrix3d sixth_rot(u64 i) {
   case 0:
     return Matrix3d::Identity();
   case 1:
-    return (Matrix3d() << 0.5, -sq3 / 2., 0., sq3 / 2., 0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << 0.5, -sqrt3 / 2., 0., sqrt3 / 2., 0.5, 0., 0., 0., 1.)
         .finished();
   case 2:
-    return (Matrix3d() << -0.5, -sq3 / 2., 0., sq3 / 2., -0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << -0.5, -sqrt3 / 2., 0., sqrt3 / 2., -0.5, 0., 0., 0.,
+            1.)
         .finished();
   case 3:
     return (Matrix3d() << -1., 0., 0., 0., -1., 0., 0., 0., 1.).finished();
   case 4:
-    return (Matrix3d() << -0.5, sq3 / 2., 0., -sq3 / 2., -0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << -0.5, sqrt3 / 2., 0., -sqrt3 / 2., -0.5, 0., 0., 0.,
+            1.)
         .finished();
   case 5:
-    return (Matrix3d() << 0.5, sq3 / 2., 0., -sq3 / 2., 0.5, 0., 0., 0., 1.)
+    return (Matrix3d() << 0.5, sqrt3 / 2., 0., -sqrt3 / 2., 0.5, 0., 0., 0., 1.)
         .finished();
   default:
     return sixth_rot(i % 6);
@@ -158,31 +161,31 @@ struct ShapeMaker {
           return Matrix3Xd{
               transf * transform *
               (Matrix3Xd(3, 4 * 13)
-                   << translate_by(sixth_rot(5), {2.5, 0.5 * sq3}) * hat1,
-               translate_by(sixth_rot(4), {1., sq3}) * hat,
-               translate_by(sixth_rot(4), {4., sq3}) * hat,
-               translate_by(sixth_rot(2), {2.5, 1.5 * sq3}) * hat)
+                   << translate_by(sixth_rot(5), {2.5, 0.5 * sqrt3}) * hat1,
+               translate_by(sixth_rot(4), {1., sqrt3}) * hat,
+               translate_by(sixth_rot(4), {4., sqrt3}) * hat,
+               translate_by(sixth_rot(2), {2.5, 1.5 * sqrt3}) * hat)
                   .finished()};
         },
         [this, transf](Eigen::Matrix<f64, 3, 3>) {
           spdlog::trace("Found triangle");
-          return Matrix3Xd{transf * transform * transl2({0.5, 0.5 * sq3}) *
+          return Matrix3Xd{transf * transform * transl2({0.5, 0.5 * sqrt3}) *
                            hat};
         },
         [this, transf](Eigen::Matrix<f64, 3, 4>) {
           spdlog::trace("Found parallellogram");
           return Matrix3Xd{
               transf * transform *
-              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
-               translate_by(sixth_rot(5), {0., sq3}) * hat)
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sqrt3}) * hat,
+               translate_by(sixth_rot(5), {0., sqrt3}) * hat)
                   .finished()};
         },
         [this, transf](Eigen::Matrix<f64, 3, 5>) {
           spdlog::trace("Found pentagon");
           return Matrix3Xd{
               transf * transform *
-              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sq3}) * hat,
-               translate_by(sixth_rot(5), {0., sq3}) * hat)
+              (Matrix3Xd(3, 2 * 13) << transl2({1.5, 0.5 * sqrt3}) * hat,
+               translate_by(sixth_rot(5), {0., sqrt3}) * hat)
                   .finished()};
         }};
     return std::visit<Matrix3Xd>(visitor, *p_shape); //->visit(visitor);
@@ -358,7 +361,8 @@ void iter_trees(Tree<ShapeMaker>* trees) {
   trees[0].root = std::make_shared<Node<ShapeMaker>>(Node<ShapeMaker>{
       {patch[0], patch[9], patch[16], patch[27], patch[26], patch[6], patch[1],
        patch[8], patch[10], patch[15]},
-      {Matrix3d::Identity(), std::make_shared<shape_var_t>(new_h_outline)}});
+      {.transform = Matrix3d::Identity(),
+       .p_shape = std::make_shared<shape_var_t>(new_h_outline)}});
 
   const Vector3d aaa = new_h_outline(all, 2);
   const Vector3d bbb =
@@ -441,6 +445,30 @@ Matrix2Xd filterpts(const Matrix3Xd& pts) {
   return unique_pts;
 }
 
+Eigen::Matrix3Xd make_tetrille(s64 x_start, s64 x_end, s64 y_start, s64 y_end) {
+  const Eigen::Matrix<f64, 3, 4> base_kite =
+      (Eigen::Matrix<f64, 3, 4>() << 0., -0.75, -0.5, 0., 0., 0.25 * sqrt3,
+       0.5 * sqrt3, 0.5 * sqrt3, 1., 1., 1., 1.)
+          .finished();
+  Eigen::Matrix3Xd kites(3, 4 * 6);
+  kites << base_kite, sixth_rot(1) * base_kite, sixth_rot(2) * base_kite,
+      sixth_rot(3) * base_kite, sixth_rot(4) * base_kite,
+      sixth_rot(5) * base_kite;
+  const s64 copies_y = y_end - y_start;
+  const s64 copies_x = x_end - x_start;
+  Eigen::Matrix3Xd ret(3, (x_end - x_start) * (y_end - y_start) * 4 * 6);
+  for (s64 i = x_start; i < x_end; ++i) {
+    for (s64 j = y_start; j < y_end; ++j) {
+      Matrix3d transl =
+          transl2({static_cast<f64>(i) * 1.5 - 0.5,
+                   static_cast<f64>(i + 2 * j) * 0.5 * sqrt3 + 0.5 * sqrt3});
+      ret(all, Eigen::seqN((copies_y * (i - x_start) + (j - y_start)) * 4 * 6,
+                           24)) = transl * kites;
+    }
+  }
+  return ret;
+}
+
 int main(int argc, char* argv[]) {
   cxxopts::Options options("Dynamic Simulations", "bleh");
   options.add_options()("v,verbose", "Verbose output", cxxopts::value<bool>())(
@@ -470,31 +498,31 @@ int main(int argc, char* argv[]) {
 
   spdlog::debug("Making initial tiles");
   std::vector<Tree<ShapeMaker>> tiles = {
-      ShapeMaker{Matrix3d::Identity(),
-                 std::make_shared<shape_var_t>(
+      ShapeMaker{.transform = Matrix3d::Identity(),
+                 .p_shape = std::make_shared<shape_var_t>(
                      (Eigen::Matrix<f64, 3, 6>() << 0., 4., 4.5, 2.5, 1.5, -0.5,
-                      0., 0., 0.5 * sq3, 2.5 * sq3, 2.5 * sq3, 0.5 * sq3, 1.,
-                      1., 1., 1., 1., 1.)
+                      0., 0., 0.5 * sqrt3, 2.5 * sqrt3, 2.5 * sqrt3,
+                      0.5 * sqrt3, 1., 1., 1., 1., 1., 1.)
                          .finished())},
       ShapeMaker{
 
-          Matrix3d::Identity(),
-          std::make_shared<shape_var_t>(Eigen::Matrix3d{
-              {0., 3., 1.5}, {0., 0., 1.5 * sq3}, {1., 1., 1.}}),
+          .transform = Matrix3d::Identity(),
+          .p_shape = std::make_shared<shape_var_t>(Eigen::Matrix3d{
+              {0., 3., 1.5}, {0., 0., 1.5 * sqrt3}, {1., 1., 1.}}),
       },
       ShapeMaker{
-          Matrix3d::Identity(),
-          std::make_shared<shape_var_t>((Eigen::Matrix<f64, 3, 4>() << 0., 4.,
-                                         3., -1., 0., 0., sq3, sq3, 1., 1., 1.,
-                                         1.)
-                                            .finished()),
+          .transform = Matrix3d::Identity(),
+          .p_shape = std::make_shared<shape_var_t>(
+              (Eigen::Matrix<f64, 3, 4>() << 0., 4., 3., -1., 0., 0., sqrt3,
+               sqrt3, 1., 1., 1., 1.)
+                  .finished()),
       },
       ShapeMaker{
-          Matrix3d::Identity(),
-          std::make_shared<shape_var_t>((Eigen::Matrix<f64, 3, 5>() << 0., 3.,
-                                         3.5, 3., -1., 0., 0., 0.5 * sq3, sq3,
-                                         sq3, 1., 1., 1., 1., 1.)
-                                            .finished()),
+          .transform = Matrix3d::Identity(),
+          .p_shape = std::make_shared<shape_var_t>(
+              (Eigen::Matrix<f64, 3, 5>() << 0., 3., 3.5, 3., -1., 0., 0.,
+               0.5 * sqrt3, sqrt3, sqrt3, 1., 1., 1., 1., 1.)
+                  .finished()),
       }};
   for (u32 i = 0; i < n_iters; ++i) {
     iter_trees(tiles.data());
@@ -502,6 +530,7 @@ int main(int argc, char* argv[]) {
 
   s32 width = 800;
   s32 height = 800;
+  const auto tetrille_points = make_tetrille(-5, 30, -5, 30);
   SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
                  FLAG_WINDOW_TRANSPARENT);
   InitWindow(width, height, "raylib test");
@@ -524,19 +553,39 @@ int main(int argc, char* argv[]) {
     f64 min_of_wh = std::min(width, height);
     BeginDrawing();
     ClearBackground(WHITE);
-    for (s32 i = 0; i < points.cols() / 13; ++i) {
-      for (s32 j = 0; j < 13; ++j) {
-        DrawLine(toScreenIsotropic(points(0, i * 13 + j), exmin, max_of_exey,
-                                   min_of_wh),
-                 toScreenIsotropic(points(1, i * 13 + j), eymin, max_of_exey,
-                                   min_of_wh),
-                 toScreenIsotropic(points(0, i * 13 + (j + 1) % 13), exmin,
-                                   max_of_exey, min_of_wh),
-                 toScreenIsotropic(points(1, i * 13 + (j + 1) % 13), eymin,
-                                   max_of_exey, min_of_wh),
-                 BLACK);
+    for (s32 i = 0; i < tetrille_points.cols() / 4; ++i) {
+      for (s32 j = 0; j < 4; ++j) {
+        DrawLineEx(
+            {static_cast<f32>(toScreenIsotropic(tetrille_points(0, i * 4 + j),
+                                                exmin, max_of_exey, min_of_wh)),
+             static_cast<f32>(toScreenIsotropic(tetrille_points(1, i * 4 + j),
+                                                eymin, max_of_exey,
+                                                min_of_wh))},
+            {static_cast<f32>(
+                 toScreenIsotropic(tetrille_points(0, i * 4 + (j + 1) % 4),
+                                   exmin, max_of_exey, min_of_wh)),
+             static_cast<f32>(
+                 toScreenIsotropic(tetrille_points(1, i * 4 + (j + 1) % 4),
+                                   eymin, max_of_exey, min_of_wh))},
+            1.0, LIGHTGRAY);
       }
     }
+    for (s32 i = 0; i < points.cols() / 13; ++i) {
+      for (s32 j = 0; j < 13; ++j) {
+        DrawLineEx({static_cast<f32>(toScreenIsotropic(
+                        points(0, i * 13 + j), exmin, max_of_exey, min_of_wh)),
+                    static_cast<f32>(toScreenIsotropic(
+                        points(1, i * 13 + j), eymin, max_of_exey, min_of_wh))},
+                   {static_cast<f32>(
+                        toScreenIsotropic(points(0, i * 13 + (j + 1) % 13),
+                                          exmin, max_of_exey, min_of_wh)),
+                    static_cast<f32>(
+                        toScreenIsotropic(points(1, i * 13 + (j + 1) % 13),
+                                          eymin, max_of_exey, min_of_wh))},
+                   4.0, BLACK);
+      }
+    }
+
     // for (s32 i = 0; i < points.cols(); ++i) {
     //   DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey,
     //   min_of_wh),

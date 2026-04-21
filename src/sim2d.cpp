@@ -8,7 +8,9 @@
 #include <iostream>
 
 namespace {
-constexpr f32 v_potential(f32 x, f32 y) { return square(x) + square(y); }
+constexpr f32 v_potential(f32 x, f32 y) {
+  return 5 * std::cos(x) * std::sin(y);
+}
 } // namespace
 
 constexpr u32 WAVE_SIZE = 32;
@@ -91,7 +93,7 @@ int main(int argc, char* argv[]) {
   // std::vector<c64> psik(1024 * 1024);
   constexpr RangeConf<f32> k = {
       .start = -M_PI / x.d(), .end = M_PI / x.d(), .n = nx};
-  constexpr RangeConf<f32> t = {.start = 0., .end = 10., .n = 1};
+  constexpr RangeConf<f32> t = {.start = 0., .end = 0.1, .n = 100};
   std::vector<c32> k_prop(x.n * x.n);
   for (u32 i = 0; i < k.n; ++i) {
     for (u32 j = 0; j < k.n; ++j) {
@@ -129,12 +131,12 @@ int main(int argc, char* argv[]) {
   conf.buffer = pcast<VkBuffer>(&gpu_psi.buffer);
   conf.bufferSize = &gpu_psi.aInfo.size;
   conf.normalize = 1;
-  VkFFTApplication app;
+  VkFFTApplication app{};
   initializeVkFFT(&app, conf);
   auto cb = mgr.begin_record();
   VkFFTLaunchParams lp{};
   lp.commandBuffer = pcast<VkCommandBuffer>(&cb);
-  for (u32 i = 0; i < 100; ++i) {
+  for (u32 i = 0; i < t.n; ++i) {
     append_op(cb, linschroedrstep, (x.n * x.n) / WAVE_SIZE, 1, 1);
     cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
                        vk::PipelineStageFlagBits::eAllCommands, {},
@@ -158,7 +160,7 @@ int main(int argc, char* argv[]) {
   SDL_Event event;
   bool should_quit = false;
   auto xfer_cb = mgr.begin_record();
-  append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / 32, 1, 1);
+  append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / WAVE_SIZE, 1, 1);
   xfer_cb.end();
 
   while (!should_quit) {
@@ -174,7 +176,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  SDL_DestroyWindowSurface(window);
+  deleteVkFFT(&app);
   SDL_DestroyWindow(window);
   return 0;
 }

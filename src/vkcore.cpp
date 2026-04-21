@@ -1318,7 +1318,7 @@ void Renderer::draw_frame() {
     submit_info.pCommandBuffers = &command_buffers[img_index],
     submit_info.signalSemaphoreCount = 1,
     submit_info.pSignalSemaphores = &render_semaphores[img_index];
-    // p_mgr->execute(reduction_buffer);
+    p_mgr->execute(reduction_buffer);
 
     graphics_queue.submit(submit_info, in_flight_fences[current_frame]);
 

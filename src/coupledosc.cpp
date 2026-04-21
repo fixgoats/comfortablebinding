@@ -17,8 +17,8 @@ using Eigen::MatrixX2d, Eigen::MatrixXd;
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("Dynamic Simulations", "bleh");
   options.add_options()("c,config", "TOML configuration",
-                        cxxopts::value<std::string>())(
-      "v,verbose", "Verbose output", cxxopts::value<bool>());
+                        cxxopts::value<std::string>())("v,verbose",
+                                                       "Verbose output");
   cxxopts::ParseResult result;
   spdlog::set_level(spdlog::level::info);
   try {
