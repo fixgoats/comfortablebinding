@@ -7,7 +7,7 @@ template <typename T, typename U, typename = void>
 struct is_safely_castable : std::false_type {};
 
 struct None {};
-static const None none{};
+static const None NONE_STRUCT{};
 
 template <typename T, typename U>
 struct is_safely_castable<

@@ -366,9 +366,9 @@ struct Renderer {
   vk::Queue graphics_queue;
   vk::Queue present_queue;
   std::vector<vk::ImageView> swapchain_img_views;
-  std::vector<vk::Semaphore> image_available_semaphores;
-  std::vector<vk::Semaphore> render_finished_semaphores;
-  std::vector<vk::Fence> image_in_flight_fences;
+  std::vector<vk::Semaphore> present_semaphores;
+  std::vector<vk::Semaphore> render_semaphores;
+  // std::vector<vk::Fence> image_in_flight_fences;
   std::vector<vk::Fence> in_flight_fences;
   vk::CommandPool command_pool;
   std::vector<vk::CommandBuffer> command_buffers;

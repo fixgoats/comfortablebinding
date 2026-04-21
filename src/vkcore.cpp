@@ -96,31 +96,31 @@ void record_drawing_commands(
 //   return spec_info;
 // }
 
-void record_nondestructive_parallel_reduction(
-    vk::CommandBuffer cb, u32 org_size, const Algorithm& reduction,
-    const Algorithm& first_reduction) {
-  append_op(cb, first_reduction, org_size / (64 * 2), 1, 1);
-  cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                     vk::PipelineStageFlagBits::eAllCommands, {},
-                     FULL_MEMORY_BARRIER, nullptr, nullptr);
-  cb.bindPipeline(vk::PipelineBindPoint::eCompute, reduction.m_Pipeline);
-  cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                        reduction.m_PipelineLayout, 0,
-                        reduction.m_DescriptorSet, nullptr);
-  u32 n_iters = uintlog2(org_size);
-  std::vector<u32> strides(n_iters);
-  for (u32 i = 0; i < n_iters; i++) {
-    strides[i] = 1 << i;
-    cb.pushConstants(reduction.m_PipelineLayout,
-                     vk::ShaderStageFlagBits::eCompute, 0, 4, &strides[i]);
-    cb.dispatch(
-        std::clamp(((org_size + 1) / 2) / (64 * strides[i]), 1U, UINT32_MAX), 1,
-        1);
-    cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                       vk::PipelineStageFlagBits::eAllCommands, {},
-                       FULL_MEMORY_BARRIER, nullptr, nullptr);
-  }
-}
+// void record_nondestructive_parallel_reduction(
+//     vk::CommandBuffer cb, u32 org_size, const Algorithm& reduction,
+//     const Algorithm& first_reduction) {
+//   append_op(cb, first_reduction, org_size / (64 * 2), 1, 1);
+//   cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+//                      vk::PipelineStageFlagBits::eAllCommands, {},
+//                      FULL_MEMORY_BARRIER, nullptr, nullptr);
+//   cb.bindPipeline(vk::PipelineBindPoint::eCompute, reduction.m_Pipeline);
+//   cb.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+//                         reduction.m_PipelineLayout, 0,
+//                         reduction.m_DescriptorSet, nullptr);
+//   u32 n_iters = uintlog2(org_size);
+//   std::vector<u32> strides(n_iters);
+//   for (u32 i = 0; i < n_iters; i++) {
+//     strides[i] = 1 << i;
+//     cb.pushConstants(reduction.m_PipelineLayout,
+//                      vk::ShaderStageFlagBits::eCompute, 0, 4, &strides[i]);
+//     cb.dispatch(
+//         std::clamp(((org_size + 1) / 2) / (64 * strides[i]), 1U, UINT32_MAX),
+//         1, 1);
+//     cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+//                        vk::PipelineStageFlagBits::eAllCommands, {},
+//                        FULL_MEMORY_BARRIER, nullptr, nullptr);
+//   }
+// }
 
 vk::SurfaceFormatKHR
 pick_surface_format(const std::vector<vk::SurfaceFormatKHR>& formats) {
@@ -264,6 +264,8 @@ vk::SwapchainKHR create_swapchain(vk::Device device, vk::SurfaceKHR surface,
       swapchain_extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
       vk::SharingMode::eExclusive, {}, pre_transform, composite_alpha,
       present_mode, vk::True, old_swapchain);
+  create_info.queueFamilyIndexCount = 1;
+  create_info.pQueueFamilyIndices = qfis.data();
   if (qfis[0] != qfis[1]) {
     // If the graphics and present queues are from different queue families,
     // we either have to explicitly transfer ownership of images between the
@@ -271,7 +273,6 @@ vk::SwapchainKHR create_swapchain(vk::Device device, vk::SurfaceKHR surface,
     // VK_SHARING_MODE_CONCURRENT
     create_info.imageSharingMode = vk::SharingMode::eConcurrent;
     create_info.queueFamilyIndexCount = 2;
-    create_info.pQueueFamilyIndices = qfis.data();
   }
   return device.createSwapchainKHR(create_info);
 }
@@ -1145,21 +1146,21 @@ Renderer::Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny)
       descriptor_img_info);
   manager.device.updateDescriptorSets(descriptor_write, {});
 
-  image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-  render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+  present_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+  render_semaphores.resize(swapchain_imgs.size());
   in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-  image_in_flight_fences.resize(swapchain_imgs.size(), VK_NULL_HANDLE);
 
   vk::SemaphoreCreateInfo semaphore_info{};
 
   vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    image_available_semaphores[i] =
-        manager.device.createSemaphore(semaphore_info);
-    render_finished_semaphores[i] =
-        manager.device.createSemaphore(semaphore_info);
+    present_semaphores[i] = manager.device.createSemaphore(semaphore_info);
+    // render_semaphores[i] = manager.device.createSemaphore(semaphore_info);
     in_flight_fences[i] = manager.device.createFence(fence_info);
+  }
+  for (auto& sem : render_semaphores) {
+    sem = manager.device.createSemaphore(semaphore_info);
   }
 
   vk::CommandBufferAllocateInfo cb_alloc_info(
@@ -1291,40 +1292,43 @@ void Renderer::recreate_swapchain() {
 
 void Renderer::draw_frame() {
   vk::Device dev = p_mgr->device;
-  if (dev.waitForFences(in_flight_fences[current_frame], vk::True, -1) !=
-      vk::Result::eSuccess) {
+  if (dev.waitForFences(in_flight_fences[current_frame], vk::True,
+                        UINT64_MAX) != vk::Result::eSuccess) {
     throw runtime_exc("Failed waiting for fences");
   };
+  dev.resetFences(in_flight_fences[current_frame]);
   try {
     vk::ResultValue<u32> res = dev.acquireNextImageKHR(
-        swapchain, UINT64_MAX, image_available_semaphores[current_frame],
-        nullptr);
+        swapchain, UINT64_MAX, present_semaphores[current_frame], nullptr);
     if (res.result != vk::Result::eSuccess &&
         res.result != vk::Result::eSuboptimalKHR) {
       throw runtime_exc("Failed to acquire swap chain image!");
     }
     u32 img_index = res.value;
-    if (image_in_flight_fences[img_index] != nullptr) {
-      auto result =
-          dev.waitForFences(image_in_flight_fences[img_index], vk::True, -1);
-      if (result != vk::Result::eSuccess) {
-        throw runtime_exc("Failed to wait on in flight image");
-      }
-    }
-    image_in_flight_fences[img_index] = in_flight_fences[current_frame];
 
-    vk::Semaphore signal_semaphore = render_finished_semaphores[current_frame];
     vk::PipelineStageFlags wait_dst_stage_mask(
         vk::PipelineStageFlagBits::eColorAttachmentOutput);
     vk::CommandBuffer cb = command_buffers[img_index];
-    vk::SubmitInfo submit_info(image_available_semaphores[current_frame],
-                               wait_dst_stage_mask, cb, signal_semaphore);
-    dev.resetFences(in_flight_fences[current_frame]);
-    p_mgr->execute(reduction_buffer);
+    vk::SubmitInfo submit_info{};
+    submit_info.sType = vk::StructureType::eSubmitInfo,
+    submit_info.waitSemaphoreCount = 1,
+    submit_info.pWaitSemaphores = &present_semaphores[current_frame],
+    submit_info.pWaitDstStageMask = &wait_dst_stage_mask,
+    submit_info.commandBufferCount = 1,
+    submit_info.pCommandBuffers = &command_buffers[img_index],
+    submit_info.signalSemaphoreCount = 1,
+    submit_info.pSignalSemaphores = &render_semaphores[img_index];
+    // p_mgr->execute(reduction_buffer);
 
     graphics_queue.submit(submit_info, in_flight_fences[current_frame]);
 
-    vk::PresentInfoKHR pres_info(signal_semaphore, swapchain, img_index);
+    vk::PresentInfoKHR pres_info{};
+    pres_info.sType = vk::StructureType::ePresentInfoKHR;
+    pres_info.waitSemaphoreCount = 1;
+    pres_info.pWaitSemaphores = &render_semaphores[img_index];
+    pres_info.swapchainCount = 1;
+    pres_info.pSwapchains = &swapchain;
+    pres_info.pImageIndices = &img_index;
     try {
       if (vk::Result::eSuboptimalKHR == present_queue.presentKHR(pres_info)) {
         std::cout << "Recreating swapchain because it is suboptimal\n";
@@ -1346,9 +1350,11 @@ Renderer::~Renderer() {
   vk::Device dev = p_mgr->device;
   dev.waitIdle();
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    dev.destroySemaphore(image_available_semaphores[i]);
-    dev.destroySemaphore(render_finished_semaphores[i]);
+    dev.destroySemaphore(present_semaphores[i]);
     dev.destroyFence(in_flight_fences[i]);
+  }
+  for (auto& sem : render_semaphores) {
+    dev.destroySemaphore(sem);
   }
 
   for (size_t i = 0; i < n_images; i++) {
