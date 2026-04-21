@@ -1,6 +1,7 @@
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_vulkan.h"
 #include "mathhelpers.h"
+#include "metaprogramming.h"
 #include "vkFFT.h"
 #include "vkcore.hpp"
 #include <cxxopts.hpp>
@@ -117,6 +118,8 @@ int main(int argc, char* argv[]) {
   Algorithm linschroedkstep = mgr.make_algorithm(
       "Shaders/schroedkstep.spv", {}, {&gpu_psi, &gpu_r_prop, &gpu_k_prop});
   VkFFTConfiguration conf{};
+  conf.device = pcast<VkDevice>(&mgr.device);
+  conf.physicalDevice = pcast<VkPhysicalDevice>(&mgr.physical_device);
   conf.FFTdim = 2;
   conf.size[0] = x.n;
   conf.size[1] = x.n;
