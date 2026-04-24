@@ -17,80 +17,79 @@ struct SdfConf {
   // values below this will be removed from the Delta function.
   double cutoff;
   // In units of average nearest neighbour distance.
-  double searchRadius;
+  double search_radius;
   // if hasValue, do a dispersion relation with the line given by this range.
   std::vector<RangeConf<Vector2d>> kpath;
   // Set Emin=Emax to automatically set E range
-  std::optional<RangeConf<double>> dispE;
-  std::optional<std::string> saveDiagonalisation;
-  std::optional<std::string> useSavedDiag;
-  std::optional<std::string> saveHamiltonian;
+  std::optional<RangeConf<double>> disp_e;
+  std::optional<std::string> save_diag;
+  std::optional<std::string> use_saved_diag;
+  std::optional<std::string> save_hamiltonian;
   // in units of "Brillouin zone", i.e. 1 = 2pi/a where a is a lattice constant.
   // Average nearest neighbour distance is used as a proxy for a
-  RangeConf<double> sectionKx;
-  RangeConf<double> sectionKy;
-  RangeConf<double> SDFKx;
-  RangeConf<double> SDFKy;
+  RangeConf<double> section_kx;
+  RangeConf<double> section_ky;
+  RangeConf<double> sdf_kx;
+  RangeConf<double> sdf_ky;
   // Set Emin=Emax to automatically set E range
-  RangeConf<double> SDFE;
+  RangeConf<double> sdf_e;
   // lattice point input (could possibly take special strings to do common
   // lattices)
   double fixed_e;
-  std::string pointPath;
+  std::string point_path;
   // Output file name
-  std::string H5Filename;
+  std::string fname_h5;
   // Generally what I want. Not any more expensive than computing DOS and the
   // rest can be obtained by slicing this dataset.
-  bool doFullSDF;
+  bool do_full_sdf;
   // Only set if you don't want to output a full sdf to disk. Will be ignored if
-  // doFullSDF is set.
-  bool doDOS;
-  bool doEsection;
-  bool doPath;
+  // do_full_sdf is set.
+  bool do_dos;
+  bool do_e_section;
+  bool do_path;
 };
 
-Delta delta(const VectorXd& D, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
+Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
 
-VectorXcd planeWave(Vector2d k, const std::vector<Point>& points);
-std::vector<f64> disp(const VectorXd& D, const MatrixXcd& UH,
-                      const std::vector<Point>& points, f64 lat_const,
-                      std::vector<RangeConf<Vector2d>> kc, RangeConf<f64>& ec,
-                      f64 sharpening, f64 cutoff, bool printProgress = true);
-std::vector<f64> DOS(const VectorXd& D, const MatrixXcd& UH,
+VectorXcd plane_wave(Vector2d k, const std::vector<Point>& points);
+MatrixXd disp(const VectorXd& d, const MatrixXcd& uh,
+              const std::vector<Point>& points, f64 lat_const,
+              std::vector<RangeConf<Vector2d>> kc, RangeConf<f64>& ec,
+              f64 sharpening, f64 cutoff, bool print_progress = true);
+std::vector<f64> dos(const VectorXd& d, const MatrixXcd& uh,
                      const std::vector<Point>& points, f64 lat_const,
                      RangeConf<f64> kxc, RangeConf<f64> kyc, RangeConf<f64>& ec,
-                     f64 sharpening, f64 cutoff, bool printProgress = true);
+                     f64 sharpening, f64 cutoff, bool print_progress = true);
 
 // std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd&
 // UH,
 //                              const std::vector<Point>& points, f64 lat_const,
 //                              RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
 //                              f64 sharpening, f64 cutoff);
-std::vector<f64> Esection(const VectorXd& D, const MatrixXcd& UH,
+MatrixXd e_section(const VectorXd& d, const MatrixXcd& uh,
+                   const std::vector<Point>& points, f64 lat_const,
+                   RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+                   f64 sharpening, f64 cutoff, bool print_progress = true);
+std::vector<f64> full_sdf(const VectorXd& d, const MatrixXcd& uh,
                           const std::vector<Point>& points, f64 lat_const,
-                          RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-                          f64 sharpening, f64 cutoff,
-                          bool printProgress = true);
-std::vector<f64> fullSDF(const VectorXd& D, const MatrixXcd& UH,
-                         const std::vector<Point>& points, f64 lat_const,
-                         RangeConf<f64> kxc, RangeConf<f64> kyc,
-                         RangeConf<f64>& ec, f64 sharpening, f64 cutoff,
-                         bool printProgress = true);
+                          RangeConf<f64> kxc, RangeConf<f64> kyc,
+                          RangeConf<f64>& ec, f64 sharpening, f64 cutoff,
+                          bool print_progress = true);
 
 template <class Func>
 MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
                             Func f) {
-  MatrixXd H = MatrixXd::Zero(n_points, n_points);
+  MatrixXd ham = MatrixXd::Zero(n_points, n_points);
   for (const auto& nb : nbs) {
     f64 val = f(nb.d);
-    H(nb.i, nb.j) = val;
-    H(nb.j, nb.i) = val;
+    ham(static_cast<s64>(nb.i), static_cast<s64>(nb.j)) = val;
+    ham(static_cast<s64>(nb.j), static_cast<s64>(nb.i)) = val;
   }
-  return H;
+  return ham;
 }
-MatrixXd pointsToFiniteHamiltonian(const std::vector<Point>& points,
-                                   const kdt::KDTree<Point>& kdtree,
-                                   f64 radius);
+MatrixXd points_to_finite_hamiltonian(const std::vector<Point>& points,
+                                      const kdt::KDTree<Point>& kdtree,
+                                      f64 radius);
 
-std::optional<SdfConf> tomlToSdfConf(const std::string& tbl);
-int doSDFcalcs(SdfConf& conf);
+std::optional<SdfConf> toml_to_sdf_conf(const std::string& toml_path);
+int do_sdf_calcs(SdfConf& conf);

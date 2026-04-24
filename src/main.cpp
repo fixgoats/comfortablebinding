@@ -35,17 +35,17 @@ int main(const int argc, const char* const* argv) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return 1;
   }
-  if (result["c"].count()) {
+  if (static_cast<bool>(result["c"].count())) {
     std::string fname = result["c"].as<std::string>();
     SdfConf conf;
-    if (auto opt = tomlToSdfConf(fname); opt.has_value()) {
+    if (auto opt = toml_to_sdf_conf(fname); opt.has_value()) {
       conf = opt.value();
     } else {
       return 1;
     }
-    doSDFcalcs(conf);
+    do_sdf_calcs(conf);
   }
-  if (result["p"].count()) {
+  if (static_cast<bool>(result["p"].count())) {
     std::string fname = result["p"].as<std::string>();
     PerConf conf;
     if (auto opt = tomlToPerConf(fname); opt.has_value()) {
@@ -56,7 +56,7 @@ int main(const int argc, const char* const* argv) {
     }
     doPeriodicModel(conf);
   }
-  if (result["t"].count()) {
+  if (static_cast<bool>(result["t"].count())) {
     VectorXd a = VectorXd::Ones(100);
 
     MatrixXd e = (a * a.transpose()).array() + 1;

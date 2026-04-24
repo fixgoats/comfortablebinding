@@ -15,17 +15,19 @@ def sqNorm(x):
 
 # fig, ax = plt.subplots(2)
 # plt.rcParams.update({'font.size': 18})
-fig, ax = plt.subplots()
+# plt.tight_layout()
+fig, ax = plt.subplots(figsize=(8, 6), layout="constrained")
+# fig.set_c
 fig.set_dpi(300)
-fig.set_size_inches(10, 10)
-ticklabelsize = 16
-axislabelsize = 24
-legendfontsize = 18
+# fig.set_size_inches(12, 7)
+ticklabelsize = 18
+axislabelsize = 26
+legendfontsize = 22
 ax.tick_params(axis="x", labelsize=ticklabelsize)
 ax.tick_params(axis="y", labelsize=ticklabelsize)
 # ax[1, 0].set_title("$J_0(r\\cdot d), Y_0(r\\cdot d)$")
-ax.set_xlabel("shortest coupling length (arb. units)", fontsize=axislabelsize)
-ax.set_ylabel("Average phase difference\nbetween nearest neighbours", fontsize=axislabelsize)
+ax.set_xlabel("shortest coupling length (arb. units)", fontsize=axislabelsize, fontweight="bold")
+ax.set_ylabel("${\\bf \\Delta \\Phi}$", fontsize=axislabelsize, fontweight="bold")
 files = [("gögn/mono330scaletimescan.h5", "Hat", "lightcoral"), ("gögn/square400scaletimescan.h5", "Square", "firebrick"), ("gögn/tetrille462scaletimescan.h5", "Tetrille", "maroon")]
 for fname, label, color in files:
     f = h5py.File(fname, "r")
@@ -56,9 +58,9 @@ for fname, label, color in files:
     print(unique_coupling_lengths)
     lowest_d = np.min(unique_coupling_lengths)
     
-    line, = ax.plot(rs * lowest_d, couplephasediffs, label=label, color=color)
+    line, = ax.plot(rs * lowest_d, couplephasediffs, label=label, color=color, linewidth=4)
     ax.set_xlim(0.5, 12)
-    ax.legend(loc="best", fontsize=legendfontsize)
+    ax.legend(loc="best", prop={'weight': 'bold', 'size': legendfontsize})
 
 x = np.linspace(0.5, 12, 200)
 # jymax = max(np.max(sp.special.jv(0, x)), np.max(sp.special.yv(0, x)))
@@ -69,10 +71,10 @@ axh = ax.twinx()
 # ax.yaxis.tick_right()
 j = sp.special.jv(0, x)
 y = sp.special.yv(0, x)
-line1, = axh.plot(x, j, label=f"$J_0$", color="teal")
-line2, = axh.plot(x, y, label=f"$Y_0$", color="darkslategrey")
+line1, = axh.plot(x, j, label="${{\\bf J_0}}$", color="teal", linewidth=4)
+line2, = axh.plot(x, y, label="${{\\bf Y_0}}$", color="darkslategrey", linewidth=4)
 axh.tick_params(axis="y", labelcolor="deepskyblue", labelsize=ticklabelsize)
-axh.set_ylabel("$J_0(x), Y_0(x)$", fontsize=axislabelsize)
+axh.set_ylabel("${{\\bf J_0(x), Y_0(x)}}$", fontsize=axislabelsize, fontweight="bold")
 axh.grid()
-axh.legend(fontsize=legendfontsize)
+axh.legend(prop={'weight': 'bold', 'size': legendfontsize})
 fig.savefig("phasecomparison.png")
