@@ -12,6 +12,7 @@
 using namespace std::chrono;
 using Eigen::MatrixXcf;
 
+namespace {
 void auto_limits(const VectorXd& d, RangeConf<f64>& rc) {
   f64 max = d.maxCoeff();
   f64 min = d.minCoeff();
@@ -19,6 +20,17 @@ void auto_limits(const VectorXd& d, RangeConf<f64>& rc) {
   rc.start = min - 0.01 * l;
   rc.end = max + 0.01 * l;
 }
+
+VectorXcd plane_wave(Vector2d k, const std::vector<Pt2>& points) {
+  VectorXcd tmp = VectorXcd::Zero(static_cast<s64>(points.size()));
+  std::ranges::transform(points.begin(), points.end(), tmp.begin(), [&](Pt2 p) {
+    return (1. / sqrt(points.size())) *
+           std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
+  });
+  return VectorXcd{tmp.transpose()};
+}
+
+} // namespace
 
 Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff) {
   const f64 nonzero_range = std::sqrt(-std::log(cutoff) / sharpening);
@@ -40,14 +52,24 @@ Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff) {
   return delta;
 }
 
-VectorXcd plane_wave(Vector2d k, const std::vector<Point>& points) {
-  VectorXcd tmp = VectorXcd::Zero(static_cast<s64>(points.size()));
-  std::ranges::transform(points.begin(), points.end(), tmp.begin(),
-                         [&](Point p) {
-                           return (1. / sqrt(points.size())) *
-                                  std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
-                         });
-  return tmp.transpose();
+Delta delta(const VectorXcd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff) {
+  const f64 nonzero_range = std::sqrt(-std::log(cutoff) / sharpening);
+  Delta delta(ec.n);
+  for (u32 i = 0; i < ec.n; i++) {
+    const f64 e = ec.ith(i);
+    delta[i] = [&]() {
+      std::vector<std::pair<f64, u32>> tmp;
+      tmp.reserve(5);
+      for (u32 k = 0; k < d.size(); k++) {
+        if (f64 diff = std::abs(d(k).real() - e); diff < nonzero_range) {
+          tmp.emplace_back(std::exp(-sharpening * square(diff)), k);
+        }
+      }
+      tmp.shrink_to_fit();
+      return tmp;
+    }();
+  }
+  return delta;
 }
 
 std::vector<f64> full_sdf(const VectorXd& d, const MatrixXcd& uh,
@@ -100,57 +122,7 @@ struct SpecConsts {
   f32 dk;
 };
 
-// std::vector<f32> GPUEsection(Manager& m, const VectorXd& D, const MatrixXcd&
-// uh,
-//                              const std::vector<Point>& points, f64 lat_const,
-//                              RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-//                              f64 sharpening, f64 cutoff) {
-//
-//   std::cout << "Calculating cross section of SDF at E = " << e << '\n';
-//   // const u32 its = kxc.n / 10;
-//   std::vector<f32> sdf(kyc.n * kxc.n, 0);
-//   auto del = delta(D, {e, e, 1}, sharpening, cutoff);
-//   const std::vector<size_t> indices = [&]() {
-//     std::vector<size_t> tmp;
-//     for (const auto pair : del[0]) {
-//       tmp.push_back(pair.second);
-//     }
-//     return tmp;
-//   }();
-//   const std::vector<f32> deltaCoeffs = [&]() {
-//     std::vector<f32> tmp;
-//     for (const auto c : del[0]) {
-//       tmp.push_back(c.first);
-//     }
-//     return tmp;
-//   }();
-//   std::vector<Vector2f> realpoints = [&]() {
-//     std::vector<Vector2f> tmp(points.size());
-//     for (u32 i = 0; i < points.size(); i++) {
-//       tmp[i] = points[i].asfVec();
-//     }
-//     return tmp;
-//   }();
-//   MatrixXcf floatUH = uh.cast<std::complex<f32>>();
-//   MatrixXcf restrictedUH = floatUH(indices, Eigen::indexing::all);
-//   SpecConsts sc{(u32)kxc.n, (u32)kyc.n,          32,
-//                 32,         (u32)indices.size(), (f32)kxc.d()};
-//   auto gpuUH = m.makeRawBuffer<std::complex<f32>>(restrictedUH.size());
-//   auto gpuPoints = m.vecToBuffer(realpoints);
-//   auto gpuDelta = m.vecToBuffer(deltaCoeffs);
-//   auto gpuDensity = m.vecToBuffer(sdf);
-//   auto alg = m.makeAlgorithm("Shaders/esection.spv", {},
-//                              {&gpuUH, &gpuPoints, &gpuDelta, &gpuDensity},
-//                              sc);
-//   auto cb = m.beginRecord();
-//   appendOp(cb, alg, kxc.n / 32, kyc.n / 32, 1);
-//   cb.end();
-//   m.execute(cb);
-//   m.writeFromBuffer(gpuDensity, sdf);
-//   return sdf;
-// }
-
-MatrixXd non_herm_disp(const VectorXd& d, const MatrixXcd& uh,
+MatrixXd non_herm_disp(const VectorXcd& d, const MatrixXcd& uh,
                        const std::vector<Point>& points, f64 lat_const,
                        RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
                        f64 sharpening, f64 cutoff, bool print_progress) {
@@ -495,11 +467,11 @@ int do_sdf_calcs(SdfConf& conf) {
       }
     }
   } else {
-    points = readPoints(conf.point_path);
+    points = read_points(conf.point_path);
   }
 
   kdt::KDTree kdtree(points);
-  f64 a = avgNNDist(kdtree, points);
+  f64 a = avg_nn_dist(kdtree, points);
   EigenSolution eigsol;
   bool use_saved_succeeded = false;
   if (conf.use_saved_diag.has_value()) {
@@ -524,18 +496,7 @@ int do_sdf_calcs(SdfConf& conf) {
     HighFive::File file(conf.save_diag.value(), HighFive::File::Truncate);
     file.createDataSet("D", eigsol.D);
     file.createDataSet("U", eigsol.U);
-    // hid_t file = H5Fcreate(conf.save_diag.value().c_str(), H5F_ACC_TRUNC,
-    //                        H5P_DEFAULT, H5P_DEFAULT);
-    // std::array<hsize_t, 2> sizes = {static_cast<hsize_t>(eigsol.D.size()),
-    //                                 static_cast<hsize_t>(eigsol.D.size())};
-    // writeArray<1>("D", file, H5T_NATIVE_DOUBLE_g, eigsol.D.data(),
-    //               {static_cast<hsize_t>(eigsol.D.size())});
-    // writeArray<2>("U", file, c_double_id, eigsol.U.data(), sizes);
-    // H5Fclose(file);
   }
-  // hid_t file =
-  //     H5Fcreate(conf.fname_h5.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
-  //     H5P_DEFAULT);
   HighFive::File file(conf.fname_h5, HighFive::File::Truncate);
   if (conf.do_e_section) {
     auto uh = eigsol.U.adjoint();
@@ -543,8 +504,6 @@ int do_sdf_calcs(SdfConf& conf) {
         e_section(eigsol.D, uh, points, a, conf.section_kx, conf.section_ky,
                   conf.fixed_e, conf.sharpening, conf.cutoff);
     file.createDataSet("section", section);
-    // writeArray<2>("section", file, H5T_NATIVE_DOUBLE_g, section.data(),
-    //               {conf.section_kx.n, conf.section_ky.n});
     std::array<f64, 5> sdf_bounds = {conf.section_kx.start, conf.section_kx.end,
                                      conf.section_ky.start, conf.section_ky.end,
                                      conf.fixed_e};
@@ -554,13 +513,10 @@ int do_sdf_calcs(SdfConf& conf) {
     auto sdf = full_sdf(eigsol.D, uh, points, a, conf.sdf_kx, conf.sdf_ky,
                         conf.sdf_e, conf.sharpening, conf.cutoff);
     file.createDataSet("sdf", sdf);
-    // writeArray<3>("sdf", file, H5T_NATIVE_DOUBLE_g, sdf.data(),
-    //               {conf.sdf_kx.n, conf.sdf_ky.n, conf.sdf_e.n});
     std::array<f64, 6> sdf_bounds = {conf.sdf_kx.start, conf.sdf_kx.end,
                                      conf.sdf_ky.start, conf.sdf_ky.end,
                                      conf.sdf_e.start,  conf.sdf_e.end};
     file.createDataSet("sdf_bounds", sdf_bounds);
-    // write_array<1>("sdf_bounds", file, H5T_NATIVE_DOUBLE_g, sdf_bounds, {6});
   }
   if (conf.do_dos) {
     auto uh = eigsol.U.adjoint();
@@ -568,11 +524,8 @@ int do_sdf_calcs(SdfConf& conf) {
         dos(eigsol.D, uh, points, a, conf.sdf_kx, conf.sdf_ky, conf.sdf_e,
             conf.sharpening, conf.cutoff);
     file.createDataSet("dos", density_of_states);
-    // writeArray<1>("dos", file, H5T_NATIVE_DOUBLE_g, dos.data(),
-    // {conf.sdf_e.n});
     std::array<f64, 2> dos_bounds = {conf.sdf_e.start, conf.sdf_e.end};
     file.createDataSet("dos_bounds", dos_bounds);
-    // write_array<1>("dos_bounds", file, H5T_NATIVE_DOUBLE_g, dos_bounds, {2});
   }
   if (conf.do_path) {
     std::cout << "Doing path\n";
@@ -587,8 +540,6 @@ int do_sdf_calcs(SdfConf& conf) {
         nsamples += rc.n;
       }
       file.createDataSet("disp", dis);
-      // writeArray<2>("disp", file, H5T_NATIVE_DOUBLE_g, dis.data(),
-      //               {nsamples, ec.n});
       std::vector<f64> disp_bounds;
       for (const auto& rc : kc) {
         disp_bounds.insert(disp_bounds.end(),
@@ -596,8 +547,6 @@ int do_sdf_calcs(SdfConf& conf) {
       }
       disp_bounds.insert(disp_bounds.end(), {ec.start, ec.end});
       file.createDataSet("disp_bounds", disp_bounds);
-      // writeArray<1>("disp_bounds", file, H5T_NATIVE_DOUBLE_g,
-      //               disp_bounds.data(), {disp_bounds.size()});
     } else {
       std::cout << "Need to supply a non-zero number of energy samples\n";
     }

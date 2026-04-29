@@ -15,14 +15,14 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd, Eigen::VectorXcf,
     Eigen::MatrixXcf;
 
 #define SET_STRUCT_FIELD(c, tbl, key)                                          \
-  if (tbl.contains(#key))                                                      \
-  c.key = *tbl[#key].value<decltype(c.key)>()
+  if ((tbl).contains(#key))                                                    \
+  (c).key = *(tbl)[#key].value<decltype((c).key)>()
 
 #undef SET_STRUCT_FIELD
 
-auto basicNonLin(const SparseMatrix<c64>& iH, f64 alpha) {
-  return [&iH, alpha](const VectorXcd& x) {
-    return VectorXcd(iH * x + alpha * x.cwiseAbs2());
+auto basic_non_lin(const SparseMatrix<c64>& i_h, f64 alpha) {
+  return [&i_h, alpha](const VectorXcd& x) {
+    return VectorXcd(i_h * x + alpha * x.cwiseAbs2());
   };
 }
 
@@ -52,19 +52,19 @@ struct StateAndReservoir {
   friend Self operator-(Self lhs, const Self& rhs) { return lhs -= rhs; }
 };
 
-auto coupledNonLin(const SparseMatrix<c64>& iH, const VectorXd& P, f64 alpha,
-                   f64 R, f64 gamma, f64 Gamma) {
-  return [&, alpha, R, gamma, Gamma](const StateAndReservoir& x) {
-    return StateAndReservoir{iH * x.x + alpha * x.x.cwiseAbs2() + R * x.n -
+auto coupled_non_lin(const SparseMatrix<c64>& i_h, const VectorXd& p, f64 alpha,
+                     f64 r, f64 gamma, f64 exc_gamma) {
+  return [&, alpha, r, gamma, exc_gamma](const StateAndReservoir& x) {
+    return StateAndReservoir{i_h * x.x + alpha * x.x.cwiseAbs2() + r * x.n -
                                  gamma * x.x,
-                             P - Gamma * x.n};
+                             p - exc_gamma * x.n};
   };
 }
 
-auto tetmNonLin(const SparseMatrix<f64>& iJ, const SparseMatrix<c64>& iL, f64 p,
-                f64 alpha) {
+auto tetm_non_lin(const SparseMatrix<f64>& i_j, const SparseMatrix<c64>& iL,
+                  f64 p, f64 alpha) {
   return [&, p, alpha](const MatrixX2cd& psi) {
-    spdlog::debug("Function: tetmNonLin.");
+    spdlog::debug("Function: tetm_non_lin.");
     spdlog::debug("Making first matrix");
     MatrixX2cd first = (p - 1) * psi;
     u32 n = first.rows();
@@ -76,7 +76,7 @@ auto tetmNonLin(const SparseMatrix<f64>& iJ, const SparseMatrix<c64>& iL, f64 p,
     m = second.cols();
     spdlog::debug("Second matrix has dims {}x{}", n, m);
     spdlog::debug("Making third matrix");
-    MatrixX2cd third = iJ * psi;
+    MatrixX2cd third = i_j * psi;
     n = third.rows();
     m = third.cols();
     spdlog::debug("Third matrix has dims {}x{}", n, m);
@@ -87,31 +87,36 @@ auto tetmNonLin(const SparseMatrix<f64>& iJ, const SparseMatrix<c64>& iL, f64 p,
     n = fourth.rows();
     m = fourth.cols();
     spdlog::debug("Fourth matrix has dims {}x{}", n, m);
-    spdlog::debug("Exiting tetmNonLin.");
+    spdlog::debug("Exiting tetm_non_lin.");
     return first + second + third + fourth;
   };
 }
 
-MatrixX2cd explTETM(MatrixX2cd psi, const SparseMatrix<c64>& J,
-                    const SparseMatrix<c64>& L, f64 p, f64 alpha) {
+MatrixX2cd expl_tetm(MatrixX2cd psi, const SparseMatrix<c64>& coupling_mat,
+                     const SparseMatrix<c64>& tetm_coupling_mat, f64 p,
+                     f64 alpha) {
   MatrixX2cd complicated(psi.rows(), 2);
-  complicated.col(0) = L * psi.col(1);
-  complicated.col(1) = -L.conjugate() * psi.col(0);
-  return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) + J * psi +
-         complicated;
+  complicated.col(0) = tetm_coupling_mat * psi.col(1);
+  complicated.col(1) = -tetm_coupling_mat.conjugate() * psi.col(0);
+  return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
+         coupling_mat * psi + complicated;
   // +complicated;
-  // iJ * psi;
+  // i_j * psi;
   // - c64{0, alpha} *  +
-  //        iJ * psi + complicated;
+  //        i_j * psi + complicated;
 }
 
-MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& J,
-                       const SparseMatrix<c64>& L, f64 p, f64 alpha, f64 dt) {
+MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& coupling_mat,
+                       const SparseMatrix<c64>& tetm_coupling_mat, f64 p,
+                       f64 alpha, f64 dt) {
 
-  MatrixX2cd k1 = explTETM(psi, J, L, p, alpha);
-  MatrixX2cd k2 = explTETM(psi + 0.5 * dt * k1, J, L, p, alpha);
-  MatrixX2cd k3 = explTETM(psi + 0.5 * dt * k2, J, L, p, alpha);
-  MatrixX2cd k4 = explTETM(psi + dt * k3, J, L, p, alpha);
+  MatrixX2cd k1 = expl_tetm(psi, coupling_mat, tetm_coupling_mat, p, alpha);
+  MatrixX2cd k2 =
+      expl_tetm(psi + 0.5 * dt * k1, coupling_mat, tetm_coupling_mat, p, alpha);
+  MatrixX2cd k3 =
+      expl_tetm(psi + 0.5 * dt * k2, coupling_mat, tetm_coupling_mat, p, alpha);
+  MatrixX2cd k4 =
+      expl_tetm(psi + dt * k3, coupling_mat, tetm_coupling_mat, p, alpha);
   MatrixX2cd ret = psi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
   return ret;
 }

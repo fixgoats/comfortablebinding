@@ -130,16 +130,16 @@ inline auto basic(const SparseMatrix<c64>& iH) {
 
 struct BasicConf {
   std::string outfile;
-  std::string pointPath;
-  std::optional<f64> searchRadius;
+  std::string point_path;
+  std::optional<f64> search_radius;
   RangeConf<f64> t;
 
   BasicConf(const toml::table& tbl) {
 
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(pointPath, tbl);
-    if (tbl.contains("searchRadius")) {
-      searchRadius = tbl["searchRadius"].value<f64>().value();
+    SET_STRUCT_FIELD(point_path, tbl);
+    if (tbl.contains("search_radius")) {
+      search_radius = tbl["search_radius"].value<f64>().value();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
@@ -165,24 +165,24 @@ struct BasicDistanceConf {
 
 struct BasicNLinConf {
   std::string outfile;
-  std::string pointPath;
-  std::optional<f64> searchRadius;
+  std::string point_path;
+  std::optional<f64> search_radius;
   f64 alpha;
   RangeConf<f64> t;
 
   BasicNLinConf(const toml::table& tbl) {
 
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(pointPath, tbl);
+    SET_STRUCT_FIELD(point_path, tbl);
     SET_STRUCT_FIELD(alpha, tbl);
-    if (tbl.contains("searchRadius")) {
-      searchRadius = tbl["searchRadius"].value<f64>().value();
+    if (tbl.contains("search_radius")) {
+      search_radius = tbl["search_radius"].value<f64>().value();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
 };
 
-inline auto basicHankel(f64 p, f64 alpha, f64 j, f64 sep) {
+inline auto basic_hankel(f64 p, f64 alpha, f64 j, f64 sep) {
   return [=](Eigen::Vector2cd psi) {
     return Eigen::Vector2cd(
         p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
@@ -191,7 +191,7 @@ inline auto basicHankel(f64 p, f64 alpha, f64 j, f64 sep) {
   };
 }
 
-inline auto hankelDD(const SparseMatrix<c64>& J, f64 p, f64 alpha) {
+inline auto hankel_dd(const SparseMatrix<c64>& J, f64 p, f64 alpha) {
   return [&, p, alpha](Eigen::VectorXcd psi) {
     return p * psi - c64{1, alpha} * psi.cwiseAbs2().cwiseProduct(psi) +
            J * psi;
@@ -200,8 +200,8 @@ inline auto hankelDD(const SparseMatrix<c64>& J, f64 p, f64 alpha) {
 
 struct HankelConf : public SimConf {
   std::string outfile;
-  std::string pointPath;
-  std::optional<f64> searchRadius;
+  std::string point_path;
+  std::optional<f64> search_radius;
   f64 p;
   f64 alpha;
   f64 j;
@@ -211,13 +211,13 @@ struct HankelConf : public SimConf {
   HankelConf(const toml::table& tbl) {
 
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(pointPath, tbl);
+    SET_STRUCT_FIELD(point_path, tbl);
     SET_STRUCT_FIELD(alpha, tbl);
     SET_STRUCT_FIELD(p, tbl);
     SET_STRUCT_FIELD(j, tbl);
     SET_STRUCT_FIELD(rscale, tbl);
-    if (tbl.contains("searchRadius")) {
-      searchRadius = tbl["searchRadius"].value<f64>().value();
+    if (tbl.contains("search_radius")) {
+      search_radius = tbl["search_radius"].value<f64>().value();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
@@ -225,7 +225,7 @@ struct HankelConf : public SimConf {
   void run() const override {
     spdlog::debug("Function: doBasicHankelDD.");
     const auto start = std::chrono::high_resolution_clock::now();
-    HighFive::File pc(pointPath, HighFive::File::ReadOnly);
+    HighFive::File pc(point_path, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
     spdlog::debug("Read points.");
@@ -258,14 +258,14 @@ struct HankelConf : public SimConf {
       auto x = dis(gen);
       psi[i] = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
-    const u32 overallSize = t.n * psi.size();
-    spdlog::debug("Allocating psipdata with {} elements.", overallSize);
+    const u32 overall_size = t.n * psi.size();
+    spdlog::debug("Allocating psipdata with {} elements.", overall_size);
     MatrixXcd psidata(psi.size(), t.n + 1);
-    const size_t byteSize = psi.size() * sizeof(c64);
+    const size_t byte_size = psi.size() * sizeof(c64);
     psidata(Eigen::indexing::all, 0) = psi;
-    std::cout << "byteSize is: " << byteSize << '\n';
+    std::cout << "byte_size is: " << byte_size << '\n';
     std::cout << "Byte size of psidata is: " << psidata.size() * sizeof(c64);
-    auto rhs = hankelDD(J, eff_p, alpha);
+    auto rhs = hankel_dd(J, eff_p, alpha);
     std::cout << t.n << '\n';
     for (u32 i = 1; i < t.n + 1; i++) {
       psi = rk4step(psi, t.d(), rhs);
@@ -293,7 +293,7 @@ struct HankelConf : public SimConf {
 
 struct HankelTimeScanConf : public SimConf {
   std::string outfile;
-  std::string pointPath;
+  std::string point_path;
   RangeConf<f64> ps;
   RangeConf<f64> alphas;
   RangeConf<f64> js;
@@ -303,7 +303,7 @@ struct HankelTimeScanConf : public SimConf {
   HankelTimeScanConf(const toml::table& tbl) {
     spdlog::debug("Constructor: HankelScanConf(const toml::table& tbl)");
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(pointPath, tbl);
+    SET_STRUCT_FIELD(point_path, tbl);
     ps = tblToRange(*tbl["ps"].as_table());
     alphas = tblToRange(*tbl["alphas"].as_table());
     js = tblToRange(*tbl["js"].as_table());
@@ -314,7 +314,7 @@ struct HankelTimeScanConf : public SimConf {
   void run() const override {
     spdlog::debug("HankelTimeScanConf: method run.");
     const auto start = std::chrono::high_resolution_clock::now();
-    HighFive::File pc(pointPath, HighFive::File::ReadOnly);
+    HighFive::File pc(point_path, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
     spdlog::debug("Read points.");
@@ -344,7 +344,7 @@ struct HankelTimeScanConf : public SimConf {
       auto x = dis(gen);
       init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
-    const size_t byteSize = init_psi.size() * sizeof(c64);
+    const size_t byte_size = init_psi.size() * sizeof(c64);
 #pragma omp parallel for collapse(4)
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = js.ith(m);
@@ -369,8 +369,8 @@ struct HankelTimeScanConf : public SimConf {
             spdlog::debug("Allocating psi.");
             VectorXcd psi = init_psi;
             spdlog::debug("Writing random coordinates to psi.");
-            // const size_t byteSize = psi.size() * sizeof(c64);
-            auto rhs = hankelDD(J, eff_p, alpha);
+            // const size_t byte_size = psi.size() * sizeof(c64);
+            auto rhs = hankel_dd(J, eff_p, alpha);
             spdlog::debug("Running rk4 for {} steps.", t.n);
             c64 psisum = psi.sum();
             s64 idx = 2 * (t.n + 1) *
@@ -388,7 +388,7 @@ struct HankelTimeScanConf : public SimConf {
             s64 snapshot_idx =
                 (n + rscalesize * (m + jsize * (l + alphasize * k))) *
                 points.rows();
-            memcpy(snapshotdata.data() + snapshot_idx, psi.data(), byteSize);
+            memcpy(snapshotdata.data() + snapshot_idx, psi.data(), byte_size);
           }
         }
       }
@@ -430,7 +430,7 @@ struct HankelTimeScanConf : public SimConf {
 
 struct HankelScanConf : public SimConf {
   std::string outfile;
-  std::string pointPath;
+  std::string point_path;
   RangeConf<f64> ps;
   RangeConf<f64> alphas;
   RangeConf<f64> js;
@@ -440,7 +440,7 @@ struct HankelScanConf : public SimConf {
   HankelScanConf(const toml::table& tbl) {
     spdlog::debug("Constructor: HankelScanConf(const toml::table& tbl)");
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(pointPath, tbl);
+    SET_STRUCT_FIELD(point_path, tbl);
     ps = tblToRange(*tbl["ps"].as_table());
     alphas = tblToRange(*tbl["alphas"].as_table());
     js = tblToRange(*tbl["js"].as_table());
@@ -453,7 +453,7 @@ struct HankelScanConf : public SimConf {
     spdlog::debug("HankelScanConf: method run.");
     const auto start = std::chrono::high_resolution_clock::now();
     spdlog::info("");
-    HighFive::File pc(pointPath, HighFive::File::ReadOnly);
+    HighFive::File pc(point_path, HighFive::File::ReadOnly);
     spdlog::debug("Read pointfile.");
     Eigen::MatrixX2d points = pc.getDataSet("points").read<Eigen::MatrixX2d>();
     spdlog::debug("Read points.");
@@ -506,8 +506,8 @@ struct HankelScanConf : public SimConf {
             spdlog::debug("Allocating psi.");
             VectorXcd psi = init_psi;
             spdlog::debug("Writing random coordinates to psi.");
-            const size_t byteSize = psi.size() * sizeof(c64);
-            auto rhs = hankelDD(J, eff_p, alpha);
+            const size_t byte_size = psi.size() * sizeof(c64);
+            auto rhs = hankel_dd(J, eff_p, alpha);
             spdlog::debug("Running rk4 for {} steps.", t.n);
             for (u32 o = 1; o < t.n + 1; ++o) {
               psi = rk4step(psi, t.d(), rhs);
@@ -516,7 +516,7 @@ struct HankelScanConf : public SimConf {
                       points.rows();
             spdlog::debug("Copying to {}-th complex number.", idx);
             spdlog::debug("Finished calculating.");
-            memcpy(data.data() + idx, psi.data(), byteSize);
+            memcpy(data.data() + idx, psi.data(), byte_size);
           }
         }
       }
@@ -551,8 +551,8 @@ struct HankelScanConf : public SimConf {
 
 struct DelayConf {
   std::string outfile;
-  std::string pointPath;
-  std::optional<f64> searchRadius;
+  std::string point_path;
+  std::optional<f64> search_radius;
   f64 p;
   f64 alpha;
   f64 j;
@@ -576,16 +576,16 @@ enum Sims {
   eHankel,
 };
 
-static const std::unordered_map<std::string_view, Sims> simTypes{
+static const std::unordered_map<std::string_view, Sims> sim_types{
     {"hankelscan", Sims::eHankelScan},
     {"hankeltimescan", Sims::eHankelTimeScan},
     {"hankel", eHankel},
 };
 
 inline std::vector<std::unique_ptr<SimConf>>
-tomlToDynConf(const std::string& fname) {
+toml_to_dyn_conf(const std::string& fname) {
   toml::table tbl;
-  spdlog::debug("Function: tomlToDynConf");
+  spdlog::debug("Function: toml_to_dyn_conf");
   try {
     tbl = toml::parse_file(fname);
   } catch (const std::exception& err) {
@@ -597,10 +597,10 @@ tomlToDynConf(const std::string& fname) {
   std::vector<std::unique_ptr<SimConf>> retVec;
   tbl.for_each([&](const toml::key& key, toml::array& val) {
     spdlog::debug("Found key: {}", key.str());
-    switch (simTypes.at(key.str())) {
+    switch (sim_types.at(key.str())) {
     case eHankelTimeScan:
       val.for_each([&](toml::table& arrtbl) {
-        spdlog::debug("tomlToDynConf: Pushing back hankel time scan conf.");
+        spdlog::debug("toml_to_dyn_conf: Pushing back hankel time scan conf.");
         HankelTimeScanConf tmp(arrtbl);
         retVec.push_back(
             std::unique_ptr<SimConf>(new HankelTimeScanConf(arrtbl)));
@@ -608,13 +608,13 @@ tomlToDynConf(const std::string& fname) {
       break;
     case eHankelScan:
       val.for_each([&](toml::table& arrtbl) {
-        spdlog::debug("tomlToDynConf: Pushing back hankel scan conf.");
+        spdlog::debug("toml_to_dyn_conf: Pushing back hankel scan conf.");
         retVec.push_back(std::unique_ptr<SimConf>(new HankelScanConf(arrtbl)));
       });
       break;
     case eHankel:
       val.for_each([&](toml::table& arrtbl) {
-        spdlog::debug("tomlToDynConf: Pushing back hankel conf.");
+        spdlog::debug("toml_to_dyn_conf: Pushing back hankel conf.");
         retVec.push_back(std::unique_ptr<SimConf>(new HankelConf(arrtbl)));
       });
       break;

@@ -1,6 +1,5 @@
 #include "dynamic.h"
 #include "hermEigen.h"
-#include "periodic.h"
 #include "spdlog/spdlog.h"
 #include <H5public.h>
 #include <cstddef>
@@ -28,13 +27,13 @@ int main(const int argc, const char* const* argv) {
     return EXIT_FAILURE;
   }
 
-  if (result["v"].count()) {
+  if (static_cast<bool>(result["v"].count())) {
     spdlog::set_level(spdlog::level::trace);
   }
 
-  if (result["c"].count()) {
+  if (static_cast<bool>(result["c"].count())) {
     std::string fname = result["c"].as<std::string>();
-    auto confs = tomlToDynConf(fname);
+    auto confs = toml_to_dyn_conf(fname);
     spdlog::debug("Got {} confs", confs.size());
     for (const auto& conf : confs) {
       spdlog::debug("Running conf's run function");

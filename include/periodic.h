@@ -15,8 +15,8 @@ struct PerConf {
   std::optional<RangeConf<double>> kxrange;
   std::optional<RangeConf<double>> kyrange;
   std::vector<RangeConf<Vector2d>> kpath;
-  Vector2d lat_vecs[2];
-  Vector2d dual_vecs[2];
+  std::array<Vector2d, 2> lat_vecs;
+  std::array<Vector2d, 2> dual_vecs;
   bool do2D; // combine dispersion and dos, since dos follows from 2d disp
   bool doPath;
 
