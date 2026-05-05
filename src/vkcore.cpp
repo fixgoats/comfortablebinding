@@ -30,11 +30,11 @@ get_graphics_present_queue_family_indices(vk::PhysicalDevice phys_dev,
   u32 g_qfi = UINT32_MAX;
   u32 p_qfi = UINT32_MAX;
   for (u32 i = 0; i < queue_family_props.size(); i++) {
-    if (queue_family_props[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+    if (queue_family_props[i].queueFlags & vk::QueueFlagBits::eGraphics &&
+        static_cast<bool>(phys_dev.getSurfaceSupportKHR(i, surface))) {
       g_qfi = i;
-    }
-    if (static_cast<bool>(phys_dev.getSurfaceSupportKHR(i, surface))) {
       p_qfi = i;
+      break;
     }
   }
   if (g_qfi == UINT32_MAX) {

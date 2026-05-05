@@ -234,7 +234,7 @@ struct HankelConf : public SimConf {
     spdlog::debug("Read couplings.");
     const f64 r = rscale;
     const SparseMatrix<c64> J =
-        j * SparseC(points, couplings, [r](Vector2d d) {
+        j * sparse_c(points, couplings, [r](Vector2d d) {
           spdlog::debug("Effective distance is: {}", r * d.norm());
           return c64{gsl_sf_bessel_J0(r * d.norm()),
                      gsl_sf_bessel_Y0(r * d.norm())};
@@ -351,7 +351,7 @@ struct HankelTimeScanConf : public SimConf {
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = rscales.ith(n);
         const SparseMatrix<c64> J =
-            j * SparseC(points, couplings, [scale](Vector2d d) {
+            j * sparse_c(points, couplings, [scale](Vector2d d) {
               return c64{gsl_sf_bessel_J0(scale * d.norm()),
                          gsl_sf_bessel_Y0(scale * d.norm())};
             });
@@ -488,7 +488,7 @@ struct HankelScanConf : public SimConf {
       for (s64 n = 0; n < rscalesize; ++n) {
         const f64 scale = rscales.ith(n);
         const SparseMatrix<c64> J =
-            j * SparseC(points, couplings, [scale](Vector2d d) {
+            j * sparse_c(points, couplings, [scale](Vector2d d) {
               return c64{gsl_sf_bessel_J0(scale * d.norm()),
                          gsl_sf_bessel_Y0(scale * d.norm())};
             });

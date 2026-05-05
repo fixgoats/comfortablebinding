@@ -349,7 +349,7 @@ int main(int argc, char* argv[]) {
     f64 alpha = tbl["alpha"].value<f64>().value();
     f64 j = tbl["j"].value<f64>().value();
     f64 dt = tbl["dt"].value<f64>().value();
-    auto J = SparseC(points, couplings, [j, rscale](Vector2d d) {
+    auto J = sparse_c(points, couplings, [j, rscale](Vector2d d) {
       return j * c64{gsl_sf_bessel_J0(rscale * d.norm()),
                      gsl_sf_bessel_Y0(rscale * d.norm())};
     });

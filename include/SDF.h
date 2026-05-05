@@ -52,6 +52,7 @@ struct SdfConf {
 Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
 
 VectorXcd plane_wave(Vector2d k, const std::vector<Point>& points);
+// VectorXcd plane_wave(Vector2d k, const std::vector<Pt2>& points);
 MatrixXd disp(const VectorXd& d, const MatrixXcd& uh,
               const std::vector<Point>& points, f64 lat_const,
               std::vector<RangeConf<Vector2d>> kc, RangeConf<f64>& ec,

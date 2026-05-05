@@ -2,11 +2,11 @@
 #include "io.h"
 #include <iterator>
 
-std::vector<Point> readPoints(const std::string& fname) {
+std::vector<Point> read_points(const std::string& fname) {
   u32 m = 0;
   std::ifstream f(fname);
   if (!f.good()) {
-    runtime_exc("File {} doesn't exist", fname);
+    throw runtime_exc("File {} doesn't exist", fname);
   }
   std::vector<std::string> allLines{std::istream_iterator<Line>(f),
                                     std::istream_iterator<Line>()};

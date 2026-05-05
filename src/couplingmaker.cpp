@@ -127,8 +127,8 @@ int main(int argc, char* argv[]) {
     f64 radius = 0;
     switch (result["r"].count()) {
     case 0: {
-      f64 maxDist = maxNNDist(kdtree, points);
-      f64 avgDist = avgNNDist(kdtree, points);
+      f64 maxDist = max_nn_dist(kdtree, points);
+      f64 avgDist = avg_nn_dist(kdtree, points);
       std::cout << "Max distance between nearest neighbours: "
                 << std::format("{}", maxDist);
       std::cout << "Average distance between nearest neighbours: "

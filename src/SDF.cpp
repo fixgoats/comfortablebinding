@@ -21,16 +21,27 @@ void auto_limits(const VectorXd& d, RangeConf<f64>& rc) {
   rc.end = max + 0.01 * l;
 }
 
-VectorXcd plane_wave(Vector2d k, const std::vector<Pt2>& points) {
-  VectorXcd tmp = VectorXcd::Zero(static_cast<s64>(points.size()));
-  std::ranges::transform(points.begin(), points.end(), tmp.begin(), [&](Pt2 p) {
-    return (1. / sqrt(points.size())) *
-           std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
-  });
-  return VectorXcd{tmp.transpose()};
-}
+// VectorXcd plane_wave(Vector2d k, const std::vector<Pt2>& points) {
+//   VectorXcd tmp = VectorXcd::Zero(static_cast<s64>(points.size()));
+//   std::ranges::transform(points.begin(), points.end(), tmp.begin(), [&](Pt2
+//   p) {
+//     return (1. / sqrt(points.size())) *
+//            std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
+//   });
+//   return VectorXcd{tmp.transpose()};
+// }
 
 } // namespace
+
+VectorXcd plane_wave(Vector2d k, const std::vector<Point>& points) {
+  VectorXcd tmp = VectorXcd::Zero(static_cast<s64>(points.size()));
+  std::ranges::transform(points.begin(), points.end(), tmp.begin(),
+                         [&](Point p) {
+                           return (1. / sqrt(points.size())) *
+                                  std::exp(c64{0, k(0) * p[0] + k(1) * p[1]});
+                         });
+  return VectorXcd{tmp.transpose()};
+}
 
 Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff) {
   const f64 nonzero_range = std::sqrt(-std::log(cutoff) / sharpening);

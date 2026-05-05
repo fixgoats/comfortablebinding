@@ -33,8 +33,8 @@ struct PerConf {
         s64 n0 = t[1].value<s64>().value();
         s64 n1 = t[2].value<s64>().value();
         size_t j = t[0].value<size_t>().value();
-        Vector2d d = points[j].asVec() + n0 * lat_vecs[0] + n1 * lat_vecs[1] -
-                     points[i].asVec();
+        Vector2d d = points[j].as_vec() + n0 * lat_vecs[0] + n1 * lat_vecs[1] -
+                     points[i].as_vec();
         nbs.emplace_back(i, j, d);
       }
     }
