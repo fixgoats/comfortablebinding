@@ -24,9 +24,8 @@ using Eigen::MatrixX2d, Eigen::MatrixXd;
 int main(const int argc, const char* const* argv) {
   cxxopts::Options options("MyProgram", "bleh");
   options.add_options()("p,points", "File name", cxxopts::value<std::string>())(
-      "c,config", "TOML configuration", cxxopts::value<std::string>())(
-      "t,test", "Test whatever feature I'm working on rn.",
-      cxxopts::value<std::string>());
+      "c,config", "TOML configuration",
+      cxxopts::value<std::string>())("v,verbose", "Debug log");
 
   cxxopts::ParseResult result;
   try {
@@ -35,15 +34,24 @@ int main(const int argc, const char* const* argv) {
     std::cerr << "Exception: " << exc.what() << std::endl;
     return 1;
   }
+  if (static_cast<bool>(result["v"].count())) {
+    spdlog::set_level(spdlog::level::debug);
+  }
+
   if (static_cast<bool>(result["c"].count())) {
+
     std::string fname = result["c"].as<std::string>();
-    SdfConf conf;
-    if (auto opt = toml_to_sdf_conf(fname); opt.has_value()) {
-      conf = opt.value();
-    } else {
-      return 1;
+    auto confs = toml_to_sdf_conf(fname);
+    for (const auto& conf : confs) {
+      conf->run();
     }
-    do_sdf_calcs(conf);
+    // SdfConf conf;
+    // if (auto opt = toml_to_sdf_conf(fname); opt.has_value()) {
+    //   conf = opt.value();
+    // } else {
+    //   return 1;
+    // }
+    // do_sdf_calcs(conf);
   }
   if (static_cast<bool>(result["p"].count())) {
     std::string fname = result["p"].as<std::string>();
@@ -55,12 +63,5 @@ int main(const int argc, const char* const* argv) {
       return 1;
     }
     doPeriodicModel(conf);
-  }
-  if (static_cast<bool>(result["t"].count())) {
-    VectorXd a = VectorXd::Ones(100);
-
-    MatrixXd e = (a * a.transpose()).array() + 1;
-    std::cout << "dims: (" << e.cols() << ", " << e.rows() << ")\n";
-    return 0;
   }
 }

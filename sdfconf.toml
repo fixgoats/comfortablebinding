@@ -1,0 +1,37 @@
+[[non_herm_dos]]
+sharpening = 1000
+cutoff = 0.1
+point_path = "../punktar/mono1009couplings.h5"
+saved_diag = "../gögn/mono1000diag.h5"
+save_diag = true
+out_path = "mono1009dos.h5"
+kxc = { start = -6.29, end = 6.29, n = 100 }
+kyc = { start = -6.29, end = 6.29, n = 100 }
+ec = { start = -5.1, end = 5.1, n = 100 }
+rscale = 1
+
+# [[simpler_herm_dos]]
+# sharpening = 1000
+# cutoff = 0.1
+# point_path = "../punktar/mono1009couplings.h5"
+# saved_diag = "../gögn/mono1009diag.h5"
+# point_path = "../punktar/chain1000couplings.h5"
+# saved_diag = "../gögn/chain1000diag.h5"
+# save_diag = true
+# out_path = "eee.h5"
+# kxc = { start = -3.15, end = 3.15, n = 1000 }
+# kyc = { start = 0.0, end = 0.1, n = 1 }
+# ec = { start = -4.1, end = 4.1, n = 1000 }
+# rscale = 1
+
+# [[herm_disp]]
+# sharpening = 1000
+# cutoff = 0.1
+# point_path = "../punktar/square10000couplings.h5"
+# # point_path = "../punktar/chain1000couplings.h5"
+# out_path = "eee.h5"
+# saved_diag = "../gögn/square10000diag.h5"
+# # saved_diag = "../gögn/chain1000couplings.h5"
+# save_diag = true
+# kxc = { start = -3.15, end = 3.15, n = 1000 }
+# ec = { start = -0.1, end = 4.1, n = 1000 }
