@@ -2,7 +2,6 @@ build/
 debug-build/
 debug/
 release/
-punktar/
 .cache/
 compile_commands.json
 log.txt
