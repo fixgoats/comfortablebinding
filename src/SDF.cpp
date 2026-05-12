@@ -133,53 +133,53 @@ struct SpecConsts {
   f32 dk;
 };
 
-MatrixXd non_herm_disp(const VectorXcd& d, const MatrixXcd& uh,
-                       const std::vector<Point>& points, f64 lat_const,
-                       RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-                       f64 sharpening, f64 cutoff, bool print_progress) {
-  std::cout << "Lattice constant (sort of) is: " << lat_const << '\n';
-  std::cout << "Calculating cross section of SDF at E = " << e << '\n';
-  const u32 its = kxc.n / 10;
-  MatrixXd sdf(kyc.n, kxc.n);
-  // auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
-  auto del = delta(d, {.start = e, .end = e, .n = 1}, sharpening, cutoff);
-  if (print_progress) {
-    std::cout << "[" << std::flush;
-  }
-  const std::vector<size_t> indices = [&]() {
-    std::vector<size_t> tmp;
-    for (const auto pair : del[0]) {
-      tmp.push_back(pair.second);
-    }
-    return tmp;
-  }();
-  MatrixXcd restricted_uh = uh(indices, Eigen::indexing::all);
-#pragma omp parallel for
-  for (size_t i = 0; i < kxc.n; i++) {
-    const f64 kx = kxc.ith(i) * 2 * M_PI / lat_const;
-    std::vector<u64> cur_element(kyc.n, 0);
-    for (u64 j = 0; j < kyc.n; j++) {
-      const f64 ky = kyc.ith(j) * 2 * M_PI / lat_const;
-      const VectorXcd k_vec = restricted_uh * plane_wave({kx, ky}, points);
-      u32 cur_element = 0;
-      for (const auto& pair : del[0]) {
-        sdf(static_cast<s64>(j), static_cast<s64>(i)) +=
-            pair.first * std::norm(k_vec(cur_element));
-        cur_element += 1;
-      }
-    }
-    if (print_progress) {
-      if (i % its == 0) {
-        std::cout << "█|" << std::flush;
-      }
-    }
-  }
-#pragma omp barrier
-  if (print_progress) {
-    std::cout << "█]\n";
-  }
-  return sdf;
-}
+// MatrixXd non_herm_disp(const VectorXcd& d, const MatrixXcd& uh,
+//                        const std::vector<Point>& points, f64 lat_const,
+//                        RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
+//                        f64 sharpening, f64 cutoff, bool print_progress) {
+//   std::cout << "Lattice constant (sort of) is: " << lat_const << '\n';
+//   std::cout << "Calculating cross section of SDF at E = " << e << '\n';
+//   const u32 its = kxc.n / 10;
+//   MatrixXd sdf(kyc.n, kxc.n);
+//   // auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
+//   auto del = delta(d, {.start = e, .end = e, .n = 1}, sharpening, cutoff);
+//   if (print_progress) {
+//     std::cout << "[" << std::flush;
+//   }
+//   const std::vector<size_t> indices = [&]() {
+//     std::vector<size_t> tmp;
+//     for (const auto pair : del[0]) {
+//       tmp.push_back(pair.second);
+//     }
+//     return tmp;
+//   }();
+//   MatrixXcd restricted_uh = uh(indices, Eigen::indexing::all);
+// #pragma omp parallel for
+//   for (size_t i = 0; i < kxc.n; i++) {
+//     const f64 kx = kxc.ith(i) * 2 * M_PI / lat_const;
+//     std::vector<u64> cur_element(kyc.n, 0);
+//     for (u64 j = 0; j < kyc.n; j++) {
+//       const f64 ky = kyc.ith(j) * 2 * M_PI / lat_const;
+//       const VectorXcd k_vec = restricted_uh * plane_wave({kx, ky}, points);
+//       u32 cur_element = 0;
+//       for (const auto& pair : del[0]) {
+//         sdf(static_cast<s64>(j), static_cast<s64>(i)) +=
+//             pair.first * std::norm(k_vec(cur_element));
+//         cur_element += 1;
+//       }
+//     }
+//     if (print_progress) {
+//       if (i % its == 0) {
+//         std::cout << "█|" << std::flush;
+//       }
+//     }
+//   }
+// #pragma omp barrier
+//   if (print_progress) {
+//     std::cout << "█]\n";
+//   }
+//   return sdf;
+// }
 
 MatrixXd non_herm_e_section(const VectorXd& d, const MatrixXcd& uh,
                             const std::vector<Point>& points, f64 lat_const,

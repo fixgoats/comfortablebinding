@@ -15,7 +15,8 @@ set(CMAKE_EXE_LINKER_FLAGS
 
 add_compile_options(-w -fexperimental-library
                     "$<$<CONFIG:release>:-O3;-ffast-math;-march=native>")
-add_compile_definitions("$<$<CONFIG:release>:NDEBUG;BOOST_DISABLE_ASSERTS>")
+add_compile_definitions(VK_NO_PROTOTYPES
+                        "$<$<CONFIG:release>:NDEBUG;BOOST_DISABLE_ASSERTS>")
 
 add_subdirectory(deps/spdlog)
 find_package(GSL REQUIRED)

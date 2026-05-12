@@ -4,7 +4,10 @@
 #include "hack.hpp"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
+#include "slang/slang-com-ptr.h"
+#include "slang/slang.h"
 #include "typedefs.h"
+#include <SDL3/SDL.h>
 #include <array>
 #include <boost/pfr/core.hpp>
 #include <chrono>
@@ -13,10 +16,16 @@
 #include <fstream>
 #include <span>
 
+#define DEBUG_START spdlog::debug("{}: Start", __func__)
+#define DEBUG_END spdlog::debug("{}: End", __func__)
+#define DEBUG_LOG(...)                                                         \
+  spdlog::debug("{}: {}", __func__, std::format(__VA_ARGS__))
+
 using std::bit_cast;
 
 constexpr u32 GRID_WIDTH = 512;
 constexpr u32 GRID_HEIGHT = 512;
+constexpr VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
 
 constexpr u32 round_up_x16(u32 n) { return ((n + 15) / 16) * 16; }
 
@@ -63,34 +72,6 @@ inline std::string tstamp() {
 void save_to_file(std::string fname, const char* buf, size_t size);
 
 constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
-
-/*struct SimConstants {
-  u32 nElementsX;
-  u32 nElementsY;
-  u32 nElementsZ;
-  u32 xGroupSize;
-  u32 yGroupSize;
-  f32 gamma;
-  f32 Gamma;
-  f32 R;
-  f32 EXY;
-  f32 dt;
-  f32 B0;
-  f32 width;
-  f32 resgamma;
-  f32 Bamp;
-  f32 PRatioMax;
-  u32 substeps;
-  constexpr u32 X() const { return nElementsX / xGroupSize; }
-  constexpr u32 Y() const { return nElementsY / yGroupSize; }
-  constexpr bool validate() const {
-    return (nElementsY % yGroupSize == 0) && (nElementsX % xGroupSize == 0);
-  }
-  constexpr u32 elementsTotal() const { return nElementsX * nElementsY; }
-};*/
-
-// std::ostream& operator<<(std::ostream& os, const SimConstants& obj);
-// std::ofstream& operator<<(std::ofstream& os, const SimConstants& obj);
 
 static const vk::MemoryBarrier
     FULL_MEMORY_BARRIER(vk::AccessFlagBits::eMemoryWrite,
@@ -158,16 +139,6 @@ struct Algorithm {
   void initialize(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
                   u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
                   size_t n_push_constants = 0);
-  // Algorithm(vk::Device device, u32 img_views, u32 buffers, u32 n_ubo,
-  //           const std::vector<u32>& spirv, const u8* spec_consts = nullptr,
-  //           const size_t* sizes = nullptr, size_t n_consts = 0,
-  //           const size_t* push_sizes = nullptr, size_t n_push_constants = 0);
-  // void initialize(vk::Device device, u32 n_imgs, u32 n_buffers, u32 n_ubo,
-  //                 const std::vector<u32>& spirv,
-  //                 const u8* spec_consts = nullptr,
-  //                 const size_t* sizes = nullptr, size_t n_consts = 0,
-  //                 const size_t* push_sizes = nullptr,
-  //                 size_t n_push_constants = 0);
   void bind_data(std::span<const vk::ImageView> img_views,
                  std::span<const MetaBuffer* const> buffers,
                  std::span<const MetaBuffer* const> ubos) const;
@@ -319,90 +290,121 @@ struct Manager {
       const std::vector<MetaBuffer*>& buffers,
       std::span<const f32> spec_consts = {}, size_t n_push_constants = 0) const;
 
-  // [[nodiscard]] Algorithm
-  // make_algorithm(std::string spirvname,
-  //                const std::vector<vk::ImageView>& images,
-  //                std::vector<MetaBuffer*> buffers, std::span<f32>
-  //                spec_consts) {
-  //   return make_algorithm_raw(spirvname, images, buffers,
-  //                             bit_cast<const u8*>(&spec_consts),
-  //                             sizes.data(), sizes.size());
-  // }
-  // template <class PushType, class T>
-  // [[nodiscard]] Algorithm make_algorithm(std::string spirvname,
-  //                                        std::vector<MetaBuffer*> buffers,
-  //                                        const T spec_consts) {
-  //   constexpr size_t n_spec_consts = boost::pfr::tuple_size_v<T>;
-  //   std::array<size_t, n_spec_consts> sizes;
-  //   constexpr_for<0, n_spec_consts, 1>([&sizes](auto i) {
-  //     sizes[i] = sizeof(boost::pfr::tuple_element_t<i, T>);
-  //   });
-  //   constexpr size_t n_push_consts = boost::pfr::tuple_size_v<PushType>;
-  //   std::array<size_t, n_push_consts> push_sizes;
-  //   constexpr_for<0, n_push_consts, 1>([&push_sizes](auto i) {
-  //     push_sizes[i] = sizeof(boost::pfr::tuple_element_t<i, PushType>);
-  //   });
-  //   return make_algorithm_raw(
-  //       spirvname, {}, buffers, bit_cast<const u8*>(&spec_consts),
-  //       sizes.data(), sizes.size(), push_sizes.data(), push_sizes.size());
-  // }
   ~Manager();
 };
 
 struct Renderer {
-  // non-owned
-  Manager* p_mgr;
-  //  owned
-  vk::RenderPass render_pass;
-  vk::Pipeline graphics_pipeline;
-  vk::PipelineLayout graphics_pipeline_layout;
-  vk::SwapchainKHR swapchain;
-  vk::SurfaceKHR surface;
-  std::vector<vk::Framebuffer> swapchain_fbs;
-  std::vector<vk::Image> swapchain_imgs;
-  vk::Format swapchain_img_fmt;
-  vk::Extent2D swapchain_extent;
-  std::array<u32, 2> render_queue_indices = {UINT32_MAX, UINT32_MAX};
-  vk::Queue graphics_queue;
-  vk::Queue present_queue;
-  std::vector<vk::ImageView> swapchain_img_views;
-  std::vector<vk::Semaphore> present_semaphores;
-  std::vector<vk::Semaphore> render_semaphores;
-  // std::vector<vk::Fence> image_in_flight_fences;
-  std::vector<vk::Fence> in_flight_fences;
-  vk::CommandPool command_pool;
-  std::vector<vk::CommandBuffer> command_buffers;
-  vk::CommandBuffer reduction_buffer;
-  MetaBuffer vertex_buffer;
-  AllocatedImage colormap_img;
-  MetaBuffer colormap;
-  vk::ImageView colormap_view;
-  vk::Sampler colormap_sampler;
-  vk::DescriptorSetLayout descriptor_set_layout;
-  vk::DescriptorPool descriptor_pool;
-  vk::DescriptorSet descriptor_set;
-  vk::SurfaceCapabilitiesKHR capabilities;
-  vk::SurfaceFormatKHR surface_format;
-  vk::PresentModeKHR present_mode;
-  MetaBuffer value_buffer;
-  MetaBuffer minmax_buffer;
-  Algorithm first_minmax_reduction;
-  Algorithm minmax_reduction;
-  Algorithm fill_colormap_img;
-  u32 n_images;
-  bool frame_buffer_resized;
-  u32 current_frame = 0;
+  SDL_Window* window;
+  VkInstance instance;
+  VkPhysicalDevice physical_device;
+  VkDevice device;
+  VkQueue queue;
+  VkSurfaceKHR surface;
+  VkSurfaceCapabilitiesKHR surface_caps;
+  VkExtent2D swapchain_extent;
+  VkSwapchainCreateInfoKHR swapchain_ci{};
+  VkSwapchainKHR swapchain;
+  std::vector<VkImage> swapchain_imgs;
+  std::vector<VkImageView> swapchain_img_views;
+  VkCommandPool command_pool;
+  VkPipeline pipeline;
+  VkPipelineLayout pipeline_layout;
+  VkImageCreateInfo depth_img_ci{};
+  VkFormat depth_fmt;
+  VkImage depth_img;
+  VmaAllocator allocator{};
+  VmaAllocation depth_allocation{};
+  VkImageView depth_view;
+  std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> cbs;
+  std::array<VkFence, MAX_FRAMES_IN_FLIGHT> fences;
+  std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> img_acquired_semaphores;
+  std::vector<VkSemaphore> render_complete_semaphores;
+  VmaAllocation v_buffer_allocation{};
+  VmaAllocationInfo v_buffer_ai{};
+  VkDeviceSize v_buf_size;
+  VkDeviceSize i_buf_size;
+  VkBuffer v_buffer;
+  VkDeviceSize index_count;
+  struct Texture {
+    VmaAllocation allocation{VK_NULL_HANDLE};
+    VkImage image{VK_NULL_HANDLE};
+    VkImageView view{VK_NULL_HANDLE};
+    VkSampler sampler{VK_NULL_HANDLE};
+  };
+  Texture texture{};
+  VkDescriptorPool descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorSetLayout descriptor_set_layout_tex{VK_NULL_HANDLE};
+  VkDescriptorSet descriptor_set_tex{VK_NULL_HANDLE};
+  Slang::ComPtr<slang::IGlobalSession> slang_global_session;
+  u32 frame_index{};
 
-  Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny);
-  void cleanup_swapchain();
+  void make_depth_img_and_view();
+
   void recreate_swapchain();
+
+  void init_sync_objects();
+
+  VkDescriptorImageInfo load_tex_img();
+
+  [[nodiscard]] VkShaderModule load_main_shader() const;
+
+  Renderer(SDL_Window* window, VkSurfaceKHR surf);
+
   void draw_frame();
-  ~Renderer();
 };
 
+// struct Renderer {
+//   // non-owned
+//   Manager* p_mgr;
+//   //  owned
+//   vk::RenderPass render_pass;
+//   vk::Pipeline graphics_pipeline;
+//   vk::PipelineLayout graphics_pipeline_layout;
+//   vk::SwapchainKHR swapchain;
+//   vk::SurfaceKHR surface;
+//   std::vector<vk::Framebuffer> swapchain_fbs;
+//   std::vector<vk::Image> swapchain_imgs;
+//   vk::Format swapchain_img_fmt;
+//   vk::Extent2D swapchain_extent;
+//   std::array<u32, 2> render_queue_indices = {UINT32_MAX, UINT32_MAX};
+//   vk::Queue graphics_queue;
+//   vk::Queue present_queue;
+//   std::vector<vk::ImageView> swapchain_img_views;
+//   std::vector<vk::Semaphore> present_semaphores;
+//   std::vector<vk::Semaphore> render_semaphores;
+//   // std::vector<vk::Fence> image_in_flight_fences;
+//   std::vector<vk::Fence> in_flight_fences;
+//   vk::CommandPool command_pool;
+//   std::vector<vk::CommandBuffer> command_buffers;
+//   vk::CommandBuffer reduction_buffer;
+//   MetaBuffer vertex_buffer;
+//   AllocatedImage colormap_img;
+//   MetaBuffer colormap;
+//   vk::ImageView colormap_view;
+//   vk::Sampler colormap_sampler;
+//   vk::DescriptorSetLayout descriptor_set_layout;
+//   vk::DescriptorPool descriptor_pool;
+//   vk::DescriptorSet descriptor_set;
+//   vk::SurfaceCapabilitiesKHR capabilities;
+//   vk::SurfaceFormatKHR surface_format;
+//   vk::PresentModeKHR present_mode;
+//   MetaBuffer value_buffer;
+//   MetaBuffer minmax_buffer;
+//   Algorithm first_minmax_reduction;
+//   Algorithm minmax_reduction;
+//   Algorithm fill_colormap_img;
+//   u32 n_images;
+//   bool frame_buffer_resized;
+//   u32 current_frame = 0;
+//
+//   Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny);
+//   void cleanup_swapchain();
+//   void recreate_swapchain();
+//   void draw_frame();
+//   ~Renderer();
+// };
+
 std::vector<u32> read_file(const std::string& filename);
-vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
-                                        s32 desired_gpu = -1);
 
 template <typename Func>
 void one_time_submit(vk::Device device, vk::CommandPool cmd_pool,
@@ -424,3 +426,6 @@ void one_time_submit(vk::Device device, vk::CommandPool cmd_pool,
 void append_op(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
 void append_op_no_barrier(vk::CommandBuffer b, const Algorithm& a, u32 x,
                           u32 y = 1, u32 z = 1);
+#undef DEBUG_LOG
+#undef DEBUG_END
+#undef DEBUG_START
