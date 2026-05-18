@@ -5,9 +5,9 @@ point_path = "../punktar/mono1009couplings.h5"
 saved_diag = "../gögn/mono1000diag.h5"
 save_diag = true
 out_path = "mono1009dos.h5"
-kxc = { start = -6.29, end = 6.29, n = 100 }
-kyc = { start = -6.29, end = 6.29, n = 100 }
-ec = { start = -5.1, end = 5.1, n = 100 }
+kxc = { start = -6.29, end = 6.29, n = 400 }
+kyc = { start = -6.29, end = 6.29, n = 400 }
+ec = { start = -5.1, end = 5.1, n = 200 }
 rscale = 1
 
 # [[simpler_herm_dos]]

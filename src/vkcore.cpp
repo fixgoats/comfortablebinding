@@ -6,11 +6,13 @@
 #include <SDL3/SDL_vulkan.h>
 #include <array>
 #include <cmath>
-#define VOLK_IMPLEMENTATION
 #include <cstddef>
 #include <cstdint>
 #include <format>
 #include <iostream>
+#define VMA_IMPLEMENTATION 1003000
+#include <vma/vk_mem_alloc.h>
+#define VOLK_IMPLEMENTATION
 #include <volk/volk.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -24,13 +26,6 @@
   spdlog::debug("{}: {}", __func__, std::format(__VA_ARGS__))
 
 namespace {
-inline void chk(VkResult result) {
-  if (result != VK_SUCCESS) {
-    std::cerr << "Vulkan call returned an error (" << result << ")\n";
-    exit(result);
-  }
-}
-
 inline bool chk_swapchain(VkResult result) {
   DEBUG_START;
   if (result < VK_SUCCESS) {
@@ -141,168 +136,182 @@ inline VkFormat pick_depth_format(VkPhysicalDevice physical_device) {
   return depth_format;
 }
 
-u32 get_compute_queue_family_index(vk::PhysicalDevice phys_dev) {
-  const auto queue_family_props = phys_dev.getQueueFamilyProperties();
+u32 get_compute_queue_family_index(VkPhysicalDevice phys_dev) {
+  u32 qf_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(phys_dev, &qf_count, nullptr);
+  std::vector<VkQueueFamilyProperties> qfps(qf_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(phys_dev, &qf_count, qfps.data());
   const auto index = std::ranges::find_if(
-      queue_family_props.cbegin(), queue_family_props.cend(),
-      [](vk::QueueFamilyProperties qfp) {
-        return static_cast<bool>(qfp.queueFlags & vk::QueueFlagBits::eCompute);
+      qfps.cbegin(), qfps.cend(), [](VkQueueFamilyProperties qfp) {
+        return static_cast<bool>(qfp.queueFlags & VK_QUEUE_COMPUTE_BIT);
       });
-  return std::distance(queue_family_props.begin(), index);
+  return std::distance(qfps.cbegin(), index);
 }
 
-std::array<u32, 2>
-get_graphics_present_queue_family_indices(vk::PhysicalDevice phys_dev,
-                                          vk::SurfaceKHR surface) {
-  auto queue_family_props = phys_dev.getQueueFamilyProperties();
-  u32 g_qfi = UINT32_MAX;
-  u32 p_qfi = UINT32_MAX;
-  for (u32 i = 0; i < queue_family_props.size(); i++) {
-    if (queue_family_props[i].queueFlags & vk::QueueFlagBits::eGraphics &&
-        static_cast<bool>(phys_dev.getSurfaceSupportKHR(i, surface))) {
-      g_qfi = i;
-      p_qfi = i;
+u32 get_graphics_present_queue_family_index(VkPhysicalDevice phys_dev,
+                                            VkSurfaceKHR surface) {
+  u32 qf_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(phys_dev, &qf_count, nullptr);
+  std::vector<VkQueueFamilyProperties> qfps(qf_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(phys_dev, &qf_count, qfps.data());
+  for (u32 i = 0; i < qfps.size(); i++) {
+    VkBool32 surface_supported = VK_FALSE;
+    vkGetPhysicalDeviceSurfaceSupportKHR(phys_dev, i, surface,
+                                         &surface_supported);
+    if (static_cast<bool>(qfps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+        static_cast<bool>(surface_supported)) {
+      return i;
       break;
     }
   }
-  if (g_qfi == UINT32_MAX) {
-    throw runtime_exc("Fatal: Unable to find graphics queue family index.");
-  }
-  if (p_qfi == UINT32_MAX) {
-    throw runtime_exc("Fatal: Unable to find present queue family index.");
-  }
-  return {g_qfi, p_qfi};
+  spdlog::error(
+      "{}: Fatal: Unable to find graphics and present queue family index.",
+      __func__);
+  exit(-1);
 }
 
-void record_drawing_commands(
-    vk::Framebuffer framebuffer, vk::RenderPass render_pass,
-    vk::Extent2D swap_extent, vk::Pipeline graphics_pipeline,
-    vk::PipelineLayout gpl, vk::DescriptorSet descriptor_set,
-    vk::Buffer vertex_buffer, vk::CommandBuffer command_buffer) {
-  vk::ClearValue clear{{1.0F, 1.0F, 1.0F, 1.0F}};
-  vk::RenderPassBeginInfo render_pass_info(
-      render_pass, framebuffer, vk::Rect2D(vk::Offset2D(0, 0), swap_extent),
-      clear);
-  vk::Viewport viewport(0.0F, 0.0F, (f32)swap_extent.width,
-                        (f32)swap_extent.height, 0.0F, 1.0F);
-  vk::Rect2D scissor(vk::Offset2D(0, 0), swap_extent);
-  command_buffer.setViewport(0, viewport);
-  command_buffer.setScissor(0, scissor);
-  command_buffer.beginRenderPass(render_pass_info,
-                                 vk::SubpassContents::eInline);
-  command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                              graphics_pipeline);
-  command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, gpl, 0,
-                                    descriptor_set, nullptr);
-  command_buffer.bindVertexBuffers(0, vertex_buffer, {0});
-  command_buffer.draw(6, 1, 0, 0);
-  command_buffer.endRenderPass();
+// void record_drawing_commands(VkFramebuffer framebuffer,
+//                              VkRenderPass render_pass, VkExtent2D
+//                              swap_extent, VkPipeline graphics_pipeline,
+//                              VkPipelineLayout gpl, VkDescriptorSet
+//                              descriptor_set, VkBuffer vertex_buffer,
+//                              VkCommandBuffer command_buffer) {
+//   VkClearValue clear{{1.0F, 1.0F, 1.0F, 1.0F}};
+//   VkRenderPassBeginInfo render_pass_info(
+//       render_pass, framebuffer, VkRect2D(VkOffset2D(0, 0), swap_extent),
+//       clear);
+//   VkViewport viewport(0.0F, 0.0F, (f32)swap_extent.width,
+//                       (f32)swap_extent.height, 0.0F, 1.0F);
+//   VkRect2D scissor(VkOffset2D(0, 0), swap_extent);
+//   command_buffer.setViewport(0, viewport);
+//   command_buffer.setScissor(0, scissor);
+//   command_buffer.beginRenderPass(render_pass_info,
+//   VkSubpassContents::eInline);
+//   command_buffer.bindPipeline(VkPipelineBindPoint::eGraphics,
+//                               graphics_pipeline);
+//   command_buffer.bindDescriptorSets(VkPipelineBindPoint::eGraphics, gpl, 0,
+//                                     descriptor_set, nullptr);
+//   command_buffer.bindVertexBuffers(0, vertex_buffer, {0});
+//   command_buffer.draw(6, 1, 0, 0);
+//   command_buffer.endRenderPass();
+// }
+
+// std::set<std::string> get_supported_extensions() {
+//   uint32_t count = 0;
+//   VkResult result =
+//       VkenumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+//   if (result != VkResult::eSuccess) {
+//     throw runtime_exc("Couldn't enumerate instance extension properties.\n");
+//   }
+//
+//   std::vector<VkExtensionProperties> extension_properties(count);
+//
+//   // Get the extensions
+//   result = VkenumerateInstanceExtensionProperties(nullptr, &count,
+//                                                   extension_properties.data());
+//   if (result != VkResult::eSuccess) {
+//     throw runtime_exc(
+//         "Couldn't write instance extension properties to buffer.\n");
+//   }
+//
+//   std::set<std::string> extensions;
+//   for (auto& extension : extension_properties) {
+//     extensions.insert(extension.extensionName);
+//   }
+//
+//   return extensions;
+// }
+
+void copy_buffer_now(VkDevice device, VkCommandPool command_pool, VkQueue queue,
+                     VkFence fence, VkBuffer& src_buffer, VkBuffer& dst_buffer,
+                     u32 buffer_size, u32 src_offset, u32 dst_offset) {
+  VkCommandBuffer cb = make_cb(device, command_pool);
+  VkCommandBufferBeginInfo cb_bi{};
+  cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cb_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(cb, &cb_bi);
+  VkBufferCopy2 cp_region{};
+  cp_region.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
+  cp_region.size = buffer_size;
+  cp_region.dstOffset = dst_offset;
+  cp_region.srcOffset = src_offset;
+  VkCopyBufferInfo2 cpb_info{};
+  cpb_info.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
+  cpb_info.srcBuffer = src_buffer;
+  cpb_info.dstBuffer = dst_buffer;
+  cpb_info.regionCount = 1;
+  cpb_info.pRegions = &cp_region;
+
+  vkCmdCopyBuffer2(cb, &cpb_info);
+  vkEndCommandBuffer(cb);
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &cb;
+  vkQueueSubmit(queue, 1, &submit_info, fence);
+  chk(vkWaitForFences(device, 1, &fence, VK_TRUE, -1));
+  chk(vkResetFences(device, 1, &fence));
+  vkFreeCommandBuffers(device, command_pool, 1, &cb);
 }
 
-std::set<std::string> get_supported_extensions() {
-  uint32_t count = 0;
-  vk::Result result =
-      vk::enumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-  if (result != vk::Result::eSuccess) {
-    throw runtime_exc("Couldn't enumerate instance extension properties.\n");
-  }
+// VkSwapchainKHR create_swapchain(VkDevice device, VkSurfaceKHR surface,
+//                                 VkSurfaceCapabilitiesKHR capabilities,
+//                                 VkSurfaceFormatKHR surface_format,
+//                                 VkPresentModeKHR present_mode,
+//                                 VkExtent2D swapchain_extent, u32 n_images,
+//                                 std::array<u32, 2> qfis,
+//                                 VkSwapchainKHR old_swapchain = nullptr) {
+//   VkSurfaceTransformFlagBitsKHR pre_transform =
+//       (capabilities.supportedTransforms &
+//        VkSurfaceTransformFlagBitsKHR::eIdentity)
+//           ? VkSurfaceTransformFlagBitsKHR::eIdentity
+//           : capabilities.currentTransform;
+//
+//   VkCompositeAlphaFlagBitsKHR composite_alpha =
+//       (capabilities.supportedCompositeAlpha &
+//        VkCompositeAlphaFlagBitsKHR::ePreMultiplied)
+//           ? VkCompositeAlphaFlagBitsKHR::ePreMultiplied
+//       : (capabilities.supportedCompositeAlpha &
+//          VkCompositeAlphaFlagBitsKHR::ePostMultiplied)
+//           ? VkCompositeAlphaFlagBitsKHR::ePostMultiplied
+//       : (capabilities.supportedCompositeAlpha &
+//          VkCompositeAlphaFlagBitsKHR::eInherit)
+//           ? VkCompositeAlphaFlagBitsKHR::eInherit
+//           : VkCompositeAlphaFlagBitsKHR::eOpaque;
+//   VkSwapchainCreateInfoKHR create_info(
+//       {}, surface, n_images, surface_format.format,
+//       surface_format.colorSpace, swapchain_extent, 1,
+//       VkImageUsageFlagBits::eColorAttachment, VkSharingMode::eExclusive, {},
+//       pre_transform, composite_alpha, present_mode, VkTrue, old_swapchain);
+//   create_info.queueFamilyIndexCount = 1;
+//   create_info.pQueueFamilyIndices = qfis.data();
+//   if (qfis[0] != qfis[1]) {
+//     // If the graphics and present queues are from different queue families,
+//     // we either have to explicitly transfer ownership of images between the
+//     // queues, or we have to create the swapchain with imageSharingMode as
+//     // VK_SHARING_MODE_CONCURRENT
+//     create_info.imageSharingMode = VkSharingMode::eConcurrent;
+//     create_info.queueFamilyIndexCount = 2;
+//   }
+//   return device.createSwapchainKHR(create_info);
+// }
 
-  std::vector<vk::ExtensionProperties> extension_properties(count);
-
-  // Get the extensions
-  result = vk::enumerateInstanceExtensionProperties(
-      nullptr, &count, extension_properties.data());
-  if (result != vk::Result::eSuccess) {
-    throw runtime_exc(
-        "Couldn't write instance extension properties to buffer.\n");
-  }
-
-  std::set<std::string> extensions;
-  for (auto& extension : extension_properties) {
-    extensions.insert(extension.extensionName);
-  }
-
-  return extensions;
-}
-
-void copy_buffer_now(vk::Device device, vk::CommandPool command_pool,
-                     vk::Queue queue, vk::Fence fence, vk::Buffer& src_buffer,
-                     vk::Buffer& dst_buffer, u32 buffer_size, u32 src_offset,
-                     u32 dst_offset) {
-  auto cmd_buffer = device
-                        .allocateCommandBuffers(
-                            {command_pool, vk::CommandBufferLevel::ePrimary, 1})
-                        .front();
-  vk::CommandBufferBeginInfo cbbi(
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-  cmd_buffer.begin(cbbi);
-  cmd_buffer.copyBuffer(src_buffer, dst_buffer,
-                        vk::BufferCopy(src_offset, dst_offset, buffer_size));
-  cmd_buffer.end();
-  vk::SubmitInfo submit_info(nullptr, nullptr, cmd_buffer);
-  queue.submit(submit_info, fence);
-  auto result = device.waitForFences(fence, vk::True, -1);
-  result = device.resetFences(1, &fence);
-  device.freeCommandBuffers(command_pool, cmd_buffer);
-}
-
-vk::SwapchainKHR create_swapchain(vk::Device device, vk::SurfaceKHR surface,
-                                  vk::SurfaceCapabilitiesKHR capabilities,
-                                  vk::SurfaceFormatKHR surface_format,
-                                  vk::PresentModeKHR present_mode,
-                                  vk::Extent2D swapchain_extent, u32 n_images,
-                                  std::array<u32, 2> qfis,
-                                  vk::SwapchainKHR old_swapchain = nullptr) {
-  vk::SurfaceTransformFlagBitsKHR pre_transform =
-      (capabilities.supportedTransforms &
-       vk::SurfaceTransformFlagBitsKHR::eIdentity)
-          ? vk::SurfaceTransformFlagBitsKHR::eIdentity
-          : capabilities.currentTransform;
-
-  vk::CompositeAlphaFlagBitsKHR composite_alpha =
-      (capabilities.supportedCompositeAlpha &
-       vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePreMultiplied
-      : (capabilities.supportedCompositeAlpha &
-         vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
-          ? vk::CompositeAlphaFlagBitsKHR::ePostMultiplied
-      : (capabilities.supportedCompositeAlpha &
-         vk::CompositeAlphaFlagBitsKHR::eInherit)
-          ? vk::CompositeAlphaFlagBitsKHR::eInherit
-          : vk::CompositeAlphaFlagBitsKHR::eOpaque;
-  vk::SwapchainCreateInfoKHR create_info(
-      {}, surface, n_images, surface_format.format, surface_format.colorSpace,
-      swapchain_extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
-      vk::SharingMode::eExclusive, {}, pre_transform, composite_alpha,
-      present_mode, vk::True, old_swapchain);
-  create_info.queueFamilyIndexCount = 1;
-  create_info.pQueueFamilyIndices = qfis.data();
-  if (qfis[0] != qfis[1]) {
-    // If the graphics and present queues are from different queue families,
-    // we either have to explicitly transfer ownership of images between the
-    // queues, or we have to create the swapchain with imageSharingMode as
-    // VK_SHARING_MODE_CONCURRENT
-    create_info.imageSharingMode = vk::SharingMode::eConcurrent;
-    create_info.queueFamilyIndexCount = 2;
-  }
-  return device.createSwapchainKHR(create_info);
-}
-
-std::vector<vk::ImageView>
-create_image_views(vk::Device device, vk::SurfaceFormatKHR surface_format,
-                   std::vector<vk::Image> images) {
-  std::vector<vk::ImageView> swapchain_image_views;
-  swapchain_image_views.reserve(images.size());
-  vk::ImageViewCreateInfo img_view_create_info(
-      {}, {}, vk::ImageViewType::e2D, surface_format.format, {},
-      {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-  for (auto img : images) {
-    img_view_create_info.image = img;
-    swapchain_image_views.push_back(
-        device.createImageView(img_view_create_info));
-  }
-  return swapchain_image_views;
-}
+// std::vector<VkImageView> create_image_views(VkDevice device,
+//                                             VkSurfaceFormatKHR
+//                                             surface_format,
+//                                             std::vector<VkImage> images) {
+//   std::vector<VkImageView> swapchain_image_views;
+//   swapchain_image_views.reserve(images.size());
+//   VkImageViewCreateInfo img_view_create_info(
+//       {}, {}, VkImageViewType::e2D, surface_format.format, {},
+//       {VkImageAspectFlagBits::eColor, 0, 1, 0, 1});
+//   for (auto img : images) {
+//     img_view_create_info.image = img;
+//     swapchain_image_views.push_back(
+//         device.createImageView(img_view_create_info));
+//   }
+//   return swapchain_image_views;
+// }
 
 inline VkBool32 supports_required_features(VkPhysicalDevice phys_dev,
                                            bool graphics) {
@@ -474,7 +483,7 @@ MetaBuffer::MetaBuffer() : allocation{}, aInfo{} {}
 
 MetaBuffer::MetaBuffer(VmaAllocator& allocator,
                        VmaAllocationCreateInfo& alloc_create_info,
-                       vk::BufferCreateInfo& bci)
+                       VkBufferCreateInfo& bci)
     : p_allocator{&allocator}, allocation{} {
   aInfo = VmaAllocationInfo{};
   vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
@@ -484,7 +493,7 @@ MetaBuffer::MetaBuffer(VmaAllocator& allocator,
 
 void MetaBuffer::allocate(VmaAllocator& allocator,
                           VmaAllocationCreateInfo& alloc_create_info,
-                          vk::BufferCreateInfo& bci) {
+                          VkBufferCreateInfo& bci) {
   p_allocator = &allocator;
   vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
                   &alloc_create_info, pcast<VkBuffer>(&buffer), &allocation,
@@ -496,15 +505,15 @@ MetaBuffer::~MetaBuffer() {
 }
 
 AllocatedImage::AllocatedImage() : allocation{} {
-  img = vk::Image{};
+  img = VkImage{};
   aInfo = VmaAllocationInfo{};
 }
 
 AllocatedImage::AllocatedImage(VmaAllocator& allocator,
                                VmaAllocationCreateInfo& alloc_create_info,
-                               vk::ImageCreateInfo& ici)
+                               VkImageCreateInfo& ici)
     : p_allocator{&allocator}, allocation{} {
-  img = vk::Image{};
+  img = VkImage{};
   aInfo = VmaAllocationInfo{};
   vmaCreateImage(allocator, pcast<VkImageCreateInfo>(&ici), &alloc_create_info,
                  pcast<VkImage>(&img), &allocation, &aInfo);
@@ -512,7 +521,7 @@ AllocatedImage::AllocatedImage(VmaAllocator& allocator,
 
 void AllocatedImage::allocate(VmaAllocator& allocator,
                               VmaAllocationCreateInfo& alloc_create_info,
-                              vk::ImageCreateInfo& ici) {
+                              VkImageCreateInfo& ici) {
   p_allocator = &allocator;
   vmaCreateImage(allocator, reinterpret_cast<VkImageCreateInfo*>(&ici),
                  &alloc_create_info, reinterpret_cast<VkImage*>(&img),
@@ -523,7 +532,7 @@ AllocatedImage::~AllocatedImage() {
   vmaDestroyImage(*p_allocator, img, allocation);
 }
 
-Algorithm::Algorithm(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+Algorithm::Algorithm(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
                      u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
                      size_t n_push_constants) {
   initialize(device, spirv, n_imgs, n_buffers, n_ubo, spec_consts,
@@ -531,27 +540,27 @@ Algorithm::Algorithm(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
 }
 
 Algorithm::~Algorithm() {
-  m_device.destroyDescriptorSetLayout(m_DSL);
-  m_device.destroyDescriptorPool(m_DescriptorPool);
-  m_device.destroyShaderModule(m_ShaderModule);
-  m_device.destroyPipeline(m_Pipeline);
-  m_device.destroyPipelineLayout(m_PipelineLayout);
+  vkDestroyDescriptorSetLayout(m_device, m_DSL, nullptr);
+  vkDestroyDescriptorPool(m_device, m_DescriptorPool, nullptr);
+  vkDestroyShaderModule(m_device, m_ShaderModule, nullptr);
+  vkDestroyPipeline(m_device, m_Pipeline, nullptr);
+  vkDestroyPipelineLayout(m_device, m_PipelineLayout, nullptr);
 }
 
-// vk::PhysicalDevice pick_physical_device(const vk::Instance& instance,
+// VkPhysicalDevice pick_physical_device(const VkInstance& instance,
 //                                         const s32 desired_gpu) {
 //   // check if there are GPUs that support Vulkan and "intelligently" select
 //   // one. Prioritises discrete GPUs, and after that VRAM size.
-//   std::vector<vk::PhysicalDevice> p_devices =
+//   std::vector<VkPhysicalDevice> p_devices =
 //       instance.enumeratePhysicalDevices();
 //   uint32_t n_devices = p_devices.size();
 //
 //   // shortcut if there's only one device available.
 //   if (n_devices == 1) {
 //     if (p_devices[0].getProperties().deviceType ==
-//             vk::PhysicalDeviceType::eIntegratedGpu or
+//             VkPhysicalDeviceType::eIntegratedGpu or
 //         p_devices[0].getProperties().deviceType ==
-//             vk::PhysicalDeviceType::eCpu) {
+//             VkPhysicalDeviceType::eCpu) {
 //       spdlog::warn(
 //           "pick_physical_device: Only integrated GPU or CPU detected, "
 //           "you may not see much benefit from hardware 'acceleration.'");
@@ -571,14 +580,14 @@ Algorithm::~Algorithm() {
 //   gpus std::vector<uint64_t> vram(n_devices); for (uint32_t i = 0; i <
 //   n_devices; i++) {
 //     if (p_devices[i].getProperties().deviceType ==
-//         vk::PhysicalDeviceType::eDiscreteGpu) {
+//         VkPhysicalDeviceType::eDiscreteGpu) {
 //       discrete.push_back(i);
 //     }
 //
 //     // Gather reported VRAM sizes as an index to rank GPUs by.
 //     auto heaps = p_devices[i].getMemoryProperties().memoryHeaps;
 //     for (const auto& heap : heaps) {
-//       if (heap.flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+//       if (heap.flags & VkMemoryHeapFlagBits::eDeviceLocal) {
 //         vram[i] = heap.size;
 //       }
 //     }
@@ -599,64 +608,75 @@ Algorithm::~Algorithm() {
 // }
 
 Manager::Manager(const AutoInstance& instance, size_t staging_size,
-                 std::span<const char*> extra_device_extensions) {
-  // Validation layers are extremely helpful, we'll only turn them off if we
-  // want absolute maximum performance.
+                 std::span<const char*> extra_device_extensions)
+    : physical_device(pick_physical_device(*instance, instance.has_surface())),
+      c_qfi(get_compute_queue_family_index(physical_device)) {
 
   std::vector<const char*> device_extensions{"VK_KHR_maintenance4"};
   for (const auto& ext : extra_device_extensions) {
     device_extensions.push_back(ext);
   }
-  physical_device = pick_physical_device(*instance, instance.has_surface());
-  c_qfi = get_compute_queue_family_index(physical_device);
   std::set<u32> qfis;
   qfis.insert(c_qfi);
   spdlog::debug("Manager: Does instance have surface?: {}",
                 instance.has_surface());
   if (instance.has_surface()) {
-    const auto gp_qfis = get_graphics_present_queue_family_indices(
-        physical_device, instance.surface);
-    g_qfi = gp_qfis[0];
-    p_qfi = gp_qfis[1];
-    qfis.insert({g_qfi, p_qfi});
+    gp_qfi = get_graphics_present_queue_family_index(physical_device,
+                                                     instance.surface);
+    qfis.insert({gp_qfi});
     device_extensions.push_back("VK_KHR_swapchain");
   }
+  std::vector<u32> qfi_vec(qfis.rbegin(), qfis.rend());
 
-  spdlog::debug("Manager: qfis size: {}", qfis.size());
-  spdlog::debug("Manager: queue family indices:");
-  for (const auto& idx : qfis) {
-    spdlog::debug("Queue family index: {}", idx);
-  }
+  device = make_device(physical_device, qfi_vec, instance.has_surface());
+  // spdlog::debug("Manager: qfis size: {}", qfis.size());
+  // spdlog::debug("Manager: queue family indices:");
+  // for (const auto& idx : qfis) {
+  //   spdlog::debug("Queue family index: {}", idx);
+  // }
 
-  float queue_priority = 1.0F;
+  // float queue_priority = 1.0F;
 
-  std::vector<vk::DeviceQueueCreateInfo> dqci;
-  dqci.reserve(qfis.size());
-  for (const auto idx : qfis) {
-    dqci.push_back(vk::DeviceQueueCreateInfo({}, idx, 1, &queue_priority));
-  }
-  vk::PhysicalDeviceVulkan13Features phys_dev_features13;
-  phys_dev_features13.maintenance4 = vk::True;
-  vk::PhysicalDeviceFeatures phys_dev_features;
-  phys_dev_features.shaderFloat64 = vk::True;
-  phys_dev_features.shaderInt64 = vk::True;
-  vk::DeviceCreateInfo dci(vk::DeviceCreateFlags(), dqci, {}, device_extensions,
-                           &phys_dev_features, &phys_dev_features13);
-  device = physical_device.createDevice(dci);
-  vk::CommandPoolCreateInfo command_pool_ci(vk::CommandPoolCreateFlags(),
-                                            c_qfi);
-  command_pool = device.createCommandPool(command_pool_ci);
-  queue = device.getQueue(c_qfi, 0);
-  fence = device.createFence(vk::FenceCreateInfo());
+  // std::vector<VkDeviceQueueCreateInfo> dqci;
+  // dqci.reserve(qfis.size());
+  // for (const auto idx : qfis) {
+  //   dqci.push_back(VkDeviceQueueCreateInfo({}, idx, 1, &queue_priority));
+  // }
+  // VkPhysicalDeviceVulkan13Features phys_dev_features13;
+  // phys_dev_features13.maintenance4 = VkTrue;
+  // VkPhysicalDeviceFeatures phys_dev_features;
+  // phys_dev_features.shaderFloat64 = VkTrue;
+  // phys_dev_features.shaderInt64 = VkTrue;
+  // VkDeviceCreateInfo dci(VkDeviceCreateFlags(), dqci, {},
+  // device_extensions,
+  //                          &phys_dev_features, &phys_dev_features13);
+  // device = physical_device.createDevice(dci);
+  VkCommandPoolCreateInfo command_pool_ci{};
+  command_pool_ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+  command_pool_ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+  command_pool_ci.queueFamilyIndex = c_qfi;
+  chk(vkCreateCommandPool(device, &command_pool_ci, nullptr, &command_pool));
+  vkGetDeviceQueue(device, c_qfi, 0, &queue);
+  VkFenceCreateInfo f_ci{};
+  f_ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  vkCreateFence(device, &f_ci, nullptr, &fence);
+
+  VmaVulkanFunctions vk_functions;
+  vk_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+  vk_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+  vk_functions.vkCreateImage = vkCreateImage;
   VmaAllocatorCreateInfo allocator_info{};
   allocator_info.physicalDevice = physical_device;
-  allocator_info.vulkanApiVersion = physical_device.getProperties().apiVersion;
+  allocator_info.vulkanApiVersion = VK_API_VERSION_1_3;
   allocator_info.device = device;
+  allocator_info.pVulkanFunctions = &vk_functions;
   allocator_info.instance = *instance;
   vmaCreateAllocator(&allocator_info, &allocator);
-  vk::BufferCreateInfo staging_bci({}, round_up_x16(staging_size),
-                                   vk::BufferUsageFlagBits::eTransferSrc |
-                                       vk::BufferUsageFlagBits::eTransferDst);
+  VkBufferCreateInfo staging_bci{};
+  staging_bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  staging_bci.size = round_up_x16(staging_size);
+  staging_bci.usage =
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   VmaAllocationCreateInfo alloc_create_info{};
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
   alloc_create_info.flags =
@@ -669,38 +689,39 @@ Manager::Manager(const AutoInstance& instance, size_t staging_size,
                   &staging_allocation, &staging_info);
 }
 
-vk::CommandBuffer Manager::copy_op(vk::Buffer src_buffer, vk::Buffer dst_buffer,
-                                   u32 buffer_size, u32 src_offset,
-                                   u32 dst_offset) const {
-  auto cmd_buffer = device
-                        .allocateCommandBuffers(
-                            {command_pool, vk::CommandBufferLevel::ePrimary, 1})
-                        .front();
-  vk::CommandBufferBeginInfo cbbi{};
-  cmd_buffer.begin(cbbi);
-  cmd_buffer.copyBuffer(src_buffer, dst_buffer,
-                        vk::BufferCopy(src_offset, dst_offset, buffer_size));
-  cmd_buffer.end();
-  return cmd_buffer;
-}
-
-void Manager::copy_buffer(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
+void Manager::copy_buffer(VkBuffer& src_buffer, VkBuffer& dst_buffer,
                           u32 buffer_size, u32 src_offset,
                           u32 dst_offset) const {
   copy_buffer_now(device, command_pool, queue, fence, src_buffer, dst_buffer,
                   buffer_size, src_offset, dst_offset);
 }
 
-vk::CommandBuffer
-Manager::begin_record(vk::CommandBufferUsageFlagBits bits) const {
-  auto cmd_buffer = device
-                        .allocateCommandBuffers(
-                            {command_pool, vk::CommandBufferLevel::ePrimary, 1})
-                        .front();
-  vk::CommandBufferBeginInfo cbbi(bits);
-  cmd_buffer.begin(cbbi);
+VkCommandBuffer Manager::begin_record(VkCommandBufferUsageFlagBits bits) const {
+  VkCommandBuffer cb = make_cb(device, command_pool);
+  VkCommandBufferBeginInfo cb_bi{};
+  cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cb_bi.flags = bits;
+  vkBeginCommandBuffer(cb, &cb_bi);
 
-  return cmd_buffer;
+  return cb;
+}
+
+void Manager::recreate_staging_buffer(size_t size) {
+  vmaDestroyBuffer(allocator, staging, staging_allocation);
+  VkBufferCreateInfo staging_bci{};
+  staging_bci.size = round_up_x16(size);
+  staging_bci.usage =
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  VmaAllocationCreateInfo alloc_create_info{};
+  alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
+  alloc_create_info.flags =
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  staging_allocation = VmaAllocation{};
+  staging_info = VmaAllocationInfo{};
+  vmaCreateBuffer(allocator, bit_cast<VkBufferCreateInfo*>(&staging_bci),
+                  &alloc_create_info, bit_cast<VkBuffer*>(&staging),
+                  &staging_allocation, &staging_info);
 }
 
 void Manager::write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
@@ -708,20 +729,7 @@ void Manager::write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
   // Catch if we're trying to write more data than the staging buffer can
   // store.
   if (size > staging_info.size) {
-    vmaDestroyBuffer(allocator, staging, staging_allocation);
-    vk::BufferCreateInfo staging_bci({}, round_up_x16(size),
-                                     vk::BufferUsageFlagBits::eTransferSrc |
-                                         vk::BufferUsageFlagBits::eTransferDst);
-    VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_create_info.flags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-        VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    staging_allocation = VmaAllocation{};
-    staging_info = VmaAllocationInfo{};
-    vmaCreateBuffer(allocator, bit_cast<VkBufferCreateInfo*>(&staging_bci),
-                    &alloc_create_info, bit_cast<VkBuffer*>(&staging),
-                    &staging_allocation, &staging_info);
+    recreate_staging_buffer(size);
   }
 
   memcpy(staging_info.pMappedData, source, size);
@@ -732,42 +740,35 @@ void Manager::write_from_buffer(MetaBuffer& source, void* dest, size_t size) {
   // Catch if we're trying to write more data than the staging buffer can
   // store.
   if (size > staging_info.size) {
-    vmaDestroyBuffer(allocator, staging, staging_allocation);
-    vk::BufferCreateInfo staging_bci({}, round_up_x16(size),
-                                     vk::BufferUsageFlagBits::eTransferSrc |
-                                         vk::BufferUsageFlagBits::eTransferDst);
-    VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_create_info.flags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-        VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    staging_allocation = VmaAllocation{};
-    staging_info = VmaAllocationInfo{};
-    vmaCreateBuffer(allocator, bit_cast<VkBufferCreateInfo*>(&staging_bci),
-                    &alloc_create_info, bit_cast<VkBuffer*>(&staging),
-                    &staging_allocation, &staging_info);
+    recreate_staging_buffer(size);
   }
 
   copy_buffer(source.buffer, staging, size);
   memcpy(dest, staging_info.pMappedData, size);
 }
 
-void Manager::execute(vk::CommandBuffer& b) {
-  vk::SubmitInfo submit_info(0, nullptr, nullptr, 1, &b);
-  queue.submit(submit_info, fence);
-  auto result = device.waitForFences(fence, vk::True, -1);
-  result = device.resetFences(1, &fence);
+void Manager::execute(VkCommandBuffer b) {
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &b;
+  vkQueueSubmit(queue, 1, &submit_info, fence);
+  chk(vkWaitForFences(device, 1, pcast<VkFence>(&fence), VK_TRUE, -1));
+  chk(vkResetFences(device, 1, pcast<VkFence>(&fence)));
 }
 
-void Manager::execute_no_sync(vk::CommandBuffer& b) const {
-  vk::SubmitInfo submit_info(0, nullptr, nullptr, 1, &b);
-  queue.submit(submit_info);
+void Manager::execute_no_sync(VkCommandBuffer b) const {
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &b;
+  vkQueueSubmit(queue, 1, &submit_info, fence);
 }
 
-void Manager::queue_wait_idle() const { queue.waitIdle(); }
+void Manager::queue_wait_idle() const { vkQueueWaitIdle(queue); }
 
 Algorithm Manager::make_algorithm(std::string spirvname,
-                                  const std::vector<vk::ImageView>& images,
+                                  const std::vector<VkImageView>& images,
                                   const std::vector<MetaBuffer*>& buffers,
                                   std::span<const f32> spec_consts,
                                   size_t n_push_constants) const {
@@ -779,7 +780,7 @@ Algorithm Manager::make_algorithm(std::string spirvname,
 }
 
 // Algorithm Manager::make_algorithm_raw(std::string spirvname,
-//                                       const std::vector<vk::ImageView>&
+//                                       const std::vector<VkImageView>&
 //                                       images, const std::vector<MetaBuffer*>&
 //                                       buffers, const u8* spec_consts, const
 //                                       size_t* spec_const_offsets, size_t
@@ -793,70 +794,83 @@ Algorithm Manager::make_algorithm(std::string spirvname,
 //   return retalg;
 // }
 
-void append_op_no_barrier(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y,
+void append_op_no_barrier(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y,
                           u32 z) {
-  b.bindPipeline(vk::PipelineBindPoint::eCompute, a.m_Pipeline);
-  b.bindDescriptorSets(vk::PipelineBindPoint::eCompute, a.m_PipelineLayout, 0,
-                       a.m_DescriptorSet, nullptr);
-  b.dispatch(x, y, z);
+  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_Pipeline);
+
+  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_PipelineLayout,
+                          0, 1, &a.m_DescriptorSet, 0, nullptr);
+  vkCmdDispatch(b, x, y, z);
 }
 
-void append_op(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z) {
-  b.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                    vk::PipelineStageFlagBits::eAllCommands, {},
-                    FULL_MEMORY_BARRIER, nullptr, nullptr);
-  b.bindPipeline(vk::PipelineBindPoint::eCompute, a.m_Pipeline);
-  b.bindDescriptorSets(vk::PipelineBindPoint::eCompute, a.m_PipelineLayout, 0,
-                       a.m_DescriptorSet, nullptr);
-  b.dispatch(x, y, z);
+void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z) {
+  VkDependencyInfo dep_info{};
+  dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+  dep_info.memoryBarrierCount = 1;
+  dep_info.pMemoryBarriers = &FULL_MEMORY_BARRIER;
+  vkCmdPipelineBarrier2(b, &dep_info);
+  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_Pipeline);
+  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_PipelineLayout,
+                          0, 1, &a.m_DescriptorSet, 0, nullptr);
+  vkCmdDispatch(b, x, y, z);
 }
 
 Manager::~Manager() {
-  device.waitIdle();
-  device.destroyFence(fence);
+  vkDeviceWaitIdle(device);
+  vkDestroyFence(device, fence, nullptr);
   vmaDestroyBuffer(allocator, staging, staging_allocation);
   vmaDestroyAllocator(allocator);
-  device.destroyCommandPool(command_pool);
-  device.destroy();
+  vkDestroyCommandPool(device, command_pool, nullptr);
+  vkDestroyDevice(device, nullptr);
 }
 
-void Algorithm::initialize(vk::Device device, std::span<const u32> spirv,
+void Algorithm::initialize(VkDevice device, std::span<const u32> spirv,
                            u32 n_imgs, u32 n_buffers, u32 n_ubo,
                            std::span<const f32> spec_consts,
                            size_t n_push_constants) {
   m_device = device;
-  vk::ShaderModuleCreateInfo shader_mci(vk::ShaderModuleCreateFlags(), spirv);
-  m_ShaderModule = device.createShaderModule(shader_mci);
-  std::vector<vk::DescriptorSetLayoutBinding> dslbs(n_imgs + n_buffers + n_ubo);
+  VkShaderModuleCreateInfo shader_mci{};
+  shader_mci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  shader_mci.codeSize = spirv.size();
+  shader_mci.pCode = spirv.data();
+  vkCreateShaderModule(device, &shader_mci, nullptr, &m_ShaderModule);
+  std::vector<VkDescriptorSetLayoutBinding> dslbs(n_imgs + n_buffers + n_ubo);
   {
     u32 i = 0;
     for (; i < n_imgs; i++) {
-      dslbs[i] = {i, vk::DescriptorType::eStorageImage, 1,
-                  vk::ShaderStageFlagBits::eCompute};
+      dslbs[i] = {i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1,
+                  VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
     for (; i < n_buffers + n_imgs; i++) {
-      dslbs[i] = {i, vk::DescriptorType::eStorageBuffer, 1,
-                  vk::ShaderStageFlagBits::eCompute};
+      dslbs[i] = {i, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                  VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
     for (; i < n_buffers + n_imgs + n_ubo; i++) {
-      dslbs[i] = {i, vk::DescriptorType::eUniformBuffer, 1,
-                  vk::ShaderStageFlagBits::eCompute};
+      dslbs[i] = {i, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                  VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
   }
-  vk::DescriptorSetLayoutCreateInfo dslci(vk::DescriptorSetLayoutCreateFlags(),
-                                          dslbs);
-  m_DSL = device.createDescriptorSetLayout(dslci);
-  std::vector<vk::PushConstantRange> ranges(n_push_constants);
+  VkDescriptorSetLayoutCreateInfo dslci{};
+  dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  dslci.bindingCount = dslbs.size();
+  dslci.pBindings = dslbs.data();
+  vkCreateDescriptorSetLayout(device, &dslci, nullptr, &m_DSL);
+  std::vector<VkPushConstantRange> ranges(n_push_constants);
   u32 push_offsets = 0;
   for (u32 i = 0; i < n_push_constants; i++) {
-    ranges[i] = vk::PushConstantRange(vk::ShaderStageFlagBits::eCompute,
-                                      push_offsets, 4);
+    ranges[i] = VkPushConstantRange{.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+                                    .offset = push_offsets,
+                                    .size = 4};
     push_offsets += 4;
   }
-  vk::PipelineLayoutCreateInfo plci(vk::PipelineLayoutCreateFlags(), m_DSL,
-                                    ranges);
-  m_PipelineLayout = device.createPipelineLayout(plci);
-  std::vector<vk::SpecializationMapEntry> spec_entries(spec_consts.size());
+  VkPipelineLayoutCreateInfo plci{};
+  plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  plci.setLayoutCount = 1;
+  plci.pSetLayouts = &m_DSL;
+  plci.pushConstantRangeCount = ranges.size();
+  plci.pPushConstantRanges = ranges.data();
+  vkCreatePipelineLayout(device, &plci, nullptr, &m_PipelineLayout);
+  std::vector<VkSpecializationMapEntry> spec_entries(spec_consts.size());
   u32 spec_offset = 0;
   for (u32 i = 0; i < spec_entries.size(); ++i) {
     spec_entries[i].constantID = i;
@@ -865,89 +879,106 @@ void Algorithm::initialize(vk::Device device, std::span<const u32> spirv,
     spec_entries[i].size = 4;
     spec_offset += 4;
   }
-  vk::SpecializationInfo spec_info;
+  VkSpecializationInfo spec_info;
   spec_info.mapEntryCount = spec_consts.size();
   spec_info.pMapEntries = spec_entries.data();
   spec_info.dataSize = spec_offset;
   spec_info.pData = spec_consts.data();
 
-  vk::PipelineShaderStageCreateInfo csci(vk::PipelineShaderStageCreateFlags(),
-                                         vk::ShaderStageFlagBits::eCompute,
-                                         m_ShaderModule, "main", &spec_info);
-  vk::ComputePipelineCreateInfo cpci(vk::PipelineCreateFlags(), csci,
-                                     m_PipelineLayout);
-  auto result = device.createComputePipeline({}, cpci);
-  m_Pipeline = result.value;
+  VkPipelineShaderStageCreateInfo csci{};
+  csci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  csci.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  csci.module = m_ShaderModule;
+  csci.pName = "main";
+  csci.pSpecializationInfo = &spec_info;
+  VkComputePipelineCreateInfo cpci{};
+  cpci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+  cpci.stage = csci;
+  cpci.layout = m_PipelineLayout;
+  chk(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpci, nullptr,
+                               &m_Pipeline));
 
   // This is probably not the most efficient way to do this, but I'm not going
   // to mess around with the descriptors after creation so the only overhead
   // should be memory, and I'm not going to make thousands of these so
   // it should be fine.
-  std::vector<vk::DescriptorPoolSize> dpss;
+  std::vector<VkDescriptorPoolSize> dpss;
   if (n_imgs > 0) {
-    dpss.emplace_back(vk::DescriptorType::eStorageImage, n_imgs);
+    dpss.emplace_back(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n_imgs);
   }
   if (n_buffers > 0) {
-    dpss.emplace_back(vk::DescriptorType::eStorageBuffer, n_buffers);
+    dpss.emplace_back(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, n_buffers);
   }
   if (n_ubo > 0) {
-    dpss.emplace_back(vk::DescriptorType::eUniformBuffer, n_ubo);
+    dpss.emplace_back(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, n_ubo);
   }
-  vk::DescriptorPoolCreateInfo dpci(
-      vk::DescriptorPoolCreateFlags(
-          vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet),
-      1, dpss);
-  m_DescriptorPool = device.createDescriptorPool(dpci);
-  vk::DescriptorSetAllocateInfo dsai(m_DescriptorPool, 1, &m_DSL);
-  auto descriptor_sets = device.allocateDescriptorSets(dsai);
-  m_DescriptorSet = descriptor_sets[0];
+  VkDescriptorPoolCreateInfo dpci{};
+  dpci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  dpci.poolSizeCount = 1;
+  dpci.maxSets = 1;
+  dpci.pPoolSizes = dpss.data();
+  vkCreateDescriptorPool(device, &dpci, nullptr, &m_DescriptorPool);
+  VkDescriptorSetAllocateInfo dsai{};
+  dsai.descriptorPool = m_DescriptorPool;
+  dsai.descriptorSetCount = 1;
+  dsai.pSetLayouts = &m_DSL;
+  vkAllocateDescriptorSets(device, &dsai, &m_DescriptorSet);
 }
 
-void Algorithm::bind_data(std::span<const vk::ImageView> img_views,
+void Algorithm::bind_data(std::span<const VkImageView> img_views,
                           std::span<const MetaBuffer* const> buffers,
                           std::span<const MetaBuffer* const> ubos) const {
-  std::vector<vk::DescriptorImageInfo> diis(img_views.size());
-  std::vector<vk::DescriptorBufferInfo> dbis(buffers.size());
-  std::vector<vk::DescriptorBufferInfo> dubis(ubos.size());
+  std::vector<VkDescriptorImageInfo> diis(img_views.size());
+  std::vector<VkDescriptorBufferInfo> dbis(buffers.size());
+  std::vector<VkDescriptorBufferInfo> dubis(ubos.size());
   for (size_t i = 0; i < diis.size(); i++) {
-    diis[i] = {{}, img_views[i], vk::ImageLayout::eGeneral};
+    diis[i] = {.sampler = {},
+               .imageView = img_views[i],
+               .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
   }
   for (size_t i = 0; i < dbis.size(); i++) {
     dbis[i] =
-        vk::DescriptorBufferInfo(buffers[i]->buffer, 0, buffers[i]->aInfo.size);
+        VkDescriptorBufferInfo(buffers[i]->buffer, 0, buffers[i]->aInfo.size);
   }
   for (size_t i = 0; i < dubis.size(); i++) {
-    dbis[i] = vk::DescriptorBufferInfo(ubos[i]->buffer, 0, ubos[i]->aInfo.size);
+    dbis[i] = VkDescriptorBufferInfo(ubos[i]->buffer, 0, ubos[i]->aInfo.size);
   }
 
-  std::vector<vk::WriteDescriptorSet> write_descriptor_sets(
+  std::vector<VkWriteDescriptorSet> write_descriptor_sets(
       diis.size() + dbis.size() + dubis.size());
   {
     u32 i = 0;
     for (; i < diis.size(); i++) {
-      write_descriptor_sets[i] = {m_DescriptorSet, i, 0,
-                                  vk::DescriptorType::eStorageImage, diis[i]};
+      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write_descriptor_sets[i].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+      write_descriptor_sets[i].dstBinding = i;
+      write_descriptor_sets[i].dstSet = m_DescriptorSet;
+      write_descriptor_sets[i].descriptorCount = 1;
+      write_descriptor_sets[i].pImageInfo = &diis[i];
     }
     for (; i < diis.size() + dbis.size(); i++) {
-      write_descriptor_sets[i] = {m_DescriptorSet,
-                                  i,
-                                  0,
-                                  1,
-                                  vk::DescriptorType::eStorageBuffer,
-                                  nullptr,
-                                  &dbis[i - diis.size()]};
+      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write_descriptor_sets[i].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      write_descriptor_sets[i].dstBinding = i;
+      write_descriptor_sets[i].dstSet = m_DescriptorSet;
+      write_descriptor_sets[i].descriptorCount = 1;
+      write_descriptor_sets[i].pBufferInfo = &dbis[i - diis.size()];
     }
     for (; i < diis.size() + dbis.size() + dubis.size(); i++) {
-      write_descriptor_sets[i] = {m_DescriptorSet,
-                                  i,
-                                  0,
-                                  1,
-                                  vk::DescriptorType::eUniformBuffer,
-                                  nullptr,
-                                  &dubis[i - diis.size() - dbis.size()]};
+      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write_descriptor_sets[i].descriptorType =
+          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      write_descriptor_sets[i].dstBinding = i;
+      write_descriptor_sets[i].dstSet = m_DescriptorSet;
+      write_descriptor_sets[i].descriptorCount = 1;
+      write_descriptor_sets[i].pBufferInfo =
+          &dubis[i - diis.size() - dbis.size()];
     }
   }
-  m_device.updateDescriptorSets(write_descriptor_sets, {});
+  vkUpdateDescriptorSets(m_device, write_descriptor_sets.size(),
+                         write_descriptor_sets.data(), 0, nullptr);
 }
 
 void Renderer::make_depth_img_and_view() {
@@ -1253,74 +1284,40 @@ VkShaderModule Renderer::load_main_shader() const {
   return shader_module;
 }
 
-Renderer::Renderer(SDL_Window* window, VkSurfaceKHR surf) {
+Renderer::Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf)
+    : window{window}, physical_device{mgr.physical_device}, device{mgr.device},
+      surface{surf}, allocator{mgr.allocator} {
   DEBUG_START;
-  chk_sdl(SDL_Init(SDL_INIT_VIDEO));
-  chk_sdl(SDL_Vulkan_LoadLibrary(nullptr));
-  volkInitialize();
+  // chk_sdl(SDL_Init(SDL_INIT_VIDEO));
+  // chk_sdl(SDL_Vulkan_LoadLibrary(nullptr));
   // Instance
-  VkApplicationInfo app_info{};
-  app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  app_info.pApplicationName = "MyRenderer";
-  app_info.apiVersion = VK_API_VERSION_1_3;
-  u32 instance_extensions_count = 0;
-  char const* const* instance_extensions{
-      SDL_Vulkan_GetInstanceExtensions(&instance_extensions_count)};
-  std::array<const char*, 1> validation_layers{"VK_LAYER_KHRONOS_validation"};
-  VkInstanceCreateInfo instance_ci{};
-  instance_ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-  instance_ci.pApplicationInfo = &app_info;
-  instance_ci.enabledExtensionCount = instance_extensions_count;
-  instance_ci.ppEnabledExtensionNames = instance_extensions;
-  instance_ci.enabledLayerCount = 1;
-  instance_ci.ppEnabledLayerNames = validation_layers.data();
-  chk(vkCreateInstance(&instance_ci, nullptr, &instance));
-  volkLoadInstance(instance);
-  physical_device = pick_physical_device(instance);
-  VkPhysicalDeviceProperties2 dev_props{};
-  dev_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-  vkGetPhysicalDeviceProperties2(physical_device, &dev_props);
-  std::cout << "Selected device: " << dev_props.properties.deviceName << '\n';
-  // Find a queue family for graphics
-  uint32_t queue_family_count{0};
-  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
-                                           nullptr);
-  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
-                                           queue_families.data());
-  uint32_t queue_family{0};
-  for (size_t i = 0; i < queue_families.size(); i++) {
-    if (static_cast<bool>(queue_families[i].queueFlags &
-                          VK_QUEUE_GRAPHICS_BIT)) {
-      queue_family = i;
-      break;
-    }
-  }
-  DEBUG_LOG("Queue family should be: {}", queue_family);
-  chk_sdl(SDL_Vulkan_GetPresentationSupport(instance, physical_device,
-                                            queue_family));
-  device = make_device(physical_device, {&queue_family, size_t{1}}, true);
-  vkGetDeviceQueue(device, queue_family, 0, &queue);
+  // physical_device = pick_physical_device(instance);
+  // VkPhysicalDeviceProperties2 dev_props{};
+  // dev_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  // vkGetPhysicalDeviceProperties2(physical_device, &dev_props);
+  // std::cout << "Selected device: " << dev_props.properties.deviceName <<
+  // '\n'; Find a queue family for graphics
+  vkGetDeviceQueue(device, mgr.gp_qfi, 0, &queue);
   // VMA
-  VmaVulkanFunctions vk_functions{};
-  vk_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
-  vk_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
-  vk_functions.vkCreateImage = vkCreateImage;
+  // VmaVulkanFunctions vk_functions{};
+  // vk_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+  // vk_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+  // vk_functions.vkCreateImage = vkCreateImage;
 
-  VmaAllocatorCreateInfo allocator_ci{};
-  allocator_ci.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-  allocator_ci.physicalDevice = physical_device;
-  allocator_ci.vulkanApiVersion = VK_API_VERSION_1_3;
-  allocator_ci.device = device;
-  allocator_ci.pVulkanFunctions = &vk_functions;
-  allocator_ci.instance = instance;
-  chk(vmaCreateAllocator(&allocator_ci, &allocator));
-  DEBUG_LOG("Created allocator");
-  // Window and surface
-  window = SDL_CreateWindow("How to Vulkan", 1280U, 720U,
-                            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
-  assert(window);
-  chk_sdl(SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface));
+  // VmaAllocatorCreateInfo allocator_ci{};
+  // allocator_ci.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+  // allocator_ci.physicalDevice = physical_device;
+  // allocator_ci.vulkanApiVersion = VK_API_VERSION_1_3;
+  // allocator_ci.device = device;
+  // allocator_ci.pVulkanFunctions = &vk_functions;
+  // allocator_ci.instance = instance;
+  // chk(vmaCreateAllocator(&allocator_ci, &allocator));
+  // DEBUG_LOG("Created allocator");
+  // // Window and surface
+  // window = SDL_CreateWindow("How to Vulkan", 1280U, 720U,
+  //                           SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+  // assert(window);
+  // chk_sdl(SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface));
   s32 win_width = 0;
   s32 win_height = 0;
   chk_sdl(SDL_GetWindowSize(window, &win_width, &win_height));
@@ -1369,7 +1366,7 @@ Renderer::Renderer(SDL_Window* window, VkSurfaceKHR surf) {
   VkCommandPoolCreateInfo command_pool_ci{};
   command_pool_ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
   command_pool_ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-  command_pool_ci.queueFamilyIndex = queue_family;
+  command_pool_ci.queueFamilyIndex = mgr.gp_qfi;
   chk(vkCreateCommandPool(device, &command_pool_ci, nullptr, &command_pool));
   VkCommandBufferAllocateInfo cb_alloc_ci{};
   cb_alloc_ci.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,

@@ -2,11 +2,10 @@
 Checks: -*,
         readability-*, -readability-identifier-length, -readability-math-missing-parentheses, -readability-magic-numbers,
         modernize-*, -modernize-use-using, -modernize-use-trailing-return-type,
-        cppcoreguidelines-*, -cppcoreguidelines-pro-*, -cppcoreguidelines-special-member-functions, -cppcoreguidelines-avoid-magic-numbers,
+        cppcoreguidelines-*, -cppcoreguidelines-pro-*, -cppcoreguidelines-special-member-functions, -cppcoreguidelines-avoid-magic-numbers, -cppcoreguidelines-prefer-member-initializer
         performance-*, -performance-unnecessary-value-param, -performance-avoid-endl,
         misc-*, -misc-non-private-member-variables-in-classes, -misc-no-recursion,
         bugprone-*, -bugprone-suspicious-missing-comma, -bugprone-sizeof-expression
-WarningsAsErrors: '*'
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.ClassCase

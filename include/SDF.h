@@ -23,6 +23,7 @@ typedef std::vector<std::vector<std::pair<f64, u32>>> Delta;
 
 Delta delta(const VectorXd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
 Delta delta(const VectorXcd& d, RangeConf<f64> ec, f64 sharpening, f64 cutoff);
+
 inline VectorXcd plane_wave(Vector2d k, const Eigen::MatrixX2d& points) {
   VectorXcd v = c64{0, -1} * points * k;
   return VectorXcd{v.array().exp()};
@@ -35,7 +36,7 @@ inline VectorXcd plane_wave(const MatrixXcd& proj, Vector2d k,
   return VectorXcd{proj.colPivHouseholderQr().solve(vec)};
 }
 
-enum SdfSims : u8 {
+enum class SdfSims : u8 {
   eNonHermDos,
   eHermDos,
   eSimplerHermDos,
@@ -76,6 +77,60 @@ struct SdfConf {
   virtual void run() const = 0;
   virtual ~SdfConf() = default;
 };
+
+inline MatrixXd disp(f64 kx, RangeConf<f64> kyc, const Delta& del,
+                     const MatrixXcd& proj_inv, const Eigen::MatrixX2d& points,
+                     bool print_progress = false) {
+  u32 its = kyc.n / 9;
+  MatrixXd sdf =
+      MatrixXd::Zero(static_cast<s64>(del.size()), static_cast<s64>(kyc.n));
+#pragma omp parallel for
+  for (u32 i = 0; i < kyc.n; i++) {
+
+    const f64 ky = kyc.ith(i);
+
+    const VectorXcd k_vec = proj_inv * plane_wave({kx, ky}, points);
+    for (u32 k = 0; k < del.size(); ++k) {
+
+      auto coeffs_and_indices = del[k];
+
+      for (const auto& pair : coeffs_and_indices) {
+        sdf(k, i) += pair.first * std::norm(k_vec(pair.second));
+      }
+    }
+    if (print_progress && (i % its == 0)) {
+      std::cout << "█|" << std::flush;
+    }
+  }
+  return sdf;
+}
+
+inline MatrixXd disp(RangeConf<f64> kxc, f64 ky, const Delta& del,
+                     const MatrixXcd& proj_inv, const Eigen::MatrixX2d& points,
+                     bool print_progress = false) {
+  u32 its = kxc.n / 9;
+  MatrixXd sdf =
+      MatrixXd::Zero(static_cast<s64>(del.size()), static_cast<s64>(kxc.n));
+#pragma omp parallel for
+  for (u32 i = 0; i < kxc.n; i++) {
+
+    const f64 kx = kxc.ith(i);
+
+    const VectorXcd k_vec = proj_inv * plane_wave({kx, ky}, points);
+    for (u32 k = 0; k < del.size(); ++k) {
+
+      auto coeffs_and_indices = del[k];
+
+      for (const auto& pair : coeffs_and_indices) {
+        sdf(k, i) += pair.first * std::norm(k_vec(pair.second));
+      }
+    }
+    if (print_progress && (i % its == 0)) {
+      std::cout << "█|" << std::flush;
+    }
+  }
+  return sdf;
+}
 
 struct NonHermDosConf : public SdfConf {
   RangeConf<f64> kxc;
@@ -124,9 +179,7 @@ struct NonHermDosConf : public SdfConf {
       }
     }
     const u32 its = kxc.n / 10;
-    // MatrixXd sdf(kyc.n, kxc.n);
     VectorXd dos = VectorXd::Zero(static_cast<s64>(ec.n));
-    // auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
     auto del = delta(diag, ec, sharpening, cutoff);
 
     f64 cond = proj.bdcSvd().singularValues()(0) /
@@ -140,20 +193,9 @@ struct NonHermDosConf : public SdfConf {
     for (u64 i = 0; i < kxc.n; i++) {
 
       const f64 kx = kxc.ith(i);
+      MatrixXd slice = disp(kx, kyc, del, proj_inv, points);
+      dos += slice.rowwise().sum();
 
-      for (u64 j = 0; j < kyc.n; j++) {
-
-        const f64 ky = kyc.ith(j);
-        const VectorXcd k_vec = proj_inv * plane_wave({kx, ky}, points);
-        for (u32 k = 0; k < ec.n; ++k) {
-
-          auto coeffs_and_indices = del[k];
-
-          for (const auto& pair : coeffs_and_indices) {
-            dos(k) += pair.first * std::norm(k_vec(pair.second));
-          }
-        }
-      }
       if (print_progress) {
         if (i % its == 0) {
           std::cout << "█|" << std::flush;
@@ -213,7 +255,6 @@ struct HermDosConf : public SdfConf {
       coupling_mat = simple_h(points, couplings);
 
       auto sol = hermitianEigenSolver(coupling_mat);
-      // Eigen::HermitianEigenSolver<MatrixXd> solver{coupling_mat};
       diag = sol.D;
       proj = sol.U;
       if (save_diag && saved_diag != "") {
@@ -223,30 +264,18 @@ struct HermDosConf : public SdfConf {
       }
     }
     const u32 its = kxc.n / 10;
-    // MatrixXd sdf(kyc.n, kxc.n);
     VectorXd dos = VectorXd::Zero(static_cast<s64>(ec.n));
-    // auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
     auto del = delta(diag, ec, sharpening, cutoff);
+    MatrixXcd proj_inv = proj.inverse();
     if (print_progress) {
       std::cout << "[" << std::flush;
     }
     for (u64 i = 0; i < kxc.n; i++) {
 
       const f64 kx = kxc.ith(i);
+      MatrixXd slice = disp(kx, kyc, del, proj_inv, points);
+      dos += slice.rowwise().sum();
 
-      for (u64 j = 0; j < kyc.n; j++) {
-
-        const f64 ky = kyc.ith(j);
-        const VectorXcd k_vec = plane_wave(proj, {kx, ky}, points);
-        for (u32 k = 0; k < ec.n; ++k) {
-
-          auto coeffs_and_indices = del[k];
-
-          for (const auto& pair : coeffs_and_indices) {
-            dos(k) += pair.first * std::norm(k_vec(pair.second));
-          }
-        }
-      }
       if (print_progress) {
         if (i % its == 0) {
           std::cout << "█|" << std::flush;
@@ -292,7 +321,6 @@ struct SimplerHermDosConf : public SdfConf {
       coupling_mat = simple_h(points, couplings);
 
       auto sol = hermitianEigenSolver(coupling_mat);
-      // Eigen::HermitianEigenSolver<MatrixXd> solver{coupling_mat};
       diag = sol.D;
       proj = sol.U;
       if (save_diag && saved_diag != "") {
@@ -309,24 +337,14 @@ struct SimplerHermDosConf : public SdfConf {
     if (print_progress) {
       std::cout << "[" << std::flush;
     }
-    MatrixXcd uh = proj.adjoint();
+    MatrixXcd proj_inv = proj.adjoint();
     for (u64 i = 0; i < kxc.n; i++) {
 
       const f64 kx = kxc.ith(i);
 
-      for (u64 j = 0; j < kyc.n; j++) {
+      MatrixXd slice = disp(kx, kyc, del, proj_inv, points);
+      dos += slice.rowwise().sum();
 
-        const f64 ky = kyc.ith(j);
-        const VectorXcd k_vec = uh * plane_wave({kx, ky}, points);
-        for (u32 k = 0; k < ec.n; ++k) {
-
-          auto coeffs_and_indices = del[k];
-
-          for (const auto& pair : coeffs_and_indices) {
-            dos(k) += pair.first * std::norm(k_vec(pair.second));
-          }
-        }
-      }
       if (print_progress) {
         if (i % its == 0) {
           std::cout << "█|" << std::flush;
@@ -341,31 +359,6 @@ struct SimplerHermDosConf : public SdfConf {
   }
 };
 
-MatrixXd disp(f64 kx, RangeConf<f64> kyc, const Delta& del,
-              const MatrixXcd& proj_inv, const Eigen::MatrixX2d& points) {
-  auto sdf =
-      MatrixXd::Zero(static_cast<s64>(del.size()), static_cast<s64>(kyc.n));
-#pragma omp parallel for
-  for (u32 i = 0; i < kyc.n; i++) {
-
-    const f64 ky = kyc.ith(i);
-
-    const VectorXcd k_vec = proj_inv * plane_wave({kx, ky}, points);
-    for (u32 k = 0; k < del.size(); ++k) {
-
-      auto coeffs_and_indices = del[k];
-
-      for (const auto& pair : coeffs_and_indices) {
-        sdf(k, i) += pair.first * std::norm(k_vec(pair.second));
-      }
-    }
-    if (print_progress) {
-      if (i % its == 0) {
-        std::cout << "█|" << std::flush;
-      }
-    }
-  }
-}
 struct HermDispConf : public SdfConf {
   RangeConf<f64> kxc;
   RangeConf<f64> ec;
@@ -394,7 +387,6 @@ struct HermDispConf : public SdfConf {
       coupling_mat = simple_h(points, couplings);
 
       auto sol = hermitianEigenSolver(coupling_mat);
-      // Eigen::HermitianEigenSolver<MatrixXd> solver{coupling_mat};
       diag = sol.D;
       proj = sol.U;
       if (save_diag && saved_diag != "") {
@@ -403,36 +395,12 @@ struct HermDispConf : public SdfConf {
         diag_file.createDataSet("P", proj);
       }
     }
-    const u32 its = kxc.n / 10;
-    // MatrixXd sdf(kyc.n, kxc.n);
-    // auto sdf_view = std::mdspan(sdf.data(), kxc.n, kyc.n);
     auto del = delta(diag, ec, sharpening, cutoff);
     if (print_progress) {
       std::cout << "[" << std::flush;
     }
     MatrixXcd uh = proj.adjoint();
-    MatrixXd sdf =
-        MatrixXd::Zero(static_cast<s64>(ec.n), static_cast<s64>(kxc.n));
-#pragma omp parallel for
-    for (u32 i = 0; i < kxc.n; i++) {
-
-      const f64 kx = kxc.ith(i);
-
-      const VectorXcd k_vec = uh * plane_wave({kx, 0}, points);
-      for (u32 k = 0; k < ec.n; ++k) {
-
-        auto coeffs_and_indices = del[k];
-
-        for (const auto& pair : coeffs_and_indices) {
-          sdf(k, i) += pair.first * std::norm(k_vec(pair.second));
-        }
-      }
-      if (print_progress) {
-        if (i % its == 0) {
-          std::cout << "█|" << std::flush;
-        }
-      }
-    }
+    MatrixXd sdf = disp(kxc, {}, del, uh, points, true);
     if (print_progress) {
       std::cout << "█]\n";
     }
@@ -455,30 +423,30 @@ toml_to_sdf_conf(const std::string& fname) {
   try {
     tbl = toml::parse_file(fname);
   } catch (const std::exception& err) {
-    std::cerr << "Parsing file " << fname
-              << " failed with exception: " << err.what() << '\n';
+    spdlog::error("Parsing file {} failed with exception: {}", fname,
+                  err.what());
     return {};
   }
   DEBUG_LOG("File {} successfully parsed", fname);
   std::vector<std::unique_ptr<SdfConf>> ret_vec;
   tbl.for_each([&](const toml::key& key, toml::array& val) {
-    spdlog::debug("toml_to_sdf_conf: Found key: {}", key.str());
+    spdlog::info("toml_to_sdf_conf: Found key: {}", key.str());
     switch (SDF_SIM_TYPES.at(key.str())) {
-    case eNonHermDos: {
+    case SdfSims::eNonHermDos: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_sdf_conf: Pushing back dos conf.");
         ret_vec.push_back(std::unique_ptr<SdfConf>(new NonHermDosConf(arrtbl)));
       });
       break;
     }
-    case eHermDos: {
+    case SdfSims::eHermDos: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_sdf_conf: Pushing back herm dos conf.");
         ret_vec.push_back(std::unique_ptr<SdfConf>(new HermDosConf(arrtbl)));
       });
       break;
     }
-    case eSimplerHermDos: {
+    case SdfSims::eSimplerHermDos: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_sdf_conf: Pushing back simpler herm dos conf.");
         ret_vec.push_back(
@@ -486,7 +454,7 @@ toml_to_sdf_conf(const std::string& fname) {
       });
       break;
     }
-    case eHermDisp: {
+    case SdfSims::eHermDisp: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_sdf_conf: Pushing back disp conf.");
         ret_vec.push_back(std::unique_ptr<SdfConf>(new HermDispConf(arrtbl)));
@@ -498,34 +466,6 @@ toml_to_sdf_conf(const std::string& fname) {
   return ret_vec;
 }
 
-// MatrixXd e_section(const VectorXd& d, const MatrixXcd& uh,
-//                    const std::vector<Point>& points, f64 lat_const,
-//                    RangeConf<f64> kxc, RangeConf<f64> kyc, f64 e,
-//                    f64 sharpening, f64 cutoff, bool print_progress = true);
-//
-// std::vector<f64> full_sdf(const VectorXd& d, const MatrixXcd& uh,
-//                           const std::vector<Point>& points, f64 lat_const,
-//                           RangeConf<f64> kxc, RangeConf<f64> kyc,
-//                           RangeConf<f64>& ec, f64 sharpening, f64 cutoff,
-//                           bool print_progress = true);
-
-// template <class Func>
-// MatrixXd finite_hamiltonian(u32 n_points, const std::vector<Neighbour>& nbs,
-//                             Func f) {
-//   MatrixXd ham = MatrixXd::Zero(n_points, n_points);
-//   for (const auto& nb : nbs) {
-//     f64 val = f(nb.d);
-//     ham(static_cast<s64>(nb.i), static_cast<s64>(nb.j)) = val;
-//     ham(static_cast<s64>(nb.j), static_cast<s64>(nb.i)) = val;
-//   }
-//   return ham;
-// }
-// MatrixXd points_to_finite_hamiltonian(const std::vector<Point>& points,
-//                                       const kdt::KDTree<Point>& kdtree,
-//                                       f64 radius);
-
-// std::optional<SdfConf> toml_to_sdf_conf(const std::string& toml_path);
-// int do_sdf_calcs(SdfConf& conf);
 #undef SET_STRUCT_FIELD
 #undef DEBUG_END
 #undef DEBUG_START

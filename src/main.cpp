@@ -35,7 +35,9 @@ int main(const int argc, const char* const* argv) {
     return 1;
   }
   if (static_cast<bool>(result["v"].count())) {
-    spdlog::set_level(spdlog::level::debug);
+    spdlog::set_level(spdlog::level::trace);
+  } else {
+    spdlog::set_level(spdlog::level::info);
   }
 
   if (static_cast<bool>(result["c"].count())) {
@@ -45,13 +47,6 @@ int main(const int argc, const char* const* argv) {
     for (const auto& conf : confs) {
       conf->run();
     }
-    // SdfConf conf;
-    // if (auto opt = toml_to_sdf_conf(fname); opt.has_value()) {
-    //   conf = opt.value();
-    // } else {
-    //   return 1;
-    // }
-    // do_sdf_calcs(conf);
   }
   if (static_cast<bool>(result["p"].count())) {
     std::string fname = result["p"].as<std::string>();

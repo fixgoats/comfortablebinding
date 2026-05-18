@@ -1,7 +1,6 @@
 #pragma once
 #include "betterexc.h"
 #include "colormaps.hpp"
-#include "hack.hpp"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
 #include "slang/slang-com-ptr.h"
@@ -15,6 +14,9 @@
 #include <format>
 #include <fstream>
 #include <span>
+#include <vma/vk_mem_alloc.h>
+#include <volk/volk.h>
+#include <vulkan/vulkan.h>
 
 #define DEBUG_START spdlog::debug("{}: Start", __func__)
 #define DEBUG_END spdlog::debug("{}: End", __func__)
@@ -33,16 +35,30 @@ struct PositionTextureVertex {
   std::array<f32, 2> pos;
   std::array<f32, 2> uv;
 
-  static vk::VertexInputBindingDescription binding_dscr() {
-    return {0, sizeof(PositionTextureVertex), vk::VertexInputRate::eVertex};
+  static VkVertexInputBindingDescription binding_dscr() {
+    return {0, sizeof(PositionTextureVertex), VK_VERTEX_INPUT_RATE_VERTEX};
   }
-  static std::array<vk::VertexInputAttributeDescription, 2> attribute_dscr() {
-    return {{{0, 0, vk::Format::eR32G32Sfloat,
-              offsetof(PositionTextureVertex, pos)},
-             {1, 0, vk::Format::eR32G32Sfloat,
-              offsetof(PositionTextureVertex, uv)}}};
+  static std::array<VkVertexInputAttributeDescription, 2> attribute_dscr() {
+    return {{{.location = 0,
+              .binding = 0,
+              .format = VK_FORMAT_R32G32_SFLOAT,
+              .offset = offsetof(PositionTextureVertex, pos)},
+             {.location = 1,
+              .binding = 0,
+              .format = VK_FORMAT_R32G32_SFLOAT,
+              .offset = offsetof(PositionTextureVertex, uv)}}};
   }
 };
+
+namespace {
+inline void chk(VkResult result) {
+  if (result != VK_SUCCESS) {
+    spdlog::error("Vulkan call returned an error: {}",
+                  static_cast<s64>(result));
+    exit(result);
+  }
+}
+} // namespace
 
 template <typename T>
 std::vector<T> read_file(const std::string& filename) {
@@ -55,7 +71,8 @@ std::vector<T> read_file(const std::string& filename) {
   size_t file_size = static_cast<size_t>(file.tellg());
   std::vector<T> buffer(file_size / sizeof(T));
   file.seekg(0);
-  file.read(reinterpret_cast<char*>(buffer.data()), file_size);
+  file.read(reinterpret_cast<char*>(buffer.data()),
+            static_cast<std::streamsize>(file_size));
   file.close();
   return buffer;
 }
@@ -73,40 +90,46 @@ void save_to_file(std::string fname, const char* buf, size_t size);
 
 constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
-static const vk::MemoryBarrier
-    FULL_MEMORY_BARRIER(vk::AccessFlagBits::eMemoryWrite,
-                        vk::AccessFlagBits::eMemoryRead);
+consteval VkMemoryBarrier2 full_mem_barrier() {
+  VkMemoryBarrier2 barrier{};
+  barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+  return barrier;
+}
+static const VkMemoryBarrier2 FULL_MEMORY_BARRIER = full_mem_barrier();
 
 struct MetaBuffer {
   // A buffer + allocation stuff that you generally need to reference when using
-  // vk::Buffers. Also destroys itself automatically.
+  // VkBuffers. Also destroys itself automatically.
   VmaAllocator* p_allocator = nullptr;
-  vk::Buffer buffer;
+  VkBuffer buffer;
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
   MetaBuffer();
   MetaBuffer(VmaAllocator& allocator,
              VmaAllocationCreateInfo& alloc_create_info,
-             vk::BufferCreateInfo& bci);
+             VkBufferCreateInfo& bci);
   // To call on default constructed metabuffer
   void allocate(VmaAllocator& allocator,
                 VmaAllocationCreateInfo& alloc_create_info,
-                vk::BufferCreateInfo& bci);
+                VkBufferCreateInfo& bci);
   ~MetaBuffer();
 };
 
 struct AllocatedImage {
   VmaAllocator* p_allocator = nullptr;
-  vk::Image img;
+  VkImage img;
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
   AllocatedImage();
   AllocatedImage(VmaAllocator& allocator,
                  VmaAllocationCreateInfo& alloc_create_info,
-                 vk::ImageCreateInfo& ici);
+                 VkImageCreateInfo& ici);
   void allocate(VmaAllocator& allocator,
                 VmaAllocationCreateInfo& alloc_create_info,
-                vk::ImageCreateInfo& ici);
+                VkImageCreateInfo& ici);
   ~AllocatedImage();
 };
 
@@ -124,97 +147,97 @@ constexpr std::span<const f32> spec_span(Addr begin, Addr end) {
 struct Algorithm {
   // Attention, device is used for destroying owned objects, the device will be
   // destroyed by the manager.
-  vk::Device m_device;
+  VkDevice m_device;
   // owned
-  vk::DescriptorSetLayout m_DSL;
-  vk::DescriptorPool m_DescriptorPool;
-  vk::DescriptorSet m_DescriptorSet;
-  vk::ShaderModule m_ShaderModule;
-  vk::PipelineLayout m_PipelineLayout;
-  vk::Pipeline m_Pipeline;
+  VkDescriptorSetLayout m_DSL;
+  VkDescriptorPool m_DescriptorPool;
+  VkDescriptorSet m_DescriptorSet;
+  VkShaderModule m_ShaderModule;
+  VkPipelineLayout m_PipelineLayout;
+  VkPipeline m_Pipeline;
   Algorithm() = default;
-  Algorithm(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+  Algorithm(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
             u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts = {},
             size_t n_push_constants = 0);
-  void initialize(vk::Device device, std::span<const u32> spirv, u32 n_imgs,
+  void initialize(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
                   u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
                   size_t n_push_constants = 0);
-  void bind_data(std::span<const vk::ImageView> img_views,
+  void bind_data(std::span<const VkImageView> img_views,
                  std::span<const MetaBuffer* const> buffers,
                  std::span<const MetaBuffer* const> ubos) const;
   ~Algorithm();
 };
 
 static const std::vector<std::string> DEVICE_EXTENSIONS = {
-    vk::KHRSwapchainExtensionName};
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 static const std::string APP_NAME{"Vulkan GPE Simulator"};
 static const std::string ENGINE_NAME{"argablarg"};
 
 struct AutoInstance {
-  vk::Instance instance;
-  vk::SurfaceKHR surface = nullptr;
+  VkInstance instance;
+  VkSurfaceKHR surface = nullptr;
 
   AutoInstance(std::span<const char*> inst_exts, bool use_layers) {
-    vk::ApplicationInfo app_info{APP_NAME.c_str(), 1, ENGINE_NAME.c_str(), 1,
-                                 VK_API_VERSION_1_3};
+    DEBUG_START;
+    VkApplicationInfo app_info{};
+    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app_info.pApplicationName = "MyRenderer";
+    app_info.apiVersion = VK_API_VERSION_1_3;
     if (use_layers) {
       spdlog::warn("Vulkan: Validation layers are on");
     }
-    const auto layers =
-        use_layers ? std::vector<const char*>{"VK_LAYER_KHRONOS_validation"}
-                   : std::vector<const char*>{};
-    vk::InstanceCreateInfo ici(vk::InstanceCreateFlags(), &app_info, layers,
-                               inst_exts);
-    try {
-      instance = vk::createInstance(ici);
-    } catch (vk::SystemError& err) {
-      spdlog::error("Manager: {}", err.what());
-      exit(-1);
-    }
+    std::array<const char*, 1> validation_layers{"VK_LAYER_KHRONOS_validation"};
+    VkInstanceCreateInfo instance_ci{};
+    instance_ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instance_ci.pApplicationInfo = &app_info;
+    instance_ci.enabledExtensionCount = inst_exts.size();
+    instance_ci.ppEnabledExtensionNames = inst_exts.data();
+    instance_ci.enabledLayerCount = 1;
+    instance_ci.ppEnabledLayerNames = validation_layers.data();
+    chk(vkCreateInstance(&instance_ci, nullptr, &instance));
+    volkLoadInstance(instance);
   }
-  vk::Instance operator*() const { return instance; }
+  VkInstance operator*() const { return instance; }
   [[nodiscard]] constexpr bool has_surface() const {
     return static_cast<bool>(surface);
   }
-  ~AutoInstance() { instance.destroy(surface); }
+  ~AutoInstance() {
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    vkDestroyInstance(instance, nullptr);
+  }
 };
 
 struct Manager {
-  // vk::Instance instance;
-  vk::PhysicalDevice physical_device;
-  vk::Device device;
-  vk::Queue queue;
-  vk::Fence fence;
+  VkInstance instance;
+  VkPhysicalDevice physical_device;
+  VkDevice device;
+  VkQueue queue;
+  VkFence fence;
   VmaAllocator allocator;
-  vk::Buffer staging;
+  VkBuffer staging;
   VmaAllocation staging_allocation;
   VmaAllocationInfo staging_info;
   u32 c_qfi = UINT32_MAX;
-  u32 g_qfi = UINT32_MAX;
-  u32 p_qfi = UINT32_MAX;
-  vk::CommandPool command_pool;
-  // vk::SurfaceKHR surface;
+  u32 gp_qfi = UINT32_MAX;
+  VkCommandPool command_pool;
+  // VkSurfaceKHR surface;
 
   Manager(const AutoInstance& instance, size_t staging_size,
           std::span<const char*> extra_device_extensions = {});
-  // void finish_setup(size_t staging_size, vk::SurfaceKHR& surface);
+  // void finish_setup(size_t staging_size, VkSurfaceKHR& surface);
   // Manager uses a single staging buffer for efficient copies.
-  void copy_buffer(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
-                   u32 buffer_size, u32 src_offset = 0,
-                   u32 dst_offset = 0) const;
-  void copy_in_batches(vk::Buffer& src_buffer, vk::Buffer& dst_buffer,
+  void copy_buffer(VkBuffer& src_buffer, VkBuffer& dst_buffer, u32 buffer_size,
+                   u32 src_offset = 0, u32 dst_offset = 0) const;
+  void copy_in_batches(VkBuffer& src_buffer, VkBuffer& dst_buffer,
                        u32 batch_size, u32 num_batches);
-  [[nodiscard]] vk::CommandBuffer copy_op(vk::Buffer src_buffer,
-                                          vk::Buffer dst_buffer,
-                                          u32 buffer_size, u32 src_offset = 0,
-                                          u32 dst_offset = 0) const;
+  void recreate_staging_buffer(size_t size);
 
-  [[nodiscard]] vk::CommandBuffer
-  begin_record(vk::CommandBufferUsageFlagBits bits = {}) const;
-  void execute(vk::CommandBuffer& b);
-  void execute_no_sync(vk::CommandBuffer& b) const;
+  [[nodiscard]] VkCommandBuffer
+  begin_record(VkCommandBufferUsageFlagBits bits = {}) const;
+  void execute(VkCommandBuffer b);
+  void execute_no_sync(VkCommandBuffer b) const;
   void queue_wait_idle() const;
-  // void get_queue_family_indices(vk::SurfaceKHR& surface);
+  // void get_queue_family_indices(VkSurfaceKHR& surface);
   void write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
                        size_t src_offset = 0, size_t dst_offset = 0);
   template <class T>
@@ -236,14 +259,14 @@ struct Manager {
   }
   template <typename T>
   [[nodiscard]] MetaBuffer make_raw_buffer(u32 n_elements) {
-    vk::BufferCreateInfo bci{vk::BufferCreateFlags(),
-                             round_up_x16(n_elements * sizeof(T)),
-                             vk::BufferUsageFlagBits::eStorageBuffer |
-                                 vk::BufferUsageFlagBits::eTransferDst |
-                                 vk::BufferUsageFlagBits::eTransferSrc,
-                             vk::SharingMode::eExclusive,
-                             1,
-                             &c_qfi};
+    VkBufferCreateInfo bci{};
+    bci.size = round_up_x16(n_elements * sizeof(T));
+    bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    bci.queueFamilyIndexCount = 1;
+    bci.pQueueFamilyIndices = &c_qfi;
     VmaAllocationCreateInfo alloc_create_info{};
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
@@ -252,27 +275,28 @@ struct Manager {
   }
   template <typename T>
   MetaBuffer make_uniform_object() {
-    vk::BufferCreateInfo bci{vk::BufferCreateFlags(),
-                             sizeof(T),
-                             vk::BufferUsageFlagBits::eUniformBuffer |
-                                 vk::BufferUsageFlagBits::eTransferDst |
-                                 vk::BufferUsageFlagBits::eTransferSrc,
-                             vk::SharingMode::eExclusive,
-                             1,
-                             &c_qfi};
+    VkBufferCreateInfo bci{};
+    bci.size = sizeof(T);
+    bci.usage =
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE, bci.queueFamilyIndexCount = 1;
+    bci.pQueueFamilyIndices = &c_qfi;
     VmaAllocationCreateInfo alloc_create_info{};
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.flags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
     alloc_create_info.priority = 1.0F;
     return MetaBuffer{allocator, alloc_create_info, bci};
   }
 
-  void free_command_buffer(vk::CommandBuffer& b) const {
-    device.freeCommandBuffers(command_pool, 1, &b);
+  void free_command_buffer(VkCommandBuffer& b) const {
+    vkFreeCommandBuffers(device, command_pool, 1, &b);
   }
 
-  void free_command_buffers(vk::CommandBuffer* b, u32 n) const {
-    device.freeCommandBuffers(command_pool, n, b);
+  void free_command_buffers(VkCommandBuffer* b, u32 n) const {
+    vkFreeCommandBuffers(device, command_pool, n, b);
   }
 
   template <typename T>
@@ -285,10 +309,11 @@ struct Manager {
   // In practice you'll always use 4 byte specialization and push constants, so
   // I'll just assume that here. If you use a non-float constant, just bit_cast
   // it to a float.
-  [[nodiscard]] Algorithm make_algorithm(
-      std::string spirvname, const std::vector<vk::ImageView>& images,
-      const std::vector<MetaBuffer*>& buffers,
-      std::span<const f32> spec_consts = {}, size_t n_push_constants = 0) const;
+  [[nodiscard]] Algorithm
+  make_algorithm(std::string spirvname, const std::vector<VkImageView>& images,
+                 const std::vector<MetaBuffer*>& buffers,
+                 std::span<const f32> spec_consts = {},
+                 size_t n_push_constants = 0) const;
 
   ~Manager();
 };
@@ -348,7 +373,7 @@ struct Renderer {
 
   [[nodiscard]] VkShaderModule load_main_shader() const;
 
-  Renderer(SDL_Window* window, VkSurfaceKHR surf);
+  Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf);
 
   void draw_frame();
 };
@@ -357,37 +382,37 @@ struct Renderer {
 //   // non-owned
 //   Manager* p_mgr;
 //   //  owned
-//   vk::RenderPass render_pass;
-//   vk::Pipeline graphics_pipeline;
-//   vk::PipelineLayout graphics_pipeline_layout;
-//   vk::SwapchainKHR swapchain;
-//   vk::SurfaceKHR surface;
-//   std::vector<vk::Framebuffer> swapchain_fbs;
-//   std::vector<vk::Image> swapchain_imgs;
-//   vk::Format swapchain_img_fmt;
-//   vk::Extent2D swapchain_extent;
+//   VkRenderPass render_pass;
+//   VkPipeline graphics_pipeline;
+//   VkPipelineLayout graphics_pipeline_layout;
+//   VkSwapchainKHR swapchain;
+//   VkSurfaceKHR surface;
+//   std::vector<VkFramebuffer> swapchain_fbs;
+//   std::vector<VkImage> swapchain_imgs;
+//   VkFormat swapchain_img_fmt;
+//   VkExtent2D swapchain_extent;
 //   std::array<u32, 2> render_queue_indices = {UINT32_MAX, UINT32_MAX};
-//   vk::Queue graphics_queue;
-//   vk::Queue present_queue;
-//   std::vector<vk::ImageView> swapchain_img_views;
-//   std::vector<vk::Semaphore> present_semaphores;
-//   std::vector<vk::Semaphore> render_semaphores;
-//   // std::vector<vk::Fence> image_in_flight_fences;
-//   std::vector<vk::Fence> in_flight_fences;
-//   vk::CommandPool command_pool;
-//   std::vector<vk::CommandBuffer> command_buffers;
-//   vk::CommandBuffer reduction_buffer;
+//   VkQueue graphics_queue;
+//   VkQueue present_queue;
+//   std::vector<VkImageView> swapchain_img_views;
+//   std::vector<VkSemaphore> present_semaphores;
+//   std::vector<VkSemaphore> render_semaphores;
+//   // std::vector<VkFence> image_in_flight_fences;
+//   std::vector<VkFence> in_flight_fences;
+//   VkCommandPool command_pool;
+//   std::vector<VkCommandBuffer> command_buffers;
+//   VkCommandBuffer reduction_buffer;
 //   MetaBuffer vertex_buffer;
 //   AllocatedImage colormap_img;
 //   MetaBuffer colormap;
-//   vk::ImageView colormap_view;
-//   vk::Sampler colormap_sampler;
-//   vk::DescriptorSetLayout descriptor_set_layout;
-//   vk::DescriptorPool descriptor_pool;
-//   vk::DescriptorSet descriptor_set;
-//   vk::SurfaceCapabilitiesKHR capabilities;
-//   vk::SurfaceFormatKHR surface_format;
-//   vk::PresentModeKHR present_mode;
+//   VkImageView colormap_view;
+//   VkSampler colormap_sampler;
+//   VkDescriptorSetLayout descriptor_set_layout;
+//   VkDescriptorPool descriptor_pool;
+//   VkDescriptorSet descriptor_set;
+//   VkSurfaceCapabilitiesKHR capabilities;
+//   VkSurfaceFormatKHR surface_format;
+//   VkPresentModeKHR present_mode;
 //   MetaBuffer value_buffer;
 //   MetaBuffer minmax_buffer;
 //   Algorithm first_minmax_reduction;
@@ -397,7 +422,7 @@ struct Renderer {
 //   bool frame_buffer_resized;
 //   u32 current_frame = 0;
 //
-//   Renderer(Manager& manager, vk::SurfaceKHR surf, u32 nx, u32 ny);
+//   Renderer(Manager& manager, VkSurfaceKHR surf, u32 nx, u32 ny);
 //   void cleanup_swapchain();
 //   void recreate_swapchain();
 //   void draw_frame();
@@ -406,25 +431,40 @@ struct Renderer {
 
 std::vector<u32> read_file(const std::string& filename);
 
-template <typename Func>
-void one_time_submit(vk::Device device, vk::CommandPool cmd_pool,
-                     vk::Queue queue, Func func) {
-  vk::CommandBuffer cmd_buffer =
-      device
-          .allocateCommandBuffers(
-              {cmd_pool, vk::CommandBufferLevel::ePrimary, 1})
-          .front();
-  cmd_buffer.begin(vk::CommandBufferBeginInfo(
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-  func(cmd_buffer);
-  cmd_buffer.end();
-  vk::SubmitInfo submit_info(nullptr, nullptr, cmd_buffer);
-  queue.submit(submit_info, nullptr);
-  queue.waitIdle();
+inline VkCommandBuffer make_cb(VkDevice device, VkCommandPool cmd_pool) {
+  VkCommandBuffer cb{};
+  VkCommandBufferAllocateInfo cb_ai{};
+  cb_ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  cb_ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  cb_ai.commandPool = cmd_pool;
+  cb_ai.commandBufferCount = 1;
+
+  vkAllocateCommandBuffers(device, &cb_ai, &cb);
+  return cb;
 }
 
-void append_op(vk::CommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
-void append_op_no_barrier(vk::CommandBuffer b, const Algorithm& a, u32 x,
+template <typename Func>
+void one_time_submit(VkDevice device, VkCommandPool cmd_pool, VkQueue queue,
+                     Func func) {
+
+  VkCommandBuffer cb = make_cb(device, cmd_pool);
+  VkCommandBufferBeginInfo cb_bi;
+  cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cb_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(cb, &cb_bi);
+  func(cb);
+  vkEndCommandBuffer(cb);
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &cb;
+  vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(queue);
+  vkFreeCommandBuffers(device, cmd_pool, 1, &cb);
+}
+
+void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
+void append_op_no_barrier(VkCommandBuffer b, const Algorithm& a, u32 x,
                           u32 y = 1, u32 z = 1);
 #undef DEBUG_LOG
 #undef DEBUG_END

@@ -1,7 +1,5 @@
 struct VSInput {
-  [[vk::location(0)]]
   float2 position;
-  [[vk::location(1)]]
   float2 uv;
 }
 

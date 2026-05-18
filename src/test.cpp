@@ -3,7 +3,6 @@
 #include "highfive/highfive.hpp"
 #include "spdlog/spdlog.h"
 #include "typedefs.h"
-#include "vkcore.hpp"
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_rect.h>
 #include <SDL3/SDL_surface.h>
@@ -244,38 +243,5 @@ int main(int argc, char* argv[]) {
   if (static_cast<bool>(result["v"].count())) {
     spdlog::set_level(spdlog::level::trace);
   }
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    SDL_Log("Initializing SDL failed.");
-    return -1;
-  }
-
-  auto* window = SDL_CreateWindow("test", 800, 800, SDL_WINDOW_RESIZABLE);
-
-  SDL_Event event;
-  bool should_quit = false;
-  SDL_Surface* w_surf = SDL_GetWindowSurface(window);
-  SDL_Surface* img = SDL_LoadBMP("pic.bmp");
-  SDL_Rect win_rect = {0, 0, 800, 800};
-  SDLCHECK(SDL_BlitSurface(img, nullptr, w_surf, nullptr));
-  SDLCHECK(SDL_UpdateWindowSurface(window));
-
-  while (!should_quit) {
-    auto start = std::chrono::high_resolution_clock::now();
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-        should_quit = true;
-      }
-    }
-    auto end = std::chrono::high_resolution_clock::now();
-    if (auto frame_duration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-                .count();
-        frame_duration < 16) {
-      SDL_Delay(16 - frame_duration);
-    }
-  }
-
-  SDL_DestroyWindowSurface(window);
-  SDL_DestroyWindow(window);
   return 0;
 }
