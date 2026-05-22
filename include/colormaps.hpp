@@ -6,9 +6,9 @@
 
 namespace cm {
 struct AlignedColor {
-  f32 rgb[3];
+  std::array<f32, 3> rgb;
   f32 pad = 0;
-  constexpr AlignedColor(f32 x, f32 y, f32 z) : rgb{x, y, z}, pad{0} {}
+  constexpr AlignedColor(f32 x, f32 y, f32 z) : rgb{x, y, z}, pad{1.0} {}
 };
 
 struct RGBA {
@@ -25,17 +25,15 @@ struct RGB {
 };
 
 static inline RGBA fcolor_to_ucolor(AlignedColor lhs) {
-  return {
-      std::min((u8)std::abs(lhs.rgb[0] * 256), (u8)255),
-      std::min((u8)std::abs(lhs.rgb[1] * 256), (u8)255),
-      std::min((u8)std::abs(lhs.rgb[2] * 256), (u8)255),
-      255,
-  };
+  return {.r = std::min((u8)std::abs(lhs.rgb[0] * 256), (u8)255),
+          .g = std::min((u8)std::abs(lhs.rgb[1] * 256), (u8)255),
+          .b = std::min((u8)std::abs(lhs.rgb[2] * 256), (u8)255),
+          .a = 255};
 }
 
 template <class IIt>
-std::vector<RGBA> valuesToColor(IIt it, IIt end,
-                                const std::array<AlignedColor, 256>& cmap) {
+std::vector<RGBA> values_to_color(IIt it, IIt end,
+                                  const std::array<AlignedColor, 256>& cmap) {
   std::vector<RGBA> out(end - it);
   auto minmax = std::ranges::minmax(it, end);
   std::transform(it, end, out.begin(), [&](auto x) {

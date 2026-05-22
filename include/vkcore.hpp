@@ -22,11 +22,12 @@
 #define DEBUG_END spdlog::debug("{}: End", __func__)
 #define DEBUG_LOG(...)                                                         \
   spdlog::debug("{}: {}", __func__, std::format(__VA_ARGS__))
+#define FATAL_LOG(...)                                                         \
+  spdlog::error("{}: {}", __func__, std::format(__VA_ARGS__))
+#define WARN_LOG(...) spdlog::warn("{}: {}", __func__, std::format(__VA_ARGS__))
 
 using std::bit_cast;
 
-constexpr u32 GRID_WIDTH = 512;
-constexpr u32 GRID_HEIGHT = 512;
 constexpr VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
 
 constexpr u32 round_up_x16(u32 n) { return ((n + 15) / 16) * 16; }
@@ -50,15 +51,31 @@ struct PositionTextureVertex {
   }
 };
 
-namespace {
-inline void chk(VkResult result) {
+inline void chk_vk(VkResult result) {
   if (result != VK_SUCCESS) {
-    spdlog::error("Vulkan call returned an error: {}",
-                  static_cast<s64>(result));
+    FATAL_LOG("Vulkan call returned an error: {}", static_cast<s64>(result));
     exit(result);
   }
 }
-} // namespace
+inline bool chk_swapchain(VkResult result) {
+  DEBUG_START;
+  if (result < VK_SUCCESS) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+      return false;
+    }
+    FATAL_LOG("Vulkan call returned an error: {}", static_cast<s64>(result));
+    exit(result);
+  }
+  DEBUG_END;
+  return true;
+}
+
+inline void chk_sdl(bool result) {
+  if (!result) {
+    FATAL_LOG("Call returned an error: {}", SDL_GetError());
+    exit(-1);
+  }
+}
 
 template <typename T>
 std::vector<T> read_file(const std::string& filename) {
@@ -92,6 +109,7 @@ constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
 consteval VkMemoryBarrier2 full_mem_barrier() {
   VkMemoryBarrier2 barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
   barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
   barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
   barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -194,7 +212,7 @@ struct AutoInstance {
     instance_ci.ppEnabledExtensionNames = inst_exts.data();
     instance_ci.enabledLayerCount = 1;
     instance_ci.ppEnabledLayerNames = validation_layers.data();
-    chk(vkCreateInstance(&instance_ci, nullptr, &instance));
+    chk_vk(vkCreateInstance(&instance_ci, nullptr, &instance));
     volkLoadInstance(instance);
   }
   VkInstance operator*() const { return instance; }
@@ -260,6 +278,7 @@ struct Manager {
   template <typename T>
   [[nodiscard]] MetaBuffer make_raw_buffer(u32 n_elements) {
     VkBufferCreateInfo bci{};
+    bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bci.size = round_up_x16(n_elements * sizeof(T));
     bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -320,9 +339,10 @@ struct Manager {
 
 struct Renderer {
   SDL_Window* window;
-  VkInstance instance;
-  VkPhysicalDevice physical_device;
-  VkDevice device;
+  // VkInstance instance;
+  // VkPhysicalDevice physical_device;
+  // VkDevice device;
+  Manager* p_mgr;
   VkQueue queue;
   VkSurfaceKHR surface;
   VkSurfaceCapabilitiesKHR surface_caps;
@@ -344,12 +364,12 @@ struct Renderer {
   std::array<VkFence, MAX_FRAMES_IN_FLIGHT> fences;
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> img_acquired_semaphores;
   std::vector<VkSemaphore> render_complete_semaphores;
-  VmaAllocation v_buffer_allocation{};
-  VmaAllocationInfo v_buffer_ai{};
-  VkDeviceSize v_buf_size;
-  VkDeviceSize i_buf_size;
-  VkBuffer v_buffer;
-  VkDeviceSize index_count;
+  // VmaAllocation v_buffer_allocation{};
+  // VmaAllocationInfo v_buffer_ai{};
+  // VkDeviceSize v_buf_size;
+  // VkDeviceSize i_buf_size;
+  // VkBuffer v_buffer;
+  // VkDeviceSize index_count;
   struct Texture {
     VmaAllocation allocation{VK_NULL_HANDLE};
     VkImage image{VK_NULL_HANDLE};
@@ -369,6 +389,7 @@ struct Renderer {
 
   void init_sync_objects();
 
+  VkDescriptorImageInfo make_colormap();
   VkDescriptorImageInfo load_tex_img();
 
   [[nodiscard]] VkShaderModule load_main_shader() const;
@@ -376,60 +397,8 @@ struct Renderer {
   Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf);
 
   void draw_frame();
+  ~Renderer();
 };
-
-// struct Renderer {
-//   // non-owned
-//   Manager* p_mgr;
-//   //  owned
-//   VkRenderPass render_pass;
-//   VkPipeline graphics_pipeline;
-//   VkPipelineLayout graphics_pipeline_layout;
-//   VkSwapchainKHR swapchain;
-//   VkSurfaceKHR surface;
-//   std::vector<VkFramebuffer> swapchain_fbs;
-//   std::vector<VkImage> swapchain_imgs;
-//   VkFormat swapchain_img_fmt;
-//   VkExtent2D swapchain_extent;
-//   std::array<u32, 2> render_queue_indices = {UINT32_MAX, UINT32_MAX};
-//   VkQueue graphics_queue;
-//   VkQueue present_queue;
-//   std::vector<VkImageView> swapchain_img_views;
-//   std::vector<VkSemaphore> present_semaphores;
-//   std::vector<VkSemaphore> render_semaphores;
-//   // std::vector<VkFence> image_in_flight_fences;
-//   std::vector<VkFence> in_flight_fences;
-//   VkCommandPool command_pool;
-//   std::vector<VkCommandBuffer> command_buffers;
-//   VkCommandBuffer reduction_buffer;
-//   MetaBuffer vertex_buffer;
-//   AllocatedImage colormap_img;
-//   MetaBuffer colormap;
-//   VkImageView colormap_view;
-//   VkSampler colormap_sampler;
-//   VkDescriptorSetLayout descriptor_set_layout;
-//   VkDescriptorPool descriptor_pool;
-//   VkDescriptorSet descriptor_set;
-//   VkSurfaceCapabilitiesKHR capabilities;
-//   VkSurfaceFormatKHR surface_format;
-//   VkPresentModeKHR present_mode;
-//   MetaBuffer value_buffer;
-//   MetaBuffer minmax_buffer;
-//   Algorithm first_minmax_reduction;
-//   Algorithm minmax_reduction;
-//   Algorithm fill_colormap_img;
-//   u32 n_images;
-//   bool frame_buffer_resized;
-//   u32 current_frame = 0;
-//
-//   Renderer(Manager& manager, VkSurfaceKHR surf, u32 nx, u32 ny);
-//   void cleanup_swapchain();
-//   void recreate_swapchain();
-//   void draw_frame();
-//   ~Renderer();
-// };
-
-std::vector<u32> read_file(const std::string& filename);
 
 inline VkCommandBuffer make_cb(VkDevice device, VkCommandPool cmd_pool) {
   VkCommandBuffer cb{};
@@ -466,6 +435,9 @@ void one_time_submit(VkDevice device, VkCommandPool cmd_pool, VkQueue queue,
 void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
 void append_op_no_barrier(VkCommandBuffer b, const Algorithm& a, u32 x,
                           u32 y = 1, u32 z = 1);
+
+#undef FATAL_LOG
+#undef WARN_LOG
 #undef DEBUG_LOG
 #undef DEBUG_END
 #undef DEBUG_START

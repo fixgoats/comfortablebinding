@@ -7,6 +7,8 @@
 #include <cxxopts.hpp>
 #include <iostream>
 
+using Eigen::Vector4d;
+
 namespace {
 constexpr f32 v_potential(f32 x, f32 y) {
   return 5 * std::cos(x) * std::sin(y);
@@ -65,7 +67,7 @@ int main(int argc, char* argv[]) {
     std::cout << options.help() << std::endl;
     exit(0);
   }
-  std::cout << "Obtained v?" << result["v"].as<bool>() << '\n';
+  spdlog::set_level(spdlog::level::info);
   if (result["v"].as<bool>()) {
     spdlog::set_level(spdlog::level::debug);
   }
@@ -121,6 +123,74 @@ int main(int argc, char* argv[]) {
           std::exp(c32{0., -0.5F * t.d() * v_potential(x.ith(i), x.ith(j))});
     }
   }
+
+  MetaBuffer cmap = mgr.make_raw_buffer<Vector4d>(256);
+  mgr.write_to_buffer(cmap, cm::magma.data(), 4UL * 4 * 256);
+  constexpr u32 width = 1920;
+  constexpr u32 height = 1080;
+  constexpr u32 n_elements = width * height;
+  constexpr u32 minm_elements = (n_elements + 15) / 16;
+  std::vector<f32> cpu_values(n_elements);
+  for (u32 i = n_elements; i > 0; --i) {
+    cpu_values[i] = static_cast<f32>(i);
+  }
+  MetaBuffer values = mgr.vec_to_buffer(cpu_values);
+  MetaBuffer minmaxbuf = mgr.make_raw_buffer<f32>(minm_elements);
+  Algorithm firstminmax =
+      mgr.make_algorithm("build/Shaders/firstminmax.spv", {},
+                         {&values, &minmaxbuf}, {bit_cast<f32>(n_elements)});
+  Algorithm minmax =
+      mgr.make_algorithm("build/Shaders/minmax.spv", {}, {&minmaxbuf},
+                         {bit_cast<f32>(minm_elements)});
+
+  VkCommandBuffer cb = mgr.begin_record();
+  u32 disp = (n_elements + 31) / 32;
+  append_op(cb, firstminmax, disp, 1, 1);
+  while (disp > 32) {
+    disp = (disp + 31) / 32;
+    spdlog::info("Dispatching: {}", disp);
+    append_op(cb, minmax, disp, 1, 1);
+  }
+  vkEndCommandBuffer(cb);
+  mgr.execute(cb);
+
+  VmaAllocationCreateInfo alloc_ci{};
+  alloc_ci.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+  alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+  VkImageCreateInfo img_ci{};
+  img_ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  img_ci.imageType = VK_IMAGE_TYPE_2D;
+  img_ci.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  img_ci.extent.width = width;
+  img_ci.extent.height = height;
+  img_ci.extent.depth = 1;
+  img_ci.mipLevels = 1;
+  img_ci.arrayLayers = 1;
+  img_ci.samples = VK_SAMPLE_COUNT_1_BIT;
+  img_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+  img_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+  img_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  AllocatedImage img(mgr.allocator, alloc_ci, img_ci);
+
+  VkImageViewCreateInfo view_ci{};
+  view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  view_ci.image = img.img;
+  view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_ci.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  view_ci.subresourceRange.levelCount = 1;
+  view_ci.subresourceRange.layerCount = 1;
+  VkImageView view{};
+  chk_vk(vkCreateImageView(mgr.device, &view_ci, nullptr, &view));
+
+  Algorithm cmap_algo = mgr.make_algorithm("build/Shaders/colormap.spv", {view},
+                                           {&cmap, &values, &minmaxbuf},
+                                           {bit_cast<f32>(minm_elements)});
+
+  VkCommandBuffer new_cb = mgr.begin_record();
+  append_op(new_cb, cmap_algo, (width + 7) / 8, (height + 3) / 4, 1);
+  vkEndCommandBuffer(new_cb);
+  mgr.execute(new_cb);
   // MetaBuffer gpu_psi = mgr.vec_to_buffer(psi);
   // MetaBuffer gpu_psik = mgr.makeRawBuffer<c32>(x.n * x.n);
   // MetaBuffer gpu_r_prop = mgr.vec_to_buffer(r_prop);
@@ -165,29 +235,29 @@ int main(int argc, char* argv[]) {
   //   mgr.execute(cb);
   // }
 
-  Renderer renderer(window, mgr, inst.surface);
-  // Algorithm sqnorm_xfer = mgr.make_algorithm(
-  //     "Shaders/xfer.spv", {}, {&gpu_psi, &renderer.value_buffer});
-  SDL_Event event;
-  bool should_quit = false;
-  // auto xfer_cb = mgr.begin_record();
-  // append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / WAVE_SIZE, 1, 1);
-  // xfer_cb.end();
+  // Renderer renderer(window, mgr, inst.surface);
+  // // Algorithm sqnorm_xfer = mgr.make_algorithm(
+  // //     "Shaders/xfer.spv", {}, {&gpu_psi, &renderer.value_buffer});
+  // SDL_Event event;
+  // bool should_quit = false;
+  // // auto xfer_cb = mgr.begin_record();
+  // // append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / WAVE_SIZE, 1, 1);
+  // // xfer_cb.end();
 
-  while (!should_quit) {
-    FrameLimit lim(50);
-    // mgr.execute(cb);
-    // mgr.execute(xfer_cb);
-    renderer.draw_frame();
-    // check_sdl(SDL_UpdateWindowSurface(window));
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-        should_quit = true;
-      }
-    }
-  }
+  // while (!should_quit) {
+  //   FrameLimit lim(50);
+  //   // mgr.execute(cb);
+  //   // mgr.execute(xfer_cb);
+  //   renderer.draw_frame();
+  //   // check_sdl(SDL_UpdateWindowSurface(window));
+  //   while (SDL_PollEvent(&event)) {
+  //     if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+  //       should_quit = true;
+  //     }
+  //   }
+  // }
 
-  // deleteVkFFT(&app);
+  // // deleteVkFFT(&app);
   SDL_DestroyWindow(window);
   return 0;
 }

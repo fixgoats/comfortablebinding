@@ -5,7 +5,7 @@ StructuredBuffer<float4> colors;
 StructuredBuffer<float> values;
 StructuredBuffer<float> minmax;
 [[SpecializationConstant]]
-const uint NMINMAXVALUES;
+const uint NMINMAXVALUES = 1;
 
 [shader("compute")]
 [numthreads(8, 4, 1)]
