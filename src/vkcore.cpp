@@ -33,10 +33,6 @@ inline VkDevice make_device(VkPhysicalDevice phys_dev,
                             std::span<const u32> qfis, bool support_graphics) {
   DEBUG_START;
   const float qfpriorities{1.0F};
-  // DEBUG_LOG("{}", qfis.size());
-  // for (const auto& qfi : qfis) {
-  //   DEBUG_LOG("{}", qfi);
-  // }
   std::vector<VkDeviceQueueCreateInfo> queue_cis(qfis.size());
   for (u32 i = 0; i < qfis.size(); ++i) {
     queue_cis[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -112,7 +108,6 @@ inline VkFormat pick_depth_format(VkPhysicalDevice physical_device) {
     }
   }
   if (depth_format == VK_FORMAT_UNDEFINED) {
-    // std::cerr << "Fatal: unable to pick depth format.\n";
     FATAL_LOG("unable to pick depth format.");
     exit(-1);
   }
@@ -179,32 +174,6 @@ u32 get_graphics_present_queue_family_index(VkPhysicalDevice phys_dev,
 //   command_buffer.endRenderPass();
 // }
 
-// std::set<std::string> get_supported_extensions() {
-//   uint32_t count = 0;
-//   VkResult result =
-//       VkenumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-//   if (result != VkResult::eSuccess) {
-//     throw runtime_exc("Couldn't enumerate instance extension properties.\n");
-//   }
-//
-//   std::vector<VkExtensionProperties> extension_properties(count);
-//
-//   // Get the extensions
-//   result = VkenumerateInstanceExtensionProperties(nullptr, &count,
-//                                                   extension_properties.data());
-//   if (result != VkResult::eSuccess) {
-//     throw runtime_exc(
-//         "Couldn't write instance extension properties to buffer.\n");
-//   }
-//
-//   std::set<std::string> extensions;
-//   for (auto& extension : extension_properties) {
-//     extensions.insert(extension.extensionName);
-//   }
-//
-//   return extensions;
-// }
-
 void copy_buffer_now(VkDevice device, VkCommandPool command_pool, VkQueue queue,
                      VkFence fence, VkBuffer& src_buffer, VkBuffer& dst_buffer,
                      u32 buffer_size, u32 src_offset, u32 dst_offset) {
@@ -237,65 +206,6 @@ void copy_buffer_now(VkDevice device, VkCommandPool command_pool, VkQueue queue,
   vkFreeCommandBuffers(device, command_pool, 1, &cb);
 }
 
-// VkSwapchainKHR create_swapchain(VkDevice device, VkSurfaceKHR surface,
-//                                 VkSurfaceCapabilitiesKHR capabilities,
-//                                 VkSurfaceFormatKHR surface_format,
-//                                 VkPresentModeKHR present_mode,
-//                                 VkExtent2D swapchain_extent, u32 n_images,
-//                                 std::array<u32, 2> qfis,
-//                                 VkSwapchainKHR old_swapchain = nullptr) {
-//   VkSurfaceTransformFlagBitsKHR pre_transform =
-//       (capabilities.supportedTransforms &
-//        VkSurfaceTransformFlagBitsKHR::eIdentity)
-//           ? VkSurfaceTransformFlagBitsKHR::eIdentity
-//           : capabilities.currentTransform;
-//
-//   VkCompositeAlphaFlagBitsKHR composite_alpha =
-//       (capabilities.supportedCompositeAlpha &
-//        VkCompositeAlphaFlagBitsKHR::ePreMultiplied)
-//           ? VkCompositeAlphaFlagBitsKHR::ePreMultiplied
-//       : (capabilities.supportedCompositeAlpha &
-//          VkCompositeAlphaFlagBitsKHR::ePostMultiplied)
-//           ? VkCompositeAlphaFlagBitsKHR::ePostMultiplied
-//       : (capabilities.supportedCompositeAlpha &
-//          VkCompositeAlphaFlagBitsKHR::eInherit)
-//           ? VkCompositeAlphaFlagBitsKHR::eInherit
-//           : VkCompositeAlphaFlagBitsKHR::eOpaque;
-//   VkSwapchainCreateInfoKHR create_info(
-//       {}, surface, n_images, surface_format.format,
-//       surface_format.colorSpace, swapchain_extent, 1,
-//       VkImageUsageFlagBits::eColorAttachment, VkSharingMode::eExclusive, {},
-//       pre_transform, composite_alpha, present_mode, VkTrue, old_swapchain);
-//   create_info.queueFamilyIndexCount = 1;
-//   create_info.pQueueFamilyIndices = qfis.data();
-//   if (qfis[0] != qfis[1]) {
-//     // If the graphics and present queues are from different queue families,
-//     // we either have to explicitly transfer ownership of images between the
-//     // queues, or we have to create the swapchain with imageSharingMode as
-//     // VK_SHARING_MODE_CONCURRENT
-//     create_info.imageSharingMode = VkSharingMode::eConcurrent;
-//     create_info.queueFamilyIndexCount = 2;
-//   }
-//   return device.createSwapchainKHR(create_info);
-// }
-
-// std::vector<VkImageView> create_image_views(VkDevice device,
-//                                             VkSurfaceFormatKHR
-//                                             surface_format,
-//                                             std::vector<VkImage> images) {
-//   std::vector<VkImageView> swapchain_image_views;
-//   swapchain_image_views.reserve(images.size());
-//   VkImageViewCreateInfo img_view_create_info(
-//       {}, {}, VkImageViewType::e2D, surface_format.format, {},
-//       {VkImageAspectFlagBits::eColor, 0, 1, 0, 1});
-//   for (auto img : images) {
-//     img_view_create_info.image = img;
-//     swapchain_image_views.push_back(
-//         device.createImageView(img_view_create_info));
-//   }
-//   return swapchain_image_views;
-// }
-
 inline VkBool32 supports_required_features(VkPhysicalDevice phys_dev,
                                            bool graphics) {
   VkPhysicalDeviceFeatures2 supported_features;
@@ -310,7 +220,6 @@ inline VkBool32 supports_required_features(VkPhysicalDevice phys_dev,
   supported_features.pNext = &supported_12_features;
   supported_12_features.pNext = &supported_13_features;
   vkGetPhysicalDeviceFeatures2(phys_dev, &supported_features);
-  // phys_dev.getFeatures2(&supported_features);
   DEBUG_LOG("samplerAnisotropy supported: {}",
             supported_features.features.samplerAnisotropy);
   DEBUG_LOG("descriptorIndexing supported: {}",
@@ -461,30 +370,26 @@ VkPhysicalDevice pick_physical_device(VkInstance instance, bool graphics = true,
 
 } // namespace
 
-MetaBuffer::MetaBuffer() : allocation{}, aInfo{} {}
-
-MetaBuffer::MetaBuffer(VmaAllocator& allocator,
+MetaBuffer::MetaBuffer(VmaAllocator allocator,
                        VmaAllocationCreateInfo& alloc_create_info,
                        VkBufferCreateInfo& bci)
-    : p_allocator{&allocator}, allocation{} {
+    : allocator{allocator}, allocation{} {
   aInfo = VmaAllocationInfo{};
   vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
                   &alloc_create_info, pcast<VkBuffer>(&buffer), &allocation,
                   &aInfo);
 }
 
-void MetaBuffer::allocate(VmaAllocator& allocator,
+void MetaBuffer::allocate(VmaAllocator alloc,
                           VmaAllocationCreateInfo& alloc_create_info,
                           VkBufferCreateInfo& bci) {
-  p_allocator = &allocator;
+  allocator = alloc;
   vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
                   &alloc_create_info, pcast<VkBuffer>(&buffer), &allocation,
                   &aInfo);
 }
 
-MetaBuffer::~MetaBuffer() {
-  vmaDestroyBuffer(*p_allocator, buffer, allocation);
-}
+MetaBuffer::~MetaBuffer() { vmaDestroyBuffer(allocator, buffer, allocation); }
 
 AllocatedImage::AllocatedImage() : img{}, allocation{} {
   aInfo = VmaAllocationInfo{};
@@ -919,7 +824,6 @@ void Renderer::make_depth_img_and_view() {
 }
 
 void Renderer::recreate_swapchain() {
-
   DEBUG_START;
   VkDevice device = p_mgr->device;
   VkPhysicalDevice physical_device = p_mgr->physical_device;
@@ -1019,150 +923,12 @@ void Renderer::init_sync_objects() {
   DEBUG_END;
 }
 
-VkDescriptorImageInfo Renderer::make_colormap() {
+VkDescriptorImageInfo Renderer::make_colormap(u32 width, u32 height) {
   DEBUG_START;
-  std::array<cm::RGBA, 256> colors{};
-  std::ranges::transform(cm::magma, colors.begin(), cm::fcolor_to_ucolor);
-  DEBUG_LOG("Wrote to color array");
-  VkImageCreateInfo cm_img_ci{};
-  cm_img_ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  cm_img_ci.imageType = VK_IMAGE_TYPE_1D;
-  cm_img_ci.format = VK_FORMAT_R8G8B8A8_SRGB;
-  cm_img_ci.extent.width = 256;
-  cm_img_ci.extent.height = 1;
-  cm_img_ci.extent.depth = 1;
-  cm_img_ci.mipLevels = 1;
-  cm_img_ci.arrayLayers = 1;
-  cm_img_ci.samples = VK_SAMPLE_COUNT_1_BIT;
-  cm_img_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-  cm_img_ci.usage =
-      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-  cm_img_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-  VmaAllocationCreateInfo cm_image_alloc_ci{};
-  cm_image_alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-  chk_vk(vmaCreateImage(allocator, &cm_img_ci, &cm_image_alloc_ci,
-                        &texture.image, &texture.allocation, nullptr));
-
-  VkImageViewCreateInfo tex_view_ci{};
-  tex_view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  tex_view_ci.image = texture.image;
-  tex_view_ci.viewType = VK_IMAGE_VIEW_TYPE_1D;
-  tex_view_ci.format = cm_img_ci.format;
-  tex_view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  tex_view_ci.subresourceRange.levelCount = 1;
-  tex_view_ci.subresourceRange.layerCount = 1;
-  chk_vk(
-      vkCreateImageView(p_mgr->device, &tex_view_ci, nullptr, &texture.view));
-
-  VkBuffer img_src_buffer{};
-  VmaAllocation img_src_allocation{};
-  VkBufferCreateInfo img_src_buffer_ci{};
-  img_src_buffer_ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  img_src_buffer_ci.size = 4UL * 256;
-  img_src_buffer_ci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-  VmaAllocationCreateInfo img_src_alloc_ci{};
-  img_src_alloc_ci.flags =
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-      VMA_ALLOCATION_CREATE_MAPPED_BIT;
-  img_src_alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-  VmaAllocationInfo img_src_alloc_info{};
-  chk_vk(vmaCreateBuffer(allocator, &img_src_buffer_ci, &img_src_alloc_ci,
-                         &img_src_buffer, &img_src_allocation,
-                         &img_src_alloc_info));
-
-  memcpy(img_src_alloc_info.pMappedData, colors.data(), sizeof(cm::RGBA) * 256);
-
-  VkFenceCreateInfo fence_one_time_ci{};
-  fence_one_time_ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  VkFence fence_one_time{};
-  chk_vk(vkCreateFence(p_mgr->device, &fence_one_time_ci, nullptr,
-                       &fence_one_time));
-  VkCommandBuffer cb_one_time{};
-  VkCommandBufferAllocateInfo cb_one_time_ai{};
-  cb_one_time_ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-  cb_one_time_ai.commandPool = command_pool,
-  cb_one_time_ai.commandBufferCount = 1;
-  chk_vk(
-      vkAllocateCommandBuffers(p_mgr->device, &cb_one_time_ai, &cb_one_time));
-  VkCommandBufferBeginInfo cb_one_time_bi{};
-  cb_one_time_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-  cb_one_time_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  chk_vk(vkBeginCommandBuffer(cb_one_time, &cb_one_time_bi));
-  VkImageMemoryBarrier2 barrier_tex_image{};
-  barrier_tex_image.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  barrier_tex_image.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-  barrier_tex_image.srcAccessMask = VK_ACCESS_2_NONE;
-  barrier_tex_image.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-  barrier_tex_image.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  barrier_tex_image.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  barrier_tex_image.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  barrier_tex_image.image = texture.image;
-  barrier_tex_image.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  barrier_tex_image.subresourceRange.levelCount = 1;
-  barrier_tex_image.subresourceRange.layerCount = 1;
-  VkDependencyInfo barrier_tex_info{};
-  barrier_tex_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-  barrier_tex_info.imageMemoryBarrierCount = 1;
-  barrier_tex_info.pImageMemoryBarriers = &barrier_tex_image;
-  vkCmdPipelineBarrier2(cb_one_time, &barrier_tex_info);
-  VkBufferImageCopy region{};
-  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  region.imageSubresource.layerCount = 1;
-  region.imageExtent = {.width = 256, .height = 1, .depth = 1};
-  vkCmdCopyBufferToImage(cb_one_time, img_src_buffer, texture.image,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-  VkImageMemoryBarrier2 barrier_tex_read{};
-  barrier_tex_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  barrier_tex_read.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-  barrier_tex_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-  barrier_tex_read.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-  barrier_tex_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-  barrier_tex_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  barrier_tex_read.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-  barrier_tex_read.image = texture.image;
-  barrier_tex_read.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  barrier_tex_read.subresourceRange.levelCount = 1;
-  barrier_tex_read.subresourceRange.layerCount = 1;
-  barrier_tex_info.pImageMemoryBarriers = &barrier_tex_read;
-  vkCmdPipelineBarrier2(cb_one_time, &barrier_tex_info);
-  chk_vk(vkEndCommandBuffer(cb_one_time));
-  VkSubmitInfo one_time_si{};
-  one_time_si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  one_time_si.commandBufferCount = 1;
-  one_time_si.pCommandBuffers = &cb_one_time;
-  chk_vk(vkQueueSubmit(queue, 1, &one_time_si, fence_one_time));
-  chk_vk(
-      vkWaitForFences(p_mgr->device, 1, &fence_one_time, VK_TRUE, UINT64_MAX));
-  vkDestroyFence(p_mgr->device, fence_one_time, nullptr);
-  vmaDestroyBuffer(allocator, img_src_buffer, img_src_allocation);
-  // Sampler
-  VkSamplerCreateInfo sampler_ci{};
-  sampler_ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  sampler_ci.magFilter = VK_FILTER_LINEAR;
-  sampler_ci.minFilter = VK_FILTER_LINEAR;
-  sampler_ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  sampler_ci.anisotropyEnable = VK_TRUE;
-  sampler_ci.maxAnisotropy = 8.0F;
-  chk_vk(
-      vkCreateSampler(p_mgr->device, &sampler_ci, nullptr, &texture.sampler));
-
-  VkDescriptorImageInfo texture_descriptor{};
-  texture_descriptor.sampler = texture.sampler;
-  texture_descriptor.imageView = texture.view,
-  texture_descriptor.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-
-  DEBUG_END;
-  return texture_descriptor;
-}
-
-VkDescriptorImageInfo Renderer::load_tex_img() {
-  DEBUG_START;
-  const u32 width = 1920;
-  const u32 height = 1080;
   VmaAllocationCreateInfo alloc_ci{};
   alloc_ci.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
   alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+
   VkImageCreateInfo img_ci{};
   img_ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
   img_ci.imageType = VK_IMAGE_TYPE_2D;
@@ -1182,32 +948,27 @@ VkDescriptorImageInfo Renderer::load_tex_img() {
   VkImageMemoryBarrier2 undef_to_gen{};
   undef_to_gen.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
   undef_to_gen.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  undef_to_gen.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+  undef_to_gen.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   undef_to_gen.image = texture.image;
   undef_to_gen.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   undef_to_gen.subresourceRange.layerCount = 1;
   undef_to_gen.subresourceRange.levelCount = 1;
-  undef_to_gen.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  undef_to_gen.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
   undef_to_gen.srcAccessMask = VK_ACCESS_2_NONE;
-  undef_to_gen.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  undef_to_gen.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  undef_to_gen.dstStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+  undef_to_gen.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
 
   VkDependencyInfo dep_info{};
   dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
   dep_info.imageMemoryBarrierCount = 1;
   dep_info.pImageMemoryBarriers = &undef_to_gen;
 
-  VkCommandBuffer trans_cb =
-      p_mgr->begin_record(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+  VkCommandBuffer trans_cb = p_mgr->begin_record();
   vkCmdPipelineBarrier2(trans_cb, &dep_info);
   vkEndCommandBuffer(trans_cb);
 
-  VkSubmitInfo submit_info{};
-  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &trans_cb;
-  vkQueueSubmit(p_mgr->queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(p_mgr->queue);
+  DEBUG_LOG("Submitting undef_to_gen barrier");
+  p_mgr->execute(trans_cb);
 
   VkImageViewCreateInfo view_ci{};
   view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1240,218 +1001,113 @@ VkDescriptorImageInfo Renderer::load_tex_img() {
   texture_descriptor.imageView = texture.view,
   texture_descriptor.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 
-  constexpr u32 n_elements = width * height;
-  constexpr u32 minm_elements = (n_elements + 15) / 16;
-  std::vector<f32> cpu_values(n_elements);
-  for (u32 j = 0; j < height; ++j) {
-    for (u32 i = 0; i < width; ++i) {
-      cpu_values[j * width + i] = static_cast<f32>(i * j);
-    }
-  }
-  MetaBuffer cmap = p_mgr->make_raw_buffer<Eigen::Vector4d>(256);
+  const u32 n_elements = width * height;
+  const u32 minm_elements = (n_elements + 15) / 16;
+  VkBufferCreateInfo bci{};
+  bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  bci.size = round_up_x16(256 * 4 * 4);
+  bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+              VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+              VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  cmap.allocate(allocator, alloc_ci,
+                bci); // = p_mgr->make_raw_buffer<Eigen::Vector4d>(256);
+  DEBUG_LOG("Writing to colormap buffer");
   p_mgr->write_to_buffer(cmap, cm::magma.data(), 4UL * 4 * 256);
-  MetaBuffer values = p_mgr->vec_to_buffer(cpu_values);
-  MetaBuffer minmaxbuf = p_mgr->make_raw_buffer<f32>(minm_elements);
-  Algorithm cmap_algo = p_mgr->make_algorithm(
-      "build/Shaders/colormap.spv", {texture.view},
-      {&cmap, &values, &minmaxbuf}, {bit_cast<f32>(minm_elements)});
 
-  Algorithm firstminmax =
-      p_mgr->make_algorithm("build/Shaders/firstminmax.spv", {},
-                            {&values, &minmaxbuf}, {bit_cast<f32>(n_elements)});
-  Algorithm minmax =
-      p_mgr->make_algorithm("build/Shaders/minmax.spv", {}, {&minmaxbuf},
-                            {bit_cast<f32>(minm_elements)});
+  bci.size = round_up_x16(n_elements * 4);
+  value_buf.allocate(allocator, alloc_ci, bci);
+  bci.size = round_up_x16(minm_elements * 4);
+  minmax_buffer.allocate(allocator, alloc_ci, bci);
 
-  VkCommandBuffer cb = p_mgr->begin_record();
-  u32 disp = (n_elements + 31) / 32;
-  append_op(cb, firstminmax, disp, 1, 1);
-  while (disp > 32) {
-    disp = (disp + 31) / 32;
-    spdlog::info("Dispatching: {}", disp);
-    append_op(cb, minmax, disp, 1, 1);
-  }
-  append_op(cb, cmap_algo, (width + 7) / 8, (height + 3) / 4, 1);
-  vkEndCommandBuffer(cb);
-  p_mgr->execute(cb);
+  DEBUG_LOG("Making cmap algorithm");
+  auto spirv_code = read_file<u32>("build/Shaders/colormap.spv");
+  cmap_algo.initialize(p_mgr->device, spirv_code, 1, 3, 0,
+                       {pcast<f32>(&minm_elements), 1UL});
+  std::vector<MetaBuffer*> cmap_bufs = {&cmap, &value_buf, &minmax_buffer};
+  cmap_algo.bind_data({&texture.view, 1UL}, cmap_bufs, {});
+
+  spirv_code = read_file<u32>("build/Shaders/firstminmax.spv");
+  firstminmax.initialize(p_mgr->device, spirv_code, 0, 2, 0,
+                         {pcast<f32>(&n_elements), 1UL});
+  std::vector<MetaBuffer*> firstminmax_bufs = {&value_buf, &minmax_buffer};
+  firstminmax.bind_data({}, firstminmax_bufs, {});
+
+  spirv_code = read_file<u32>("build/Shaders/minmax.spv");
+  minmax.initialize(p_mgr->device, spirv_code, 0, 1, 0,
+                    {pcast<f32>(&minm_elements), 1UL});
+  std::vector<MetaBuffer*> minmax_bufs = {&minmax_buffer};
+  minmax.bind_data({}, minmax_bufs, {});
 
   VkImageMemoryBarrier2 gen_to_shader_read{};
   gen_to_shader_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-  gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_GENERAL;
   gen_to_shader_read.image = texture.image;
   gen_to_shader_read.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   gen_to_shader_read.subresourceRange.layerCount = 1;
   gen_to_shader_read.subresourceRange.levelCount = 1;
-  gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-  gen_to_shader_read.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  gen_to_shader_read.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  gen_to_shader_read.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  dep_info.pImageMemoryBarriers = &gen_to_shader_read;
-  vkResetCommandBuffer(cb, 0);
-  VkCommandBufferBeginInfo cb_bi{};
-  cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  vkBeginCommandBuffer(cb, &cb_bi);
-  vkCmdPipelineBarrier2(cb, &dep_info);
-  vkEndCommandBuffer(cb);
+  gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+  gen_to_shader_read.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+  gen_to_shader_read.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+  gen_to_shader_read.srcStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
 
-  submit_info.pCommandBuffers = &cb;
-  vkQueueSubmit(p_mgr->queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(p_mgr->queue);
+  VkDependencyInfo cmap_dep_info{};
+  cmap_dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+  cmap_dep_info.imageMemoryBarrierCount = 1;
+  cmap_dep_info.pImageMemoryBarriers = &gen_to_shader_read;
+
+  DEBUG_LOG("Made algorithms");
+  cmap_cb = p_mgr->begin_record();
+
+  vkCmdPipelineBarrier2(cmap_cb, &cmap_dep_info);
+  u32 disp = (n_elements + 31) / 32;
+  DEBUG_LOG("Beginning record");
+  append_op(cmap_cb, firstminmax, disp, 1, 1);
+  DEBUG_LOG("Appended firstminmax operation");
+  while (disp > 32) {
+    disp = (disp + 31) / 32;
+    spdlog::info("Dispatching: {}", disp);
+    append_op(cmap_cb, minmax, disp, 1, 1);
+  }
+  append_op(cmap_cb, cmap_algo, (width + 7) / 8, (height + 3) / 4, 1);
+  gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+  gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+  gen_to_shader_read.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+  gen_to_shader_read.dstStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+  gen_to_shader_read.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+  vkCmdPipelineBarrier2(cmap_cb, &cmap_dep_info);
+  vkEndCommandBuffer(cmap_cb);
+  DEBUG_LOG("Recorded cmap cb");
+
+  // VkImageMemoryBarrier2 gen_to_shader_read{};
+  // gen_to_shader_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+  // gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+  // gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  // gen_to_shader_read.image = texture.image;
+  // gen_to_shader_read.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  // gen_to_shader_read.subresourceRange.layerCount = 1;
+  // gen_to_shader_read.subresourceRange.levelCount = 1;
+  // gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+  // gen_to_shader_read.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  // gen_to_shader_read.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  // gen_to_shader_read.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  // dep_info.pImageMemoryBarriers = &gen_to_shader_read;
+  // vkResetCommandBuffer(trans_cb, 0);
+  // VkCommandBufferBeginInfo cb_bi{};
+  // cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  // vkBeginCommandBuffer(trans_cb, &cb_bi);
+  // vkCmdPipelineBarrier2(trans_cb, &dep_info);
+  // vkEndCommandBuffer(trans_cb);
+  // DEBUG_LOG("Re-recorded transition cb");
+
+  // DEBUG_LOG("Submitting gen_to_shader_read barrier");
+  // p_mgr->execute(trans_cb);
 
   DEBUG_END;
   return texture_descriptor;
 }
-
-// VkDescriptorImageInfo Renderer::load_tex_img() {
-//   DEBUG_START;
-//
-//   s32 tex_width = 0;
-//   s32 tex_height = 0;
-//   s32 tex_channels = 0;
-//   stbi_uc* pixels = stbi_load("assets/kyousaya.jpg", &tex_width, &tex_height,
-//                               &tex_channels, STBI_rgb_alpha);
-//   VkDeviceSize image_size = static_cast<u64>(tex_width) * tex_height * 4;
-//   if (!static_cast<bool>(pixels)) {
-//     std::cerr << "Failed to load texture image\n";
-//     exit(-1);
-//   }
-//   u32 width = tex_width;
-//   u32 height = tex_height;
-//   VkImageCreateInfo tex_img_ci{};
-//   tex_img_ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-//   tex_img_ci.imageType = VK_IMAGE_TYPE_2D;
-//   tex_img_ci.format = VK_FORMAT_R8G8B8A8_SRGB;
-//   tex_img_ci.extent.width = width;
-//   tex_img_ci.extent.height = height;
-//   tex_img_ci.extent.depth = 1;
-//   tex_img_ci.mipLevels = 1;
-//   tex_img_ci.arrayLayers = 1;
-//   tex_img_ci.samples = VK_SAMPLE_COUNT_1_BIT;
-//   tex_img_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-//   tex_img_ci.usage =
-//       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-//   tex_img_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-//
-//   VmaAllocationCreateInfo tex_image_alloc_ci{};
-//   tex_image_alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-//   chk_vk(vmaCreateImage(allocator, &tex_img_ci, &tex_image_alloc_ci,
-//                         &texture.image, &texture.allocation, nullptr));
-//
-//   VkImageViewCreateInfo tex_view_ci{};
-//   tex_view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-//   tex_view_ci.image = texture.image;
-//   tex_view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-//   tex_view_ci.format = tex_img_ci.format;
-//   tex_view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//   tex_view_ci.subresourceRange.levelCount = 1;
-//   tex_view_ci.subresourceRange.layerCount = 1;
-//   chk_vk(
-//       vkCreateImageView(p_mgr->device, &tex_view_ci, nullptr,
-//       &texture.view));
-//
-//   VkBuffer img_src_buffer{};
-//   VmaAllocation img_src_allocation{};
-//   VkBufferCreateInfo img_src_buffer_ci{};
-//   img_src_buffer_ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-//   img_src_buffer_ci.size = image_size;
-//   img_src_buffer_ci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-//   VmaAllocationCreateInfo img_src_alloc_ci{};
-//   img_src_alloc_ci.flags =
-//       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-//       VMA_ALLOCATION_CREATE_MAPPED_BIT;
-//   img_src_alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-//   VmaAllocationInfo img_src_alloc_info{};
-//   chk_vk(vmaCreateBuffer(allocator, &img_src_buffer_ci, &img_src_alloc_ci,
-//                          &img_src_buffer, &img_src_allocation,
-//                          &img_src_alloc_info));
-//
-//   memcpy(img_src_alloc_info.pMappedData, pixels, image_size);
-//
-//   VkFenceCreateInfo fence_one_time_ci{};
-//   fence_one_time_ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-//   VkFence fence_one_time{};
-//   chk_vk(vkCreateFence(p_mgr->device, &fence_one_time_ci, nullptr,
-//                        &fence_one_time));
-//   VkCommandBuffer cb_one_time{};
-//   VkCommandBufferAllocateInfo cb_one_time_ai{};
-//   cb_one_time_ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-//   cb_one_time_ai.commandPool = command_pool,
-//   cb_one_time_ai.commandBufferCount = 1;
-//   chk_vk(
-//       vkAllocateCommandBuffers(p_mgr->device, &cb_one_time_ai,
-//       &cb_one_time));
-//   VkCommandBufferBeginInfo cb_one_time_bi{};
-//   cb_one_time_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-//   cb_one_time_bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-//   chk_vk(vkBeginCommandBuffer(cb_one_time, &cb_one_time_bi));
-//   VkImageMemoryBarrier2 barrier_tex_image{};
-//   barrier_tex_image.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-//   barrier_tex_image.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-//   barrier_tex_image.srcAccessMask = VK_ACCESS_2_NONE;
-//   barrier_tex_image.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-//   barrier_tex_image.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-//   barrier_tex_image.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-//   barrier_tex_image.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-//   barrier_tex_image.image = texture.image;
-//   barrier_tex_image.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//   barrier_tex_image.subresourceRange.levelCount = 1;
-//   barrier_tex_image.subresourceRange.layerCount = 1;
-//   VkDependencyInfo barrier_tex_info{};
-//   barrier_tex_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-//   barrier_tex_info.imageMemoryBarrierCount = 1;
-//   barrier_tex_info.pImageMemoryBarriers = &barrier_tex_image;
-//   vkCmdPipelineBarrier2(cb_one_time, &barrier_tex_info);
-//   VkBufferImageCopy region{};
-//   region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//   region.imageSubresource.layerCount = 1;
-//   region.imageExtent = {.width = width, .height = height, .depth = 1};
-//   vkCmdCopyBufferToImage(cb_one_time, img_src_buffer, texture.image,
-//                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-//   VkImageMemoryBarrier2 barrier_tex_read{};
-//   barrier_tex_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-//   barrier_tex_read.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-//   barrier_tex_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-//   barrier_tex_read.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-//   barrier_tex_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-//   barrier_tex_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-//   barrier_tex_read.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-//   barrier_tex_read.image = texture.image;
-//   barrier_tex_read.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//   barrier_tex_read.subresourceRange.levelCount = 1;
-//   barrier_tex_read.subresourceRange.layerCount = 1;
-//   barrier_tex_info.pImageMemoryBarriers = &barrier_tex_read;
-//   vkCmdPipelineBarrier2(cb_one_time, &barrier_tex_info);
-//   chk_vk(vkEndCommandBuffer(cb_one_time));
-//   VkSubmitInfo one_time_si{};
-//   one_time_si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-//   one_time_si.commandBufferCount = 1;
-//   one_time_si.pCommandBuffers = &cb_one_time;
-//   chk_vk(vkQueueSubmit(queue, 1, &one_time_si, fence_one_time));
-//   chk_vk(
-//       vkWaitForFences(p_mgr->device, 1, &fence_one_time, VK_TRUE,
-//       UINT64_MAX));
-//   vkDestroyFence(p_mgr->device, fence_one_time, nullptr);
-//   vmaDestroyBuffer(allocator, img_src_buffer, img_src_allocation);
-//   // Sampler
-//   VkSamplerCreateInfo sampler_ci{};
-//   sampler_ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-//   sampler_ci.magFilter = VK_FILTER_LINEAR;
-//   sampler_ci.minFilter = VK_FILTER_LINEAR;
-//   sampler_ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-//   sampler_ci.anisotropyEnable = VK_TRUE;
-//   sampler_ci.maxAnisotropy = 8.0F;
-//   chk_vk(
-//       vkCreateSampler(p_mgr->device, &sampler_ci, nullptr,
-//       &texture.sampler));
-//
-//   VkDescriptorImageInfo texture_descriptor{};
-//   texture_descriptor.sampler = texture.sampler;
-//   texture_descriptor.imageView = texture.view,
-//   texture_descriptor.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-//   DEBUG_END;
-//   return texture_descriptor;
-// }
 
 VkShaderModule Renderer::load_main_shader() const {
   DEBUG_START;
@@ -1547,7 +1203,7 @@ Renderer::Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf)
   cb_alloc_ci.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
   chk_vk(vkAllocateCommandBuffers(mgr.device, &cb_alloc_ci, cbs.data()));
   // Texture images
-  VkDescriptorImageInfo texture_descriptor = load_tex_img();
+  VkDescriptorImageInfo texture_descriptor = make_colormap(1920, 1080);
   // Descriptor (indexing)
   VkDescriptorBindingFlags desc_variable_flag{
       VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
@@ -1717,6 +1373,8 @@ void Renderer::draw_frame() {
   // Build command buffer
   VkCommandBuffer cb = cbs[frame_index];
   chk_vk(vkResetCommandBuffer(cb, 0));
+
+  p_mgr->execute(cmap_cb);
 
   VkCommandBufferBeginInfo cb_bi{};
   cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,

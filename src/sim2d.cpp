@@ -124,145 +124,14 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  MetaBuffer cmap = mgr.make_raw_buffer<Vector4d>(256);
-  mgr.write_to_buffer(cmap, cm::magma.data(), 4UL * 4 * 256);
-  constexpr u32 width = 1920;
-  constexpr u32 height = 1080;
-  constexpr u32 n_elements = width * height;
-  constexpr u32 minm_elements = (n_elements + 15) / 16;
-  std::vector<f32> cpu_values(n_elements);
-  for (s32 i = n_elements - 1; i >= 0; --i) {
-    cpu_values[i] = static_cast<f32>(i);
+  const u32 width = 1920;
+  const u32 height = 1080;
+  std::vector<f32> values(static_cast<u64>(width) * height);
+  for (u32 i = 0; i < height; i++) {
+    for (u32 j = 0; j < width; ++j) {
+      values[i * width + j] = static_cast<f32>(i * j);
+    }
   }
-  MetaBuffer values = mgr.vec_to_buffer(cpu_values);
-  MetaBuffer minmaxbuf = mgr.make_raw_buffer<f32>(minm_elements);
-  Algorithm firstminmax =
-      mgr.make_algorithm("build/Shaders/firstminmax.spv", {},
-                         {&values, &minmaxbuf}, {bit_cast<f32>(n_elements)});
-  Algorithm minmax =
-      mgr.make_algorithm("build/Shaders/minmax.spv", {}, {&minmaxbuf},
-                         {bit_cast<f32>(minm_elements)});
-
-  VkCommandBuffer cb = mgr.begin_record();
-  u32 disp = (n_elements + 31) / 32;
-  append_op(cb, firstminmax, disp, 1, 1);
-  while (disp > 32) {
-    disp = (disp + 31) / 32;
-    spdlog::info("Dispatching: {}", disp);
-    append_op(cb, minmax, disp, 1, 1);
-  }
-  vkEndCommandBuffer(cb);
-  mgr.execute(cb);
-
-  // VmaAllocationCreateInfo alloc_ci{};
-  // alloc_ci.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-  // alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-  // VkImageCreateInfo img_ci{};
-  // img_ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  // img_ci.imageType = VK_IMAGE_TYPE_2D;
-  // img_ci.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-  // img_ci.extent.width = width;
-  // img_ci.extent.height = height;
-  // img_ci.extent.depth = 1;
-  // img_ci.mipLevels = 1;
-  // img_ci.arrayLayers = 1;
-  // img_ci.samples = VK_SAMPLE_COUNT_1_BIT;
-  // img_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-  // img_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-  // img_ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  // AllocatedImage img(mgr.allocator, alloc_ci, img_ci);
-
-  // VkImageMemoryBarrier2 undef_to_gen{};
-  // undef_to_gen.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  // undef_to_gen.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  // undef_to_gen.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-  // undef_to_gen.image = img.img;
-  // undef_to_gen.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  // undef_to_gen.subresourceRange.layerCount = 1;
-  // undef_to_gen.subresourceRange.levelCount = 1;
-  // undef_to_gen.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  // undef_to_gen.srcAccessMask = VK_ACCESS_2_NONE;
-  // undef_to_gen.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  // undef_to_gen.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  // VkDependencyInfo dep_info{};
-  // dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-  // dep_info.imageMemoryBarrierCount = 1;
-  // dep_info.pImageMemoryBarriers = &undef_to_gen;
-  // VkCommandBuffer trans_cb =
-  //     mgr.begin_record(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-  // vkCmdPipelineBarrier2(trans_cb, &dep_info);
-  // vkEndCommandBuffer(trans_cb);
-
-  // VkSubmitInfo submit_info{};
-  // submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  // submit_info.commandBufferCount = 1;
-  // submit_info.pCommandBuffers = &trans_cb;
-  // vkQueueSubmit(mgr.queue, 1, &submit_info, VK_NULL_HANDLE);
-  // vkQueueWaitIdle(mgr.queue);
-
-  // VkImageViewCreateInfo view_ci{};
-  // view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  // view_ci.image = img.img;
-  // view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  // view_ci.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-  // view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  // view_ci.subresourceRange.levelCount = 1;
-  // view_ci.subresourceRange.layerCount = 1;
-  // VkImageView view{};
-  // chk_vk(vkCreateImageView(mgr.device, &view_ci, nullptr, &view));
-
-  // Algorithm cmap_algo = mgr.make_algorithm("build/Shaders/colormap.spv",
-  // {view},
-  //                                          {&cmap, &values, &minmaxbuf},
-  //                                          {bit_cast<f32>(minm_elements)});
-
-  // VkCommandBuffer new_cb = mgr.begin_record();
-  // append_op(new_cb, cmap_algo, (width + 7) / 8, (height + 3) / 4, 1);
-  // vkEndCommandBuffer(new_cb);
-  // mgr.execute(new_cb);
-  // MetaBuffer gpu_psi = mgr.vec_to_buffer(psi);
-  // MetaBuffer gpu_psik = mgr.makeRawBuffer<c32>(x.n * x.n);
-  // MetaBuffer gpu_r_prop = mgr.vec_to_buffer(r_prop);
-  // MetaBuffer gpu_k_prop = mgr.vec_to_buffer(k_prop);
-  // Algorithm linschroedrstep = mgr.make_algorithm(
-  //     "Shaders/schroedrstep.spv", {},
-  //     std::vector<MetaBuffer*>{&gpu_psi, &gpu_r_prop, &gpu_k_prop});
-  // Algorithm linschroedkstep = mgr.make_algorithm(
-  //     "Shaders/schroedkstep.spv", {}, {&gpu_psi, &gpu_r_prop, &gpu_k_prop});
-  // VkFFTConfiguration conf{};
-  // conf.device = pcast<VkDevice>(&mgr.device);
-  // conf.physicalDevice = pcast<VkPhysicalDevice>(&mgr.physical_device);
-  // conf.FFTdim = 2;
-  // conf.size[0] = x.n;
-  // conf.size[1] = x.n;
-  // conf.queue = pcast<VkQueue>(&mgr.queue);
-  // conf.fence = pcast<VkFence>(&mgr.fence);
-  // conf.commandPool = pcast<VkCommandPool>(&mgr.command_pool);
-  // conf.buffer = pcast<VkBuffer>(&gpu_psi.buffer);
-  // conf.bufferSize = &gpu_psi.aInfo.size;
-  // conf.normalize = 1;
-  // VkFFTApplication app{};
-  // initializeVkFFT(&app, conf);
-  // auto cb = mgr.begin_record();
-  // VkFFTLaunchParams lp{};
-  // lp.commandBuffer = pcast<VkCommandBuffer>(&cb);
-  // for (u32 i = 0; i < t.n; ++i) {
-  //   append_op(cb, linschroedrstep, (x.n * x.n) / WAVE_SIZE, 1, 1);
-  //   cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-  //                      vk::PipelineStageFlagBits::eAllCommands, {},
-  //                      FULL_MEMORY_BARRIER, nullptr, nullptr);
-  //   VkFFTAppend(&app, -1, &lp);
-  //   append_op(cb, linschroedkstep, (x.n * x.n) / WAVE_SIZE, 1, 1);
-  //   cb.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-  //                      vk::PipelineStageFlagBits::eAllCommands, {},
-  //                      FULL_MEMORY_BARRIER, nullptr, nullptr);
-  //   VkFFTAppend(&app, 1, &lp);
-  //   append_op(cb, linschroedrstep, (x.n * x.n) / WAVE_SIZE, 1, 1);
-  // }
-  // cb.end();
-  // for (u32 i = 0; i < t.n / MAX_CB_SIZE; ++i) {
-  //   mgr.execute(cb);
-  // }
 
   Renderer renderer(window, mgr, inst.surface);
   // Algorithm sqnorm_xfer = mgr.make_algorithm(
@@ -272,6 +141,8 @@ int main(int argc, char* argv[]) {
   // auto xfer_cb = mgr.begin_record();
   // append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / WAVE_SIZE, 1, 1);
   // xfer_cb.end();
+  mgr.write_to_buffer(renderer.value_buf, values);
+  mgr.execute(renderer.cmap_cb);
 
   while (!should_quit) {
     FrameLimit lim(50);

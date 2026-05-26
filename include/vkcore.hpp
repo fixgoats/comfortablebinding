@@ -121,16 +121,15 @@ static const VkMemoryBarrier2 FULL_MEMORY_BARRIER = full_mem_barrier();
 struct MetaBuffer {
   // A buffer + allocation stuff that you generally need to reference when using
   // VkBuffers. Also destroys itself automatically.
-  VmaAllocator* p_allocator = nullptr;
+  VmaAllocator allocator = nullptr;
   VkBuffer buffer;
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
-  MetaBuffer();
-  MetaBuffer(VmaAllocator& allocator,
-             VmaAllocationCreateInfo& alloc_create_info,
+  MetaBuffer() = default;
+  MetaBuffer(VmaAllocator allocator, VmaAllocationCreateInfo& alloc_create_info,
              VkBufferCreateInfo& bci);
   // To call on default constructed metabuffer
-  void allocate(VmaAllocator& allocator,
+  void allocate(VmaAllocator allocator,
                 VmaAllocationCreateInfo& alloc_create_info,
                 VkBufferCreateInfo& bci);
   ~MetaBuffer();
@@ -339,9 +338,6 @@ struct Manager {
 
 struct Renderer {
   SDL_Window* window;
-  // VkInstance instance;
-  // VkPhysicalDevice physical_device;
-  // VkDevice device;
   Manager* p_mgr;
   VkQueue queue;
   VkSurfaceKHR surface;
@@ -364,12 +360,13 @@ struct Renderer {
   std::array<VkFence, MAX_FRAMES_IN_FLIGHT> fences;
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> img_acquired_semaphores;
   std::vector<VkSemaphore> render_complete_semaphores;
-  // VmaAllocation v_buffer_allocation{};
-  // VmaAllocationInfo v_buffer_ai{};
-  // VkDeviceSize v_buf_size;
-  // VkDeviceSize i_buf_size;
-  // VkBuffer v_buffer;
-  // VkDeviceSize index_count;
+  MetaBuffer cmap;
+  MetaBuffer value_buf;
+  MetaBuffer minmax_buffer;
+  Algorithm firstminmax{};
+  Algorithm minmax{};
+  Algorithm cmap_algo{};
+  VkCommandBuffer cmap_cb{};
   struct Texture {
     VmaAllocation allocation{VK_NULL_HANDLE};
     VkImage image{VK_NULL_HANDLE};
@@ -389,8 +386,7 @@ struct Renderer {
 
   void init_sync_objects();
 
-  VkDescriptorImageInfo make_colormap();
-  VkDescriptorImageInfo load_tex_img();
+  VkDescriptorImageInfo make_colormap(u32 width, u32 height);
 
   [[nodiscard]] VkShaderModule load_main_shader() const;
 
