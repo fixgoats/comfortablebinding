@@ -327,6 +327,24 @@ struct Manager {
     return buffer;
   }
 
+  template <size_t N>
+  VkFFTConfiguration fft_conf(std::array<u32, N> dims, MetaBuffer& buf) {
+    VkFFTConfiguration conf{};
+    conf.physicalDevice = &physical_device;
+    conf.device = &device;
+    conf.fence = &fence;
+    conf.queue = &queue;
+    conf.FFTdim = N;
+    conf.buffer = &buf.buffer;
+    for (u32 i = 0; i < N; ++i) {
+      conf.size[i] = dims[i];
+    }
+    conf.commandPool = &command_pool;
+    conf.bufferSize = &buf.aInfo.size;
+    conf.normalize = 1;
+    return conf;
+  }
+
   // In practice you'll always use 4 byte specialization and push constants, so
   // I'll just assume that here. If you use a non-float constant, just bit_cast
   // it to a float.

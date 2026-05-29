@@ -9,13 +9,18 @@
 using Eigen::Vector4d;
 
 namespace {
-constexpr f32 v_potential(f32 x, f32 y) {
-  return 5 * std::cos(x) * std::sin(y);
-}
+constexpr f32 v_potential(f32 x, f32 y) { return 0.5F * (x * x + y * y); }
 
 inline void check_sdl(bool stmt) {
   if (!stmt) {
     SDL_Log("%s", SDL_GetError());
+    exit(-1);
+  }
+}
+
+inline void check_vkfft(VkFFTResult stmt) {
+  if (stmt != VKFFT_SUCCESS) {
+    spdlog::error("VkFFT returned error: {}", (s64)stmt);
     exit(-1);
   }
 }
@@ -110,9 +115,8 @@ int main(int argc, char* argv[]) {
   for (u32 i = 0; i < k.n; ++i) {
     for (u32 j = 0; j < k.n; ++j) {
       k_prop[i * k.n + j] =
-          std::exp(c32{0., -0.5F * t.d() *
-                               (square(k.ith(fftshiftidx(j, x.n))) +
-                                square(k.ith(fftshiftidx(i, x.n))))});
+          std::exp(c32{0., -t.d() * (square(k.ith(fftshiftidx(j, x.n))) +
+                                     square(k.ith(fftshiftidx(i, x.n))))});
     }
   }
   std::vector<c32> r_prop(x.n * x.n);
@@ -124,6 +128,15 @@ int main(int argc, char* argv[]) {
   }
 
   MetaBuffer gpu_psi = mgr.vec_to_buffer(psi);
+  MetaBuffer gpu_r_prop = mgr.vec_to_buffer(r_prop);
+  MetaBuffer gpu_k_prop = mgr.vec_to_buffer(k_prop);
+  Algorithm schroedrstep =
+      mgr.make_algorithm("build/Shaders/schroedrstep.spv", {},
+                         {gpu_psi.address, gpu_r_prop.address});
+  Algorithm schroedkstep =
+      mgr.make_algorithm("build/Shaders/schroedkstep.spv", {},
+                         {gpu_psi.address, gpu_k_prop.address});
+
   Renderer renderer(window, mgr, inst.surface, x.n, x.n);
   Algorithm sqnorm_xfer =
       mgr.make_algorithm("build/Shaders/xfer.spv", {},
@@ -131,12 +144,31 @@ int main(int argc, char* argv[]) {
   SDL_Event event;
   bool should_quit = false;
 
-  VkCommandBuffer xfer_cb = mgr.begin_record();
-  append_op(xfer_cb, sqnorm_xfer, (x.n * x.n + 31) / WAVE_SIZE, 1, 1);
-  vkEndCommandBuffer(xfer_cb);
-  mgr.execute(xfer_cb);
+  VkFFTConfiguration conf = mgr.fft_conf<2>({x.n, x.n}, gpu_psi);
+  conf.performConvolution = 1;
+  conf.kernel = &gpu_k_prop.buffer;
+  conf.numberKernels = 1;
+  conf.kernelSize = &gpu_k_prop.aInfo.size;
+  // conf.kernelConvolution = 1;
+  VkFFTApplication app{};
+  check_vkfft(initializeVkFFT(&app, conf));
+  VkFFTLaunchParams lp{};
+  VkCommandBuffer evo_cb = mgr.begin_record();
+  lp.commandBuffer = &evo_cb;
+  for (u32 i = 0; i < 32; ++i) {
+    append_op(evo_cb, schroedrstep, (x.n * x.n + 31) / 32, 1, 1);
+    check_vkfft(VkFFTAppend(&app, -1, &lp));
+    // append_op(evo_cb, schroedkstep, (x.n * x.n + 31) / 32, 1, 1);
+    // check_vkfft(VkFFTAppend(&app, 1, &lp));
+    append_op(evo_cb, schroedrstep, (x.n * x.n + 31) / 32, 1, 1);
+  }
+  append_op(evo_cb, sqnorm_xfer, (x.n * x.n + 31) / WAVE_SIZE, 1, 1);
+  vkEndCommandBuffer(evo_cb);
 
   auto then = std::chrono::high_resolution_clock::now();
+  renderer.vminmax[0] = 0;
+  renderer.vminmax[1] = 0;
+  memcpy(renderer.vminmax_buf.aInfo.pMappedData, renderer.vminmax.data(), 8);
   while (!should_quit) {
     FrameLimit lim(17);
     // mgr.execute(cb);
@@ -146,21 +178,38 @@ int main(int argc, char* argv[]) {
     u64 now_and_then =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - then)
             .count();
-    renderer.vminmax[0] =
-        0.4F * square(sinf(0.01F * static_cast<f32>(now_and_then)));
-    renderer.vminmax[1] =
-        1 - 0.4F * square(cosf(0.01F * static_cast<f32>(now_and_then)));
-    memcpy(renderer.vminmax_buf.aInfo.pMappedData, renderer.vminmax.data(), 8);
+
+    switch (u64 q = (now_and_then / 10000) % 4; q) {
+    case 0: {
+      mgr.write_to_buffer(renderer.cmap, cm::magma.data(), 4UL * 4 * 256);
+      break;
+    }
+    case 1: {
+      mgr.write_to_buffer(renderer.cmap, cm::inferno.data(), 4UL * 4 * 256);
+      break;
+    }
+    case 2: {
+      mgr.write_to_buffer(renderer.cmap, cm::plasma.data(), 4UL * 4 * 256);
+      break;
+    }
+    case 3: {
+      mgr.write_to_buffer(renderer.cmap, cm::vanimo.data(), 4UL * 4 * 256);
+      break;
+    }
+    default: {
+      break;
+    }
+    }
     renderer.draw_frame();
-    // check_sdl(SDL_UpdateWindowSurface(window));
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
         should_quit = true;
       }
     }
+    mgr.execute(evo_cb);
   }
 
-  // // deleteVkFFT(&app);
+  deleteVkFFT(&app);
   SDL_DestroyWindow(window);
   return 0;
 }
