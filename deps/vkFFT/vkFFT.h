@@ -35,7 +35,7 @@
 #include <inttypes.h>
 #if (VKFFT_BACKEND == 0)
 #include "glslang_c_interface.h"
-#include "vulkan/vulkan.h"
+#include "volk/volk.h"
 #elif (VKFFT_BACKEND == 1)
 #include <cuComplex.h>
 #include <cuda.h>

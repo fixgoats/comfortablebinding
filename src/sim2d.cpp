@@ -2,7 +2,6 @@
 #include "SDL3/SDL_vulkan.h"
 #include "mathhelpers.h"
 #include "metaprogramming.h"
-// #include "vkFFT.h"
 #include "vkcore.hpp"
 #include <cxxopts.hpp>
 #include <iostream>
@@ -76,7 +75,7 @@ int main(int argc, char* argv[]) {
   }
 
   constexpr u32 nx = 1024;
-  constexpr RangeConf<f32> x = {.start = -10., .end = 10., .n = 1024};
+  constexpr RangeConf<f32> x = {.start = -10., .end = 10., .n = nx};
 
   DEBUG_LOG("Initializing SDL video and events");
   check_sdl(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS));
@@ -124,30 +123,34 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  const u32 width = 1920;
-  const u32 height = 1080;
-  std::vector<f32> values(static_cast<u64>(width) * height);
-  for (u32 i = 0; i < height; i++) {
-    for (u32 j = 0; j < width; ++j) {
-      values[i * width + j] = static_cast<f32>(i * j);
-    }
-  }
-
-  Renderer renderer(window, mgr, inst.surface);
-  // Algorithm sqnorm_xfer = mgr.make_algorithm(
-  //     "Shaders/xfer.spv", {}, {&gpu_psi, &renderer.value_buffer});
+  MetaBuffer gpu_psi = mgr.vec_to_buffer(psi);
+  Renderer renderer(window, mgr, inst.surface, x.n, x.n);
+  Algorithm sqnorm_xfer =
+      mgr.make_algorithm("build/Shaders/xfer.spv", {},
+                         {gpu_psi.address, renderer.value_buf.address});
   SDL_Event event;
   bool should_quit = false;
-  // auto xfer_cb = mgr.begin_record();
-  // append_op(xfer_cb, sqnorm_xfer, (x.n * x.n) / WAVE_SIZE, 1, 1);
-  // xfer_cb.end();
-  mgr.write_to_buffer(renderer.value_buf, values);
-  mgr.execute(renderer.cmap_cb);
 
+  VkCommandBuffer xfer_cb = mgr.begin_record();
+  append_op(xfer_cb, sqnorm_xfer, (x.n * x.n + 31) / WAVE_SIZE, 1, 1);
+  vkEndCommandBuffer(xfer_cb);
+  mgr.execute(xfer_cb);
+
+  auto then = std::chrono::high_resolution_clock::now();
   while (!should_quit) {
-    FrameLimit lim(50);
+    FrameLimit lim(17);
     // mgr.execute(cb);
     // mgr.execute(xfer_cb);
+
+    auto now = lim.start;
+    u64 now_and_then =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - then)
+            .count();
+    renderer.vminmax[0] =
+        0.4F * square(sinf(0.01F * static_cast<f32>(now_and_then)));
+    renderer.vminmax[1] =
+        1 - 0.4F * square(cosf(0.01F * static_cast<f32>(now_and_then)));
+    memcpy(renderer.vminmax_buf.aInfo.pMappedData, renderer.vminmax.data(), 8);
     renderer.draw_frame();
     // check_sdl(SDL_UpdateWindowSurface(window));
     while (SDL_PollEvent(&event)) {

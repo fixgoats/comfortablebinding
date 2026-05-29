@@ -1,7 +1,6 @@
 #include "vkcore.hpp"
 // #include "colormaps.h"
 #include "mathhelpers.h"
-#include "vulkan/vulkan.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <array>
@@ -370,23 +369,24 @@ VkPhysicalDevice pick_physical_device(VkInstance instance, bool graphics = true,
 
 } // namespace
 
-MetaBuffer::MetaBuffer(VmaAllocator allocator,
+MetaBuffer::MetaBuffer(VmaAllocator allocator, VkDevice device,
                        VmaAllocationCreateInfo& alloc_create_info,
-                       VkBufferCreateInfo& bci)
-    : allocator{allocator}, allocation{} {
-  aInfo = VmaAllocationInfo{};
-  vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
-                  &alloc_create_info, pcast<VkBuffer>(&buffer), &allocation,
-                  &aInfo);
+                       VkBufferCreateInfo& bci) {
+  allocate(allocator, device, alloc_create_info, bci);
 }
 
-void MetaBuffer::allocate(VmaAllocator alloc,
+void MetaBuffer::allocate(VmaAllocator alloc, VkDevice device,
                           VmaAllocationCreateInfo& alloc_create_info,
                           VkBufferCreateInfo& bci) {
   allocator = alloc;
   vmaCreateBuffer(allocator, pcast<VkBufferCreateInfo>(&bci),
                   &alloc_create_info, pcast<VkBuffer>(&buffer), &allocation,
                   &aInfo);
+  VkBufferDeviceAddressInfo bda_info{
+      .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+      .pNext = nullptr,
+      .buffer = buffer};
+  address = vkGetBufferDeviceAddress(device, &bda_info);
 }
 
 MetaBuffer::~MetaBuffer() { vmaDestroyBuffer(allocator, buffer, allocation); }
@@ -424,11 +424,10 @@ Algorithm::Algorithm(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
 }
 
 Algorithm::~Algorithm() {
-  vkDestroyDescriptorSetLayout(m_device, m_DSL, nullptr);
-  vkDestroyDescriptorPool(m_device, m_DescriptorPool, nullptr);
-  vkDestroyShaderModule(m_device, m_ShaderModule, nullptr);
-  vkDestroyPipeline(m_device, m_Pipeline, nullptr);
-  vkDestroyPipelineLayout(m_device, m_PipelineLayout, nullptr);
+  vkDestroyDescriptorSetLayout(device, dsl, nullptr);
+  vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+  vkDestroyPipeline(device, pipeline, nullptr);
+  vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
 }
 
 Manager::Manager(const AutoInstance& instance, size_t staging_size,
@@ -476,6 +475,7 @@ Manager::Manager(const AutoInstance& instance, size_t staging_size,
   allocator_info.device = device;
   allocator_info.pVulkanFunctions = &vk_functions;
   allocator_info.instance = *instance;
+  allocator_info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
   vmaCreateAllocator(&allocator_info, &allocator);
 
   VkBufferCreateInfo staging_bci{};
@@ -577,34 +577,51 @@ void Manager::queue_wait_idle() const { vkQueueWaitIdle(queue); }
 
 Algorithm Manager::make_algorithm(std::string spirvname,
                                   const std::vector<VkImageView>& images,
-                                  const std::vector<MetaBuffer*>& buffers,
+                                  const std::vector<VkDeviceAddress>& buffers,
                                   std::span<const f32> spec_consts,
                                   size_t n_push_constants) const {
   const std::vector<u32> spirv = read_file<u32>(spirvname);
   auto retalg = Algorithm(device, spirv, images.size(), buffers.size(), 0,
                           spec_consts, n_push_constants);
-  retalg.bind_data({images.begin(), images.end()}, buffers, {});
+  retalg.bind_data({images.begin(), images.end()}, buffers);
   return retalg;
 }
 
 void append_op_no_barrier(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y,
-                          u32 z) {
-  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_Pipeline);
+                          u32 z, std::span<const f32> push_consts) {
+  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.pipeline);
 
-  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_PipelineLayout,
-                          0, 1, &a.m_DescriptorSet, 0, nullptr);
+  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.pipeline_layout,
+                          0, 1, &a.descriptor_set, 0, nullptr);
+  u32 buf_addresses_size = sizeof(VkDeviceAddress) * a.buf_addresses.size();
+  vkCmdPushConstants(b, a.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                     buf_addresses_size, a.buf_addresses.data());
+  if (push_consts.size() > 0) {
+    vkCmdPushConstants(
+        b, a.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, buf_addresses_size,
+        buf_addresses_size + 4 * a.n_push_consts, push_consts.data());
+  }
   vkCmdDispatch(b, x, y, z);
 }
 
-void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z) {
+void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z,
+               std::span<const f32> push_consts) {
   VkDependencyInfo dep_info{};
   dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
   dep_info.memoryBarrierCount = 1;
   dep_info.pMemoryBarriers = &FULL_MEMORY_BARRIER;
   vkCmdPipelineBarrier2(b, &dep_info);
-  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_Pipeline);
-  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.m_PipelineLayout,
-                          0, 1, &a.m_DescriptorSet, 0, nullptr);
+  vkCmdBindPipeline(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.pipeline);
+  vkCmdBindDescriptorSets(b, VK_PIPELINE_BIND_POINT_COMPUTE, a.pipeline_layout,
+                          0, 1, &a.descriptor_set, 0, nullptr);
+  u32 buf_addresses_size = sizeof(VkDeviceAddress) * a.buf_addresses.size();
+  vkCmdPushConstants(b, a.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                     buf_addresses_size, a.buf_addresses.data());
+  if (push_consts.size() > 0) {
+    vkCmdPushConstants(
+        b, a.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, buf_addresses_size,
+        buf_addresses_size + 4 * a.n_push_consts, push_consts.data());
+  }
   vkCmdDispatch(b, x, y, z);
 }
 
@@ -617,36 +634,23 @@ Manager::~Manager() {
   vkDestroyDevice(device, nullptr);
 }
 
-void Algorithm::initialize(VkDevice device, std::span<const u32> spirv,
-                           u32 n_imgs, u32 n_buffers, u32 n_ubo,
+void Algorithm::initialize(VkDevice dev, std::span<const u32> spirv, u32 n_imgs,
+                           u32 n_buffers, u32 n_ubo,
                            std::span<const f32> spec_consts,
-                           size_t n_push_constants) {
-  m_device = device;
+                           u32 n_push_constants) {
+  n_push_consts = n_push_constants;
+  device = dev;
   VkShaderModuleCreateInfo shader_mci{};
   shader_mci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   shader_mci.codeSize = spirv.size() * 4;
   shader_mci.pCode = spirv.data();
-  vkCreateShaderModule(device, &shader_mci, nullptr, &m_ShaderModule);
-  std::vector<VkDescriptorSetLayoutBinding> dslbs(n_imgs + n_buffers + n_ubo);
+  VkShaderModule shader_module{};
+  vkCreateShaderModule(device, &shader_mci, nullptr, &shader_module);
+  std::vector<VkDescriptorSetLayoutBinding> dslbs(n_imgs);
   {
-    u32 i = 0;
-    for (; i < n_imgs; i++) {
+    for (u32 i = 0; i < n_imgs; i++) {
       dslbs[i] = {.binding = i,
                   .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                  .descriptorCount = 1,
-                  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-                  .pImmutableSamplers = nullptr};
-    }
-    for (; i < n_buffers + n_imgs; i++) {
-      dslbs[i] = {.binding = i,
-                  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                  .descriptorCount = 1,
-                  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-                  .pImmutableSamplers = nullptr};
-    }
-    for (; i < n_buffers + n_imgs + n_ubo; i++) {
-      dslbs[i] = {.binding = i,
-                  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                   .descriptorCount = 1,
                   .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
                   .pImmutableSamplers = nullptr};
@@ -657,23 +661,22 @@ void Algorithm::initialize(VkDevice device, std::span<const u32> spirv,
   dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
   dslci.bindingCount = dslbs.size();
   dslci.pBindings = dslbs.data();
-  vkCreateDescriptorSetLayout(device, &dslci, nullptr, &m_DSL);
+  vkCreateDescriptorSetLayout(device, &dslci, nullptr, &dsl);
 
-  std::vector<VkPushConstantRange> ranges(n_push_constants);
-  u32 push_offsets = 0;
-  for (u32 i = 0; i < n_push_constants; i++) {
-    ranges[i] = VkPushConstantRange{.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-                                    .offset = push_offsets,
-                                    .size = 4};
-    push_offsets += 4;
-  }
+  VkPushConstantRange range{
+      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+      .offset = 0,
+      .size = static_cast<u32>(sizeof(VkDeviceAddress) * (n_buffers + n_ubo) +
+                               4UL * n_push_constants)};
+
+  DEBUG_LOG("push constant range size: {}", range.size);
   VkPipelineLayoutCreateInfo plci{};
   plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   plci.setLayoutCount = 1;
-  plci.pSetLayouts = &m_DSL;
-  plci.pushConstantRangeCount = ranges.size();
-  plci.pPushConstantRanges = ranges.data();
-  vkCreatePipelineLayout(device, &plci, nullptr, &m_PipelineLayout);
+  plci.pSetLayouts = &dsl;
+  plci.pushConstantRangeCount = 1;
+  plci.pPushConstantRanges = &range;
+  vkCreatePipelineLayout(device, &plci, nullptr, &pipeline_layout);
   std::vector<VkSpecializationMapEntry> spec_entries(spec_consts.size());
   u32 spec_offset = 0;
   for (u32 i = 0; i < spec_entries.size(); ++i) {
@@ -692,15 +695,15 @@ void Algorithm::initialize(VkDevice device, std::span<const u32> spirv,
   VkPipelineShaderStageCreateInfo csci{};
   csci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   csci.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-  csci.module = m_ShaderModule;
+  csci.module = shader_module;
   csci.pName = "main";
   csci.pSpecializationInfo = &spec_info;
   VkComputePipelineCreateInfo cpci{};
   cpci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
   cpci.stage = csci;
-  cpci.layout = m_PipelineLayout;
+  cpci.layout = pipeline_layout;
   chk_vk(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpci, nullptr,
-                                  &m_Pipeline));
+                                  &pipeline));
 
   // This is probably not the most efficient way to do this, but I'm not going
   // to mess around with the descriptors after creation so the only overhead
@@ -711,83 +714,44 @@ void Algorithm::initialize(VkDevice device, std::span<const u32> spirv,
   if (n_imgs > 0) {
     dpss.emplace_back(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n_imgs);
   }
-  DEBUG_LOG("n_buffers: {}", n_buffers);
-  if (n_buffers > 0) {
-    dpss.emplace_back(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, n_buffers);
-  }
-  if (n_ubo > 0) {
-    dpss.emplace_back(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, n_ubo);
-  }
+
   DEBUG_LOG("dpss size: {}", dpss.size());
   VkDescriptorPoolCreateInfo dpci{};
   dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  dpci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
   dpci.poolSizeCount = dpss.size();
   dpci.maxSets = 1;
   dpci.pPoolSizes = dpss.data();
-  vkCreateDescriptorPool(device, &dpci, nullptr, &m_DescriptorPool);
+  vkCreateDescriptorPool(device, &dpci, nullptr, &descriptor_pool);
   VkDescriptorSetAllocateInfo dsai{};
   dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  dsai.descriptorPool = m_DescriptorPool;
+  dsai.descriptorPool = descriptor_pool;
   dsai.descriptorSetCount = 1;
-  dsai.pSetLayouts = &m_DSL;
-  vkAllocateDescriptorSets(device, &dsai, &m_DescriptorSet);
+  dsai.pSetLayouts = &dsl;
+  vkAllocateDescriptorSets(device, &dsai, &descriptor_set);
+  vkDestroyShaderModule(device, shader_module, nullptr);
 }
 
 void Algorithm::bind_data(std::span<const VkImageView> img_views,
-                          std::span<const MetaBuffer* const> buffers,
-                          std::span<const MetaBuffer* const> ubos) const {
+                          std::span<const VkDeviceAddress> buffer_addresses) {
   std::vector<VkDescriptorImageInfo> diis(img_views.size());
-  std::vector<VkDescriptorBufferInfo> dbis(buffers.size());
-  std::vector<VkDescriptorBufferInfo> dubis(ubos.size());
   for (size_t i = 0; i < diis.size(); i++) {
     diis[i] = {.sampler = {},
                .imageView = img_views[i],
                .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
   }
-  for (size_t i = 0; i < dbis.size(); i++) {
-    dbis[i] =
-        VkDescriptorBufferInfo(buffers[i]->buffer, 0, buffers[i]->aInfo.size);
-  }
-  for (size_t i = 0; i < dubis.size(); i++) {
-    dbis[i] = VkDescriptorBufferInfo(ubos[i]->buffer, 0, ubos[i]->aInfo.size);
-  }
 
-  std::vector<VkWriteDescriptorSet> write_descriptor_sets(
-      diis.size() + dbis.size() + dubis.size());
-  {
-    u32 i = 0;
-    for (; i < diis.size(); i++) {
-      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      write_descriptor_sets[i].descriptorType =
-          VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-      write_descriptor_sets[i].dstBinding = i;
-      write_descriptor_sets[i].dstSet = m_DescriptorSet;
-      write_descriptor_sets[i].descriptorCount = 1;
-      write_descriptor_sets[i].pImageInfo = &diis[i];
-    }
-    for (; i < diis.size() + dbis.size(); i++) {
-      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      write_descriptor_sets[i].descriptorType =
-          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-      write_descriptor_sets[i].dstBinding = i;
-      write_descriptor_sets[i].dstSet = m_DescriptorSet;
-      write_descriptor_sets[i].descriptorCount = 1;
-      write_descriptor_sets[i].pBufferInfo = &dbis[i - diis.size()];
-    }
-    for (; i < diis.size() + dbis.size() + dubis.size(); i++) {
-      write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      write_descriptor_sets[i].descriptorType =
-          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-      write_descriptor_sets[i].dstBinding = i;
-      write_descriptor_sets[i].dstSet = m_DescriptorSet;
-      write_descriptor_sets[i].descriptorCount = 1;
-      write_descriptor_sets[i].pBufferInfo =
-          &dubis[i - diis.size() - dbis.size()];
-    }
+  std::vector<VkWriteDescriptorSet> write_descriptor_sets(diis.size());
+  for (u32 i = 0; i < diis.size(); i++) {
+    write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_descriptor_sets[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    write_descriptor_sets[i].dstBinding = i;
+    write_descriptor_sets[i].dstSet = descriptor_set;
+    write_descriptor_sets[i].descriptorCount = 1;
+    write_descriptor_sets[i].pImageInfo = &diis[i];
   }
-  vkUpdateDescriptorSets(m_device, write_descriptor_sets.size(),
+  vkUpdateDescriptorSets(device, write_descriptor_sets.size(),
                          write_descriptor_sets.data(), 0, nullptr);
+  buf_addresses.assign_range(buffer_addresses);
 }
 
 void Renderer::make_depth_img_and_view() {
@@ -1008,36 +972,54 @@ VkDescriptorImageInfo Renderer::make_colormap(u32 width, u32 height) {
   bci.size = round_up_x16(256 * 4 * 4);
   bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
               VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-              VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+              VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
   bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  cmap.allocate(allocator, alloc_ci,
+  cmap.allocate(allocator, p_mgr->device, alloc_ci,
                 bci); // = p_mgr->make_raw_buffer<Eigen::Vector4d>(256);
   DEBUG_LOG("Writing to colormap buffer");
   p_mgr->write_to_buffer(cmap, cm::magma.data(), 4UL * 4 * 256);
 
   bci.size = round_up_x16(n_elements * 4);
-  value_buf.allocate(allocator, alloc_ci, bci);
+  value_buf.allocate(allocator, p_mgr->device, alloc_ci, bci);
   bci.size = round_up_x16(minm_elements * 4);
-  minmax_buffer.allocate(allocator, alloc_ci, bci);
+  minmax_buffer.allocate(allocator, p_mgr->device, alloc_ci, bci);
+
+  VkBufferCreateInfo uniform_bci{};
+  uniform_bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  uniform_bci.size = 16;
+  uniform_bci.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  alloc_ci.flags =
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  vminmax_buf.allocate(allocator, p_mgr->device, alloc_ci, uniform_bci);
+
+  // vminmax_buf.allocate(allocator, alloc_ci, uniform_bci);
+  vminmax = {0.0, 0.0};
+  memcpy(vminmax_buf.aInfo.pMappedData, vminmax.data(), 8);
 
   DEBUG_LOG("Making cmap algorithm");
   auto spirv_code = read_file<u32>("build/Shaders/colormap.spv");
-  cmap_algo.initialize(p_mgr->device, spirv_code, 1, 3, 0,
+  cmap_algo.initialize(p_mgr->device, spirv_code, 1, 3, 1,
                        {pcast<f32>(&minm_elements), 1UL});
-  std::vector<MetaBuffer*> cmap_bufs = {&cmap, &value_buf, &minmax_buffer};
-  cmap_algo.bind_data({&texture.view, 1UL}, cmap_bufs, {});
+  std::vector<VkDeviceAddress> cmap_bufs = {cmap.address, value_buf.address,
+                                            minmax_buffer.address,
+                                            vminmax_buf.address};
+  cmap_algo.bind_data({&texture.view, 1UL}, cmap_bufs);
 
   spirv_code = read_file<u32>("build/Shaders/firstminmax.spv");
   firstminmax.initialize(p_mgr->device, spirv_code, 0, 2, 0,
                          {pcast<f32>(&n_elements), 1UL});
-  std::vector<MetaBuffer*> firstminmax_bufs = {&value_buf, &minmax_buffer};
-  firstminmax.bind_data({}, firstminmax_bufs, {});
+  std::vector<VkDeviceAddress> firstminmax_bufs = {value_buf.address,
+                                                   minmax_buffer.address};
+  firstminmax.bind_data({}, firstminmax_bufs);
 
   spirv_code = read_file<u32>("build/Shaders/minmax.spv");
   minmax.initialize(p_mgr->device, spirv_code, 0, 1, 0,
                     {pcast<f32>(&minm_elements), 1UL});
-  std::vector<MetaBuffer*> minmax_bufs = {&minmax_buffer};
-  minmax.bind_data({}, minmax_bufs, {});
+  std::array<VkDeviceAddress, 1> minmax_bufs = {minmax_buffer.address};
+  minmax.bind_data({}, minmax_bufs);
 
   VkImageMemoryBarrier2 gen_to_shader_read{};
   gen_to_shader_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -1067,10 +1049,13 @@ VkDescriptorImageInfo Renderer::make_colormap(u32 width, u32 height) {
   DEBUG_LOG("Appended firstminmax operation");
   while (disp > 32) {
     disp = (disp + 31) / 32;
-    spdlog::info("Dispatching: {}", disp);
     append_op(cmap_cb, minmax, disp, 1, 1);
   }
+  append_op(cmap_cb, minmax, 1, 1, 1);
+  spdlog::debug("Finished minmaxing.");
+
   append_op(cmap_cb, cmap_algo, (width + 7) / 8, (height + 3) / 4, 1);
+  DEBUG_LOG("appended cmap algo");
   gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
   gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -1080,30 +1065,6 @@ VkDescriptorImageInfo Renderer::make_colormap(u32 width, u32 height) {
   vkCmdPipelineBarrier2(cmap_cb, &cmap_dep_info);
   vkEndCommandBuffer(cmap_cb);
   DEBUG_LOG("Recorded cmap cb");
-
-  // VkImageMemoryBarrier2 gen_to_shader_read{};
-  // gen_to_shader_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  // gen_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-  // gen_to_shader_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  // gen_to_shader_read.image = texture.image;
-  // gen_to_shader_read.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  // gen_to_shader_read.subresourceRange.layerCount = 1;
-  // gen_to_shader_read.subresourceRange.levelCount = 1;
-  // gen_to_shader_read.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-  // gen_to_shader_read.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  // gen_to_shader_read.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  // gen_to_shader_read.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  // dep_info.pImageMemoryBarriers = &gen_to_shader_read;
-  // vkResetCommandBuffer(trans_cb, 0);
-  // VkCommandBufferBeginInfo cb_bi{};
-  // cb_bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  // vkBeginCommandBuffer(trans_cb, &cb_bi);
-  // vkCmdPipelineBarrier2(trans_cb, &dep_info);
-  // vkEndCommandBuffer(trans_cb);
-  // DEBUG_LOG("Re-recorded transition cb");
-
-  // DEBUG_LOG("Submitting gen_to_shader_read barrier");
-  // p_mgr->execute(trans_cb);
 
   DEBUG_END;
   return texture_descriptor;
@@ -1144,7 +1105,8 @@ VkShaderModule Renderer::load_main_shader() const {
   return shader_module;
 }
 
-Renderer::Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf)
+Renderer::Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf,
+                   u32 width, u32 height)
     : window{window}, p_mgr{&mgr}, surface{surf}, allocator{mgr.allocator} {
   DEBUG_START;
   vkGetDeviceQueue(mgr.device, mgr.gp_qfi, 0, &queue);
@@ -1203,7 +1165,7 @@ Renderer::Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf)
   cb_alloc_ci.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
   chk_vk(vkAllocateCommandBuffers(mgr.device, &cb_alloc_ci, cbs.data()));
   // Texture images
-  VkDescriptorImageInfo texture_descriptor = make_colormap(1920, 1080);
+  VkDescriptorImageInfo texture_descriptor = make_colormap(width, height);
   // Descriptor (indexing)
   VkDescriptorBindingFlags desc_variable_flag{
       VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};

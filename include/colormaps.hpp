@@ -7,8 +7,8 @@
 namespace cm {
 struct AlignedColor {
   std::array<f32, 3> rgb;
-  f32 pad = 0;
-  constexpr AlignedColor(f32 x, f32 y, f32 z) : rgb{x, y, z}, pad{1.0} {}
+  f32 pad = 1.0;
+  constexpr AlignedColor(f32 x, f32 y, f32 z) : rgb{x, y, z} {}
 };
 
 struct RGBA {

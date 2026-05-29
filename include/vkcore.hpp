@@ -6,6 +6,7 @@
 #include "slang/slang-com-ptr.h"
 #include "slang/slang.h"
 #include "typedefs.h"
+#include "vkFFT.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <boost/pfr/core.hpp>
@@ -16,7 +17,6 @@
 #include <span>
 #include <vma/vk_mem_alloc.h>
 #include <volk/volk.h>
-#include <vulkan/vulkan.h>
 
 #define DEBUG_START spdlog::debug("{}: Start", __func__)
 #define DEBUG_END spdlog::debug("{}: End", __func__)
@@ -125,11 +125,13 @@ struct MetaBuffer {
   VkBuffer buffer;
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
+  VkDeviceAddress address;
   MetaBuffer() = default;
-  MetaBuffer(VmaAllocator allocator, VmaAllocationCreateInfo& alloc_create_info,
+  MetaBuffer(VmaAllocator allocator, VkDevice device,
+             VmaAllocationCreateInfo& alloc_create_info,
              VkBufferCreateInfo& bci);
   // To call on default constructed metabuffer
-  void allocate(VmaAllocator allocator,
+  void allocate(VmaAllocator allocator, VkDevice device,
                 VmaAllocationCreateInfo& alloc_create_info,
                 VkBufferCreateInfo& bci);
   ~MetaBuffer();
@@ -164,24 +166,24 @@ constexpr std::span<const f32> spec_span(Addr begin, Addr end) {
 struct Algorithm {
   // Attention, device is used for destroying owned objects, the device will be
   // destroyed by the manager.
-  VkDevice m_device;
+  VkDevice device;
   // owned
-  VkDescriptorSetLayout m_DSL;
-  VkDescriptorPool m_DescriptorPool;
-  VkDescriptorSet m_DescriptorSet;
-  VkShaderModule m_ShaderModule;
-  VkPipelineLayout m_PipelineLayout;
-  VkPipeline m_Pipeline;
+  VkDescriptorSetLayout dsl;
+  VkDescriptorPool descriptor_pool;
+  VkDescriptorSet descriptor_set;
+  VkPipelineLayout pipeline_layout;
+  VkPipeline pipeline;
+  std::vector<VkDeviceAddress> buf_addresses;
+  u32 n_push_consts;
   Algorithm() = default;
   Algorithm(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
             u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts = {},
             size_t n_push_constants = 0);
   void initialize(VkDevice device, std::span<const u32> spirv, u32 n_imgs,
                   u32 n_buffers, u32 n_ubo, std::span<const f32> spec_consts,
-                  size_t n_push_constants = 0);
+                  u32 n_push_constants = 0);
   void bind_data(std::span<const VkImageView> img_views,
-                 std::span<const MetaBuffer* const> buffers,
-                 std::span<const MetaBuffer* const> ubos) const;
+                 std::span<const VkDeviceAddress> buffer_addresses);
   ~Algorithm();
 };
 
@@ -281,7 +283,8 @@ struct Manager {
     bci.size = round_up_x16(n_elements * sizeof(T));
     bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     bci.queueFamilyIndexCount = 1;
     bci.pQueueFamilyIndices = &c_qfi;
@@ -289,7 +292,7 @@ struct Manager {
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     alloc_create_info.priority = 1.0F;
-    return MetaBuffer{allocator, alloc_create_info, bci};
+    return MetaBuffer{allocator, device, alloc_create_info, bci};
   }
   template <typename T>
   MetaBuffer make_uniform_object() {
@@ -306,7 +309,7 @@ struct Manager {
         VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
         VMA_ALLOCATION_CREATE_MAPPED_BIT;
     alloc_create_info.priority = 1.0F;
-    return MetaBuffer{allocator, alloc_create_info, bci};
+    return MetaBuffer{allocator, device, alloc_create_info, bci};
   }
 
   void free_command_buffer(VkCommandBuffer& b) const {
@@ -329,7 +332,7 @@ struct Manager {
   // it to a float.
   [[nodiscard]] Algorithm
   make_algorithm(std::string spirvname, const std::vector<VkImageView>& images,
-                 const std::vector<MetaBuffer*>& buffers,
+                 const std::vector<VkDeviceAddress>& buffers,
                  std::span<const f32> spec_consts = {},
                  size_t n_push_constants = 0) const;
 
@@ -363,9 +366,11 @@ struct Renderer {
   MetaBuffer cmap;
   MetaBuffer value_buf;
   MetaBuffer minmax_buffer;
-  Algorithm firstminmax{};
-  Algorithm minmax{};
-  Algorithm cmap_algo{};
+  Algorithm firstminmax;
+  Algorithm minmax;
+  Algorithm cmap_algo;
+  MetaBuffer vminmax_buf;
+  std::array<f32, 2> vminmax;
   VkCommandBuffer cmap_cb{};
   struct Texture {
     VmaAllocation allocation{VK_NULL_HANDLE};
@@ -390,7 +395,8 @@ struct Renderer {
 
   [[nodiscard]] VkShaderModule load_main_shader() const;
 
-  Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf);
+  Renderer(SDL_Window* window, Manager& mgr, VkSurfaceKHR surf, u32 width,
+           u32 height);
 
   void draw_frame();
   ~Renderer();
@@ -428,9 +434,11 @@ void one_time_submit(VkDevice device, VkCommandPool cmd_pool, VkQueue queue,
   vkFreeCommandBuffers(device, cmd_pool, 1, &cb);
 }
 
-void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z);
+void append_op(VkCommandBuffer b, const Algorithm& a, u32 x, u32 y, u32 z,
+               std::span<const f32> push_consts = {});
 void append_op_no_barrier(VkCommandBuffer b, const Algorithm& a, u32 x,
-                          u32 y = 1, u32 z = 1);
+                          u32 y = 1, u32 z = 1,
+                          std::span<const f32> push_consts = {});
 
 #undef FATAL_LOG
 #undef WARN_LOG

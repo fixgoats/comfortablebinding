@@ -1,12 +1,9 @@
-StructuredBuffer<float> source;
-RWStructuredBuffer<float> minmax_buffer;
-
 [[SpecializationConstant]]
 const uint NELEMENTS = 2;
 
 [shader("compute")]
 [numthreads(32, 1, 1)]
-void firstminmax(uint t_id: SV_DispatchThreadID, uint g_id: SV_GroupID) {
+void firstminmax(uint t_id: SV_DispatchThreadID, uint g_id: SV_GroupID, uniform float* source, uniform float* minmax_buffer) {
   if (t_id < NELEMENTS) {
     float lesser = source[t_id];
     float greater = source[NELEMENTS - t_id - 1];
