@@ -1,6 +1,6 @@
-pointPath = "../punktar/square400couplings.h5"
+pointPath = "../../punktar/square400couplings.h5"
 # pointPath = "../punktar/monotile404couplings.h5"
-outfile = "../gögn/square400scaletimescanr3.3.h5"
+outfile = "../../gögn/square400scaletimescanr3.3.h5"
 p = 0.2
 alpha = 1
 j = 1

@@ -171,8 +171,6 @@ int main(int argc, char* argv[]) {
   memcpy(renderer.vminmax_buf.aInfo.pMappedData, renderer.vminmax.data(), 8);
   while (!should_quit) {
     FrameLimit lim(17);
-    // mgr.execute(cb);
-    // mgr.execute(xfer_cb);
 
     auto now = lim.start;
     u64 now_and_then =
