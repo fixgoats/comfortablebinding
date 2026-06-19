@@ -345,6 +345,7 @@ struct HankelTimeScanConf : public SimConf {
       init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
     const size_t byte_size = init_psi.size() * sizeof(c64);
+    VectorXd cond_nums(rscalesize);
 #pragma omp parallel for collapse(4)
     for (s64 m = 0; m < jsize; ++m) {
       const f64 j = js.ith(m);
@@ -360,6 +361,10 @@ struct HankelTimeScanConf : public SimConf {
             std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
               return a.imag() < b.imag();
             });
+        const auto sing_val =
+            Eigen::BDCSVD<MatrixXcd>(MatrixXcd(J)).singularValues();
+        double cond = sing_val(0) / sing_val(sing_val.size() - 1);
+        cond_nums(n) = cond;
         for (s64 k = 0; k < psize; ++k) {
           const f64 p = ps.ith(k);
           for (s64 l = 0; l < alphasize; ++l) {
@@ -421,11 +426,12 @@ struct HankelTimeScanConf : public SimConf {
     file.createDataSet("ps", linspace(ps, false));
     file.createDataSet("alphas", linspace(alphas, false));
     file.createDataSet("js", linspace(js, false));
+    file.createDataSet("condition_numbers", cond_nums);
     file.createDataSet("rscales", linspace(rscales, false));
     spdlog::debug("HankelTimeScanConf: exiting method run.");
   }
 
-  ~HankelTimeScanConf() = default;
+  ~HankelTimeScanConf() override = default;
 };
 
 struct HankelScanConf : public SimConf {
@@ -478,6 +484,7 @@ struct HankelScanConf : public SimConf {
     s64 rscalesize = rscales.n;
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
+    VectorXd cond_nums(rscalesize);
     for (u64 o = 0; o < static_cast<u64>(init_psi.size()); ++o) {
       auto x = dis(gen);
       *(init_psi.data() + o) = {1e-4 * cos(x), 1e-4 * sin(x)};
@@ -497,6 +504,10 @@ struct HankelScanConf : public SimConf {
             std::ranges::min_element(sol.eigenvalues(), [](c64 a, c64 b) {
               return a.imag() < b.imag();
             });
+        const auto sing_val =
+            Eigen::BDCSVD<MatrixXcd>(MatrixXcd(J)).singularValues();
+        double cond = sing_val(0) / sing_val(sing_val.size() - 1);
+        cond_nums(n) = cond;
         for (s64 k = 0; k < psize; ++k) {
           const f64 p = ps.ith(k);
           for (s64 l = 0; l < alphasize; ++l) {
@@ -537,6 +548,7 @@ struct HankelScanConf : public SimConf {
     sampleSet.write_raw(data.data());
     file.createDataSet("points", points);
     file.createDataSet("couplings", couplings);
+    file.createDataSet("condition_numbers", cond_nums);
     file.createDataSet("time", linspace(t, true));
     file.createDataSet("ps", linspace(ps, false));
     file.createDataSet("alphas", linspace(alphas, false));
@@ -545,7 +557,7 @@ struct HankelScanConf : public SimConf {
     spdlog::debug("HankelScanConf: exiting method run.");
   }
 
-  ~HankelScanConf() = default;
+  ~HankelScanConf() override = default;
 };
 #undef SET_STRUCT_FIELD
 

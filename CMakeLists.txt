@@ -93,14 +93,6 @@ add_custom_command(
 )
 
 add_custom_command(
-    OUTPUT Shaders/schroedkstep.spv
-    COMMAND
-        slangc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/schroedstep.slang -entry
-        kstep -target spirv -stage compute -o Shaders/schroedkstep.spv
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/schroedstep.slang
-    VERBATIM
-)
-add_custom_command(
     OUTPUT Shaders/firstminmax.spv
     COMMAND
         slangc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/firstminmax.slang -entry
@@ -156,7 +148,6 @@ set_property(
     PROPERTY
         OBJECT_DEPENDS
             Shaders/schroedrstep.spv
-            Shaders/schroedkstep.spv
             Shaders/quad.vert.spv
             Shaders/quad.frag.spv
             Shaders/firstminmax.spv

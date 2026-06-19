@@ -214,7 +214,7 @@ struct DrivenDissConf {
     SET_STRUCT_FIELD(j, tbl);
     SET_STRUCT_FIELD(rscale, tbl);
     if (tbl.contains("searchRadius")) {
-      searchRadius = tbl["searchRadius"].value<f64>().value();
+      searchRadius = tbl["searchRadius"].value<f64>();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
@@ -222,61 +222,37 @@ struct DrivenDissConf {
 
 #undef SET_STRUCT_FIELD
 
-s32 toScreenX(f64 r, f64 min, f64 max, s32 dim) {
+s32 to_screen_x(f64 r, f64 min, f64 max, s32 dim) {
   return (s32)(((r - min) / (max - min)) * (f64)dim);
 }
 
-s32 toScreenY(f64 r, f64 min, f64 max, s32 dim) {
+s32 to_screen_y(f64 r, f64 min, f64 max, s32 dim) {
   return (s32)(((r - max) / (min - max)) * (f64)dim);
 }
 
 template <class T>
-u8 mapToColor(T x, T min, T max) {
+u8 map_to_color(T x, T min, T max) {
   u32 bleh = 256 * ((x - min) / (max - min));
   return bleh > 256 ? 255 : bleh < 0 ? 0 : bleh;
 }
 
 template <class IIt, class T>
-std::vector<Color> valuesToColor(IIt it, IIt end, const Color* cmap, T min,
-                                 T max) {
+std::vector<Color> values_to_color(IIt it, IIt end, const Color* cmap, T min,
+                                   T max) {
   std::vector<Color> out(end - it);
   std::transform(it, end, out.begin(),
-                 [&](auto x) { return cmap[mapToColor(x, min, max)]; });
+                 [&](auto x) { return cmap[map_to_color(x, min, max)]; });
   return out;
 }
 
 template <class IIt>
-std::vector<Color> valuesToColor(IIt it, IIt end, const Color* cmap) {
+std::vector<Color> values_to_color(IIt it, IIt end, const Color* cmap) {
   std::vector<Color> out(end - it);
   auto minmax = std::ranges::minmax(it, end);
   std::transform(it, end, out.begin(), [&](auto x) {
-    return cmap[mapToColor(x, minmax.min, minmax.max)];
+    return cmap[map_to_color(x, minmax.min, minmax.max)];
   });
   return out;
-}
-
-static void AddCodepointRange(Font* font, const char* fontPath, int start,
-                              int stop) {
-  int rangeSize = stop - start + 1;
-  int currentRangeSize = font->glyphCount;
-
-  // TODO: Load glyphs from provided vector font (if available),
-  // add them to existing font, regenerating font image and texture
-
-  int updatedCodepointCount = currentRangeSize + rangeSize;
-  int* updatedCodepoints = (int*)RL_CALLOC(updatedCodepointCount, sizeof(int));
-
-  // Get current codepoint list
-  for (int i = 0; i < currentRangeSize; i++)
-    updatedCodepoints[i] = font->glyphs[i].value;
-
-  // Add new codepoints to list (provided range)
-  for (int i = currentRangeSize; i < updatedCodepointCount; i++)
-    updatedCodepoints[i] = start + (i - currentRangeSize);
-
-  UnloadFont(*font);
-  *font = LoadFontEx(fontPath, 32, updatedCodepoints, updatedCodepointCount);
-  RL_FREE(updatedCodepoints);
 }
 
 struct Sim {
@@ -359,7 +335,8 @@ int main(int argc, char* argv[]) {
     const f64 eff_p = (p - 1) * min_coeff->imag();
     Sim sim(eff_p, alpha, dt, J, points.rows());
 
-    s32 width = 800, height = 800;
+    s32 width = 800;
+    s32 height = 800;
 
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE |
                    FLAG_WINDOW_TRANSPARENT);
@@ -384,11 +361,11 @@ int main(int argc, char* argv[]) {
     double exmax = xmax + 0.05 * (xmax - xmin);
     double eymax = ymax + 0.05 * (ymax - ymin);
     bool start = false;
-    std::array<u32, 6> stepsPerFrame{1, 10, 20, 50, 100, 200};
-    s32 stepOrder = 0;
-    bool showStepsPerFrame = false;
+    std::array<u32, 6> steps_per_frame{1, 10, 20, 50, 100, 200};
+    s32 step_order = 0;
+    bool show_steps_per_frame = false;
     std::chrono::time_point<std::chrono::high_resolution_clock>
-        timeWhenStepsShown;
+        time_when_steps_shown;
     while (!WindowShouldClose()) {
       if (IsKeyPressed(KEY_SPACE)) {
         start = !start;
@@ -400,45 +377,45 @@ int main(int argc, char* argv[]) {
         }
       }
       if (IsKeyPressed(KEY_RIGHT)) {
-        ++stepOrder;
-        stepOrder = euclid_mod(stepOrder, 6);
-        showStepsPerFrame = true;
-        timeWhenStepsShown = std::chrono::high_resolution_clock::now();
+        ++step_order;
+        step_order = euclid_mod(step_order, 6);
+        show_steps_per_frame = true;
+        time_when_steps_shown = std::chrono::high_resolution_clock::now();
       }
       if (IsKeyPressed(KEY_LEFT)) {
-        --stepOrder;
-        stepOrder = euclid_mod(stepOrder, 6);
-        showStepsPerFrame = true;
-        timeWhenStepsShown = std::chrono::high_resolution_clock::now();
+        --step_order;
+        step_order = euclid_mod(step_order, 6);
+        show_steps_per_frame = true;
+        time_when_steps_shown = std::chrono::high_resolution_clock::now();
       }
       width = GetScreenWidth();
       height = GetScreenHeight();
       VectorXd angles = (std::conj(sim.psi(0)) * sim.psi).cwiseArg();
       VectorXd norms = sim.psi.cwiseAbs2();
       auto maxnorm = norms.maxCoeff();
-      auto colors =
-          valuesToColor(angles.cbegin(), angles.cend(), rtwilight, -M_PI, M_PI);
+      auto colors = values_to_color(angles.cbegin(), angles.cend(), rtwilight,
+                                    -M_PI, M_PI);
       BeginDrawing();
       ClearBackground(WHITE);
       for (u32 i = 0; i < points.rows(); ++i) {
-        DrawCircle(toScreenX(points(i, 0), exmin, exmax, width),
-                   toScreenY(points(i, 1), eymin, eymax, height),
+        DrawCircle(to_screen_x(points(i, 0), exmin, exmax, width),
+                   to_screen_y(points(i, 1), eymin, eymax, height),
                    norms(i) * 12.0 / maxnorm, colors[i]);
       }
       // for (const auto& nb : couplings.rowwise()) {
-      //   auto startx = toScreenX(points[nb[0]][0], exmin, exmax, width);
-      //   auto starty = toScreenY(points[nb[0]][1], eymin, eymax, height);
-      //   auto endx = toScreenX(points[nb[1]][0], exmin, exmax, width);
-      //   auto endy = toScreenY(points[nb[1]][1], eymin, eymax, height);
+      //   auto startx = to_screen_x(points[nb[0]][0], exmin, exmax, width);
+      //   auto starty = to_screen_y(points[nb[0]][1], eymin, eymax, height);
+      //   auto endx = to_screen_x(points[nb[1]][0], exmin, exmax, width);
+      //   auto endy = to_screen_y(points[nb[1]][1], eymin, eymax, height);
       //   DrawLine(startx, starty, endx, endy, BLUE);
       // }
-      if (showStepsPerFrame) {
-        DrawText(TextFormat("Steps per frame: %d", stepsPerFrame[stepOrder]),
-                 static_cast<f32>(width) - 230, 10, 20, BLACK);
+      if (show_steps_per_frame) {
+        DrawText(TextFormat("Steps per frame: %d", steps_per_frame[step_order]),
+                 width - 230, 10, 20, BLACK);
         auto now = std::chrono::high_resolution_clock::now();
-        showStepsPerFrame = std::chrono::duration_cast<std::chrono::seconds>(
-                                now - timeWhenStepsShown)
-                                .count() < 3;
+        show_steps_per_frame = std::chrono::duration_cast<std::chrono::seconds>(
+                                   now - time_when_steps_shown)
+                                   .count() < 3;
       }
       if (!start) {
         DrawLineEx({10, 5}, {10, 45}, 10, BLACK);
@@ -449,7 +426,7 @@ int main(int argc, char* argv[]) {
         TakeScreenshot("graph.png");
       }
       if (start) {
-        for (u32 i = 0; i < stepsPerFrame[stepOrder]; ++i) {
+        for (u32 i = 0; i < steps_per_frame[step_order]; ++i) {
           sim.rk4step();
         }
       }

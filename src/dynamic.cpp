@@ -20,12 +20,6 @@ using Eigen::MatrixXd, Eigen::VectorXcd, Eigen::MatrixX2cd, Eigen::VectorXcf,
 
 #undef SET_STRUCT_FIELD
 
-auto basic_non_lin(const SparseMatrix<c64>& i_h, f64 alpha) {
-  return [&i_h, alpha](const VectorXcd& x) {
-    return VectorXcd(i_h * x + alpha * x.cwiseAbs2());
-  };
-}
-
 struct StateAndReservoir {
   typedef StateAndReservoir Self;
   VectorXcd x;
@@ -51,6 +45,13 @@ struct StateAndReservoir {
   }
   friend Self operator-(Self lhs, const Self& rhs) { return lhs -= rhs; }
 };
+
+namespace {
+auto basic_non_lin(const SparseMatrix<c64>& i_h, f64 alpha) {
+  return [&i_h, alpha](const VectorXcd& x) {
+    return VectorXcd(i_h * x + alpha * x.cwiseAbs2());
+  };
+}
 
 auto coupled_non_lin(const SparseMatrix<c64>& i_h, const VectorXd& p, f64 alpha,
                      f64 r, f64 gamma, f64 exc_gamma) {
@@ -120,3 +121,4 @@ MatrixX2cd tetmRK4Step(MatrixX2cd psi, const SparseMatrix<c64>& coupling_mat,
   MatrixX2cd ret = psi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
   return ret;
 }
+} // namespace
