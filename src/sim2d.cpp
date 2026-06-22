@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
   }
 
   constexpr u32 nx = 1024;
-  constexpr RangeConf<f32> x = {.start = -10., .end = 10., .n = nx};
+  constexpr RangeConf<f32> x = {.start = -10., .endpoint = 10., .n = nx};
 
   DEBUG_LOG("Initializing SDL video and events");
   check_sdl(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS));
@@ -116,8 +116,8 @@ int main(int argc, char* argv[]) {
   }
   // std::vector<c64> psik(1024 * 1024);
   constexpr RangeConf<f32> k = {
-      .start = -M_PI / x.d(), .end = M_PI / x.d(), .n = nx};
-  constexpr RangeConf<f32> t = {.start = 0., .end = 0.1, .n = 100};
+      .start = -M_PI / x.d(), .endpoint = M_PI / x.d(), .n = nx};
+  constexpr RangeConf<f32> t = {.start = 0., .endpoint = 0.1, .n = 100};
   std::vector<c32> k_prop(x.n * x.n);
   for (u32 i = 0; i < k.n; ++i) {
     for (u32 j = 0; j < k.n; ++j) {

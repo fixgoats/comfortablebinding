@@ -18,7 +18,7 @@ void auto_limits(const VectorXd& d, RangeConf<f64>& rc) {
   f64 min = d.minCoeff();
   f64 l = max - min;
   rc.start = min - 0.01 * l;
-  rc.end = max + 0.01 * l;
+  rc.endpoint = max + 0.01 * l;
 }
 
 // VectorXcd plane_wave(Vector2d k, const std::vector<Pt2>& points) {

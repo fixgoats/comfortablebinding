@@ -108,9 +108,10 @@ int doPeriodicModel(const PerConf& conf) {
     }
     writeArray<3>("energies", *file, H5T_NATIVE_DOUBLE_g, energies.data(),
                   {kyrange.n, kxrange.n, conf.points.size()});
-    writeArray<1>(
-        "energies_bounds", *file, H5T_NATIVE_DOUBLE_g,
-        (f64[4]){kxrange.start, kxrange.end, kyrange.start, kyrange.end}, {4});
+    writeArray<1>("energies_bounds", *file, H5T_NATIVE_DOUBLE_g,
+                  (f64[4]){kxrange.start, kxrange.endpoint, kyrange.start,
+                           kyrange.endpoint},
+                  {4});
   }
   if (conf.doPath) {
     MatrixXcd H = MatrixXcd::Zero(conf.points.size(), conf.points.size());
@@ -145,7 +146,7 @@ int doPeriodicModel(const PerConf& conf) {
     bounds.reserve(conf.kpath.size());
     for (const auto& r : conf.kpath) {
       bounds.push_back(r.start);
-      bounds.push_back(r.end);
+      bounds.push_back(r.endpoint);
     }
     writeArray<1>("disp_bounds", file, H5T_NATIVE_DOUBLE_g, bounds.data(),
                   {conf.kpath.size() * 2 * 2});

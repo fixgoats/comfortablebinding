@@ -1,4 +1,4 @@
-#include "dynamic.h"
+#include "dynamic.hpp"
 #include "hermEigen.h"
 #include "spdlog/spdlog.h"
 #include <H5public.h>

@@ -93,41 +93,62 @@ void fftshift(std::vector<T>& arr) {
   leftRotate(arr, d);
 }
 
-constexpr float annularProfile(float x, float y, float L, float r, float beta) {
+constexpr float annular_profile(float x, float y, float L, float r,
+                                float beta) {
   return square(square(L)) /
          (square(x * x + beta * y * y - r * r) + square(square(L)));
 }
 
-constexpr auto upow(auto x, u32 N) {
-  if (N == 0) {
+constexpr auto upow(auto x, u32 n) {
+  if (n == 0) {
     return 1;
   }
-  if (N == 1) {
-    return N;
+  if (n == 1) {
+    return n;
   }
-  return upow(x, N / 2) * upow(x, (N + 1) / 2);
+  return upow(x, n / 2) * upow(x, (n + 1) / 2);
 }
 
 template <class T>
 struct RangeConf {
   T start;
-  T end;
+  T endpoint;
   u64 n;
+  struct Iterator {
+    RangeConf<T>* range;
+    u64 count;
+    T operator*() const noexcept { return range->ith(count); }
+    Iterator& operator++() noexcept {
+      ++count;
+      return *this;
+    }
+    friend bool operator==(Iterator a, Iterator b) noexcept {
+      return (a.count == b.count && a.range == b.range);
+    }
+  };
+  struct Sentinel {
+    u64 count;
+    friend bool operator==(Sentinel a, Iterator b) noexcept {
+      return (a.count == b.count);
+    }
+  };
 
-  constexpr T d() const { return (end - start) / n; }
+  constexpr T d() const { return (endpoint - start) / n; }
   constexpr T ith(uint i) const { return start + i * d(); }
+  Iterator begin() const noexcept { return {this, 0}; }
+  Sentinel end() const noexcept { return {n}; }
 };
 
 template <class T>
-constexpr size_t vecBytes(std::vector<T>& v) {
+constexpr size_t vec_bytes(std::vector<T>& v) {
   return v.size() * sizeof(T);
 }
 
 template <class T>
 Eigen::VectorX<T> linspace(RangeConf<T> rc, bool endpoint) {
-  u64 oneOrZero = endpoint ? 1 : 0;
-  Eigen::VectorX<T> lin(rc.n + oneOrZero);
-  for (u64 i = 0; i < rc.n + oneOrZero; ++i) {
+  u64 one_or_zero = endpoint ? 1 : 0;
+  Eigen::VectorX<T> lin(rc.n + one_or_zero);
+  for (u64 i = 0; i < rc.n + one_or_zero; ++i) {
     lin(i) = rc.ith(i);
   }
   return lin;
@@ -159,14 +180,12 @@ struct CSRMat {
   u64 cols;
 
   CSRMat<T>() = default;
-  CSRMat<T>(const COOMat<T>& other) {
+  CSRMat<T>(const COOMat<T>& other) : rows{other.rows}, cols{other.cols} {
     spdlog::debug("converting COOMat to CSR.");
     u64 data_size = 0;
     for (const auto& map : other.elements) {
       data_size += map.second.size();
     }
-    rows = other.rows;
-    cols = other.cols;
 
     row_indices.resize(rows + 1);
     col_indices.resize(data_size);
@@ -220,7 +239,8 @@ void spmv(CSRMat<A> M, B a, C* v, D* b, C* out) {
 
 inline MatrixXcd csr_to_dense(CSRMat<c64> M) {
   spdlog::debug("Function csr_to_dense.");
-  MatrixXcd H = MatrixXcd::Zero(M.rows, M.cols);
+  MatrixXcd H =
+      MatrixXcd::Zero(static_cast<s64>(M.rows), static_cast<s64>(M.cols));
   spdlog::debug("Made matrix");
 
 #pragma omp parallel for
@@ -231,7 +251,7 @@ inline MatrixXcd csr_to_dense(CSRMat<c64> M) {
     for (u64 j = row_start; j < row_end; ++j) {
       spdlog::debug("Writing element", M.data[j].real(), M.data[j].imag(),
                     "to row", j, "col", M.col_indices[j]);
-      H(i, M.col_indices[j]) = M.data[j];
+      H(static_cast<s64>(i), static_cast<s64>(M.col_indices[j])) = M.data[j];
     }
   }
   return H;

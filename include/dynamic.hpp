@@ -13,9 +13,9 @@
 
 using Eigen::SparseMatrix, Eigen::VectorXcd, Eigen::MatrixXd;
 
-static const Eigen::IOFormat oneliner(Eigen::StreamPrecision,
-                                      Eigen::DontAlignCols, " ", " ", "", "",
-                                      "", "");
+static const Eigen::IOFormat ONE_LINER(Eigen::StreamPrecision,
+                                       Eigen::DontAlignCols, " ", " ", "", "",
+                                       "", "");
 
 typedef struct {
   f64 p;
@@ -24,25 +24,22 @@ typedef struct {
   f64 rscale;
 } Params;
 
-constexpr HighFive::CompoundType compoundParams() {
+constexpr HighFive::CompoundType compound_params() {
   return {{"p", HighFive::create_datatype<f64>()},
           {"alpha", HighFive::create_datatype<f64>()},
           {"j", HighFive::create_datatype<f64>()},
           {"rscale", HighFive::create_datatype<f64>()}};
 }
 
-HIGHFIVE_REGISTER_TYPE(Params, compoundParams);
+HIGHFIVE_REGISTER_TYPE(Params, compound_params);
 
 #define SET_STRUCT_FIELD(key, tbl)                                             \
-  if (tbl.contains(#key))                                                      \
-  key = *tbl[#key].value<decltype(key)>()
+  if ((tbl).contains(#key))                                                    \
+  (key) = *(tbl)[#key].value<decltype(key)>()
 
 struct SimConf {
   virtual void run() const = 0;
-  // {
-  //   spdlog::warn("SimConf: run. Uh oh, this should never get called...");
-  // }
-  virtual ~SimConf() {}
+  virtual ~SimConf() = default;
 };
 
 template <class F, class State>
@@ -57,75 +54,60 @@ State rk4step(const State& x, f64 dt, F rhs) {
   return ret;
 }
 
-template <class Func>
-struct RK4 {
-  VectorXcd k1;
-  VectorXcd k2;
-  VectorXcd k3;
-  VectorXcd k4;
-  Func f;
-
-  RK4(Func f, s64 n) : f{f}, k1{n}, k2{}, k3{}, k4{} {}
-
-  VectorXcd step(VectorXcd& y, f64 dt) {
-
-    k1 = f(y);
-    k2 = f(y + 0.5 * dt * k1);
-    k3 = f(y + 0.5 * dt * k2);
-    k4 = f(y + 0.5 * dt * k3);
-    y += (dt / 6.0) * ((k1 + k4) + 2 * (k2 + k3));
-  }
-};
-
-inline auto kuramoto(f64 K, u32 N, const VectorXd& omega) {
-  return [&, K, N](const VectorXd& theta) {
-    MatrixXd sins = (VectorXd::Ones(N) * theta.transpose() -
-                     theta * VectorXd::Ones(N).transpose())
-                        .array()
-                        .sin();
-    return VectorXd(omega + (K / N) * (sins).rowwise().sum());
+inline auto kuramoto(f64 k, const VectorXd& omega) {
+  return [&, k](const VectorXd& theta) {
+    c64 order_param = (c64{0, 1} * theta).array().exp().mean();
+    f64 r = std::sqrt(std::norm(order_param));
+    f64 psi = std::arg(order_param);
+    return VectorXd(omega + k * r * ((psi - theta.array()).sin()).matrix());
   };
 }
 
 struct KuramotoConf : public SimConf {
   std::string outfile;
-  f64 K;
-  u32 N;
+  f64 k;
+  u32 n;
   RangeConf<f64> t;
 
   KuramotoConf(const toml::table& tbl) {
     SET_STRUCT_FIELD(outfile, tbl);
-    SET_STRUCT_FIELD(K, tbl);
-    SET_STRUCT_FIELD(N, tbl);
+    SET_STRUCT_FIELD(k, tbl);
+    SET_STRUCT_FIELD(n, tbl);
     t = tblToRange(*tbl["t"].as_table());
   }
 
   void run() const override {
-    VectorXd theta = VectorXd::LinSpaced(10, -1, 1);
-    VectorXd omega = VectorXd::LinSpaced(10, 1, -1);
-    /*std::random_device dev;
+    VectorXd theta(n);
+    VectorXd omega(n);
+    std::random_device dev;
     std::mt19937 gen(dev());
-    std::uniform_real_distribution<> dis(0, M_PI);
-    for (auto& e : theta) {
-      e = dis(gen);
-    }
+    std::normal_distribution<> gauss_dis(0.0, M_PI_2);
+    std::uniform_real_distribution<> uni_dis(0.0, M_PI);
     for (auto& e : omega) {
-      e = 0.01 * (dis(gen) - M_PI_2);
-    }*/
+      e = gauss_dis(gen);
+    }
+    for (auto& e : theta) {
+      e = uni_dis(gen);
+    }
+    MatrixXd out_thetas(n, t.n);
     std::ofstream fout(outfile);
-    fout << theta.format(oneliner) << '\n';
-    auto rhs = kuramoto(K, N, omega);
+    fout << theta.format(ONE_LINER) << '\n';
+    auto rhs = kuramoto(k, omega);
     for (u32 i = 0; i < t.n; i++) {
       theta = rk4step(theta, t.d(), rhs);
-      fout << theta.format(oneliner) << '\n';
+      out_thetas(Eigen::indexing::all, i) = theta;
     }
 
+    HighFive::File output(outfile, HighFive::File::Truncate);
+    output.createDataSet("thetas", out_thetas);
+    output.createDataSet("omegas", omega);
+    output.createDataSet("times", linspace(t, false));
     fout.close();
   }
 };
 
-inline auto basic(const SparseMatrix<c64>& iH) {
-  return [&](const VectorXcd& x) { return VectorXcd(iH * x); };
+inline auto basic(const SparseMatrix<c64>& i_h) {
+  return [&](const VectorXcd& x) { return VectorXcd(i_h * x); };
 }
 
 struct BasicConf {
@@ -139,7 +121,7 @@ struct BasicConf {
     SET_STRUCT_FIELD(outfile, tbl);
     SET_STRUCT_FIELD(point_path, tbl);
     if (tbl.contains("search_radius")) {
-      search_radius = tbl["search_radius"].value<f64>().value();
+      search_radius = tbl["search_radius"].value<f64>();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
@@ -217,7 +199,7 @@ struct HankelConf : public SimConf {
     SET_STRUCT_FIELD(j, tbl);
     SET_STRUCT_FIELD(rscale, tbl);
     if (tbl.contains("search_radius")) {
-      search_radius = tbl["search_radius"].value<f64>().value();
+      search_radius = tbl["search_radius"].value<f64>();
     }
     t = tblToRange(*tbl["t"].as_table());
   }
@@ -254,9 +236,9 @@ struct HankelConf : public SimConf {
     u64 m = psi.cols();
     spdlog::debug("Allocated psi with dims {}x{}", n, m);
     spdlog::debug("Writing random coordinates to psi.");
-    for (u64 i = 0; i < static_cast<u64>(psi.size()); i++) {
+    for (auto& e : psi) {
       auto x = dis(gen);
-      psi[i] = {1e-4 * cos(x), 1e-4 * sin(x)};
+      e = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
     const u32 overall_size = t.n * psi.size();
     spdlog::debug("Allocating psipdata with {} elements.", overall_size);
@@ -285,10 +267,10 @@ struct HankelConf : public SimConf {
     file.createDataSet("points", points);
     file.createDataSet("couplings", couplings);
     file.createDataSet("time", linspace(t, true));
-    HighFive::DataSet paramSet =
+    HighFive::DataSet param_set =
         file.createDataSet("params", Params{p, alpha, j, rscale});
   }
-  ~HankelConf() = default;
+  ~HankelConf() override = default;
 };
 
 struct HankelTimeScanConf : public SimConf {
@@ -326,23 +308,23 @@ struct HankelTimeScanConf : public SimConf {
     std::mt19937 gen(dev());
     std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
 
-    s64 samples = ps.n * alphas.n * js.n * rscales.n;
+    s64 samples = static_cast<s64>(ps.n * alphas.n * js.n * rscales.n);
     std::vector<c64> data(samples * 2 * (t.n + 1));
-    s64 datasize = data.size();
+    s64 datasize = static_cast<s64>(data.size());
     std::vector<c64> snapshotdata(samples * points.rows());
     spdlog::debug("data has {} elements in total.", datasize);
-    s64 psize = ps.n;
+    s64 psize = static_cast<s64>(ps.n);
     spdlog::debug("number of ps is {}.", psize);
-    s64 alphasize = alphas.n;
+    s64 alphasize = static_cast<s64>(alphas.n);
     spdlog::debug("number of alphas is {}.", alphasize);
-    s64 jsize = js.n;
+    s64 jsize = static_cast<s64>(js.n);
     spdlog::debug("number of js is {}.", jsize);
-    s64 rscalesize = rscales.n;
+    s64 rscalesize = static_cast<s64>(rscales.n);
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
-    for (u64 o = 0; o < (u64)init_psi.size(); ++o) {
+    for (auto& e : init_psi) {
       auto x = dis(gen);
-      init_psi[o] = {1e-4 * cos(x), 1e-4 * sin(x)};
+      e = {1e-4 * cos(x), 1e-4 * sin(x)};
     }
     const size_t byte_size = init_psi.size() * sizeof(c64);
     VectorXd cond_nums(rscalesize);
@@ -406,13 +388,13 @@ struct HankelTimeScanConf : public SimConf {
     HighFive::File file(outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
 
-    auto seriesSet = file.createDataSet<c64>(
+    auto series_set = file.createDataSet<c64>(
         "sumpsitimeseries",
         HighFive::DataSpace(
             {static_cast<u64>(psize), static_cast<u64>(alphasize),
              static_cast<u64>(jsize), static_cast<u64>(rscalesize),
              static_cast<u64>(t.n + 1), 2}));
-    seriesSet.write_raw(data.data());
+    series_set.write_raw(data.data());
     auto snapshot = file.createDataSet<c64>(
         "psisnapshot",
         HighFive::DataSpace(
@@ -471,17 +453,17 @@ struct HankelScanConf : public SimConf {
     std::mt19937 gen(dev());
     std::uniform_real_distribution<> dis(0.0, 2 * M_PI);
 
-    const s64 samples = ps.n * alphas.n * js.n * rscales.n;
+    const s64 samples = static_cast<s64>(ps.n * alphas.n * js.n * rscales.n);
     std::vector<c64> data(samples * points.rows());
-    s64 datasize = data.size();
+    const s64 datasize = static_cast<s64>(data.size());
     spdlog::debug("data has {} elements in total.", datasize);
-    s64 psize = ps.n;
+    const s64 psize = static_cast<s64>(ps.n);
     spdlog::debug("number of ps is {}.", psize);
-    s64 alphasize = alphas.n;
+    const s64 alphasize = static_cast<s64>(alphas.n);
     spdlog::debug("number of alphas is {}.", alphasize);
-    s64 jsize = js.n;
+    const s64 jsize = static_cast<s64>(js.n);
     spdlog::debug("number of js is {}.", jsize);
-    s64 rscalesize = rscales.n;
+    const s64 rscalesize = static_cast<s64>(rscales.n);
     spdlog::debug("number of rscales is {}.", rscalesize);
     VectorXcd init_psi(points.rows());
     VectorXd cond_nums(rscalesize);
@@ -540,12 +522,12 @@ struct HankelScanConf : public SimConf {
     HighFive::File file(outfile, HighFive::File::Truncate);
     spdlog::debug("Writing samples to file.");
 
-    auto sampleSet = file.createDataSet<c64>(
+    auto sample_set = file.createDataSet<c64>(
         "psis", HighFive::DataSpace(
                     {static_cast<u64>(psize), static_cast<u64>(alphasize),
                      static_cast<u64>(jsize), static_cast<u64>(rscalesize),
                      static_cast<u64>(points.rows())}));
-    sampleSet.write_raw(data.data());
+    sample_set.write_raw(data.data());
     file.createDataSet("points", points);
     file.createDataSet("couplings", couplings);
     file.createDataSet("condition_numbers", cond_nums);
@@ -572,26 +554,18 @@ struct DelayConf {
   RangeConf<f64> t;
 };
 
-// struct DynConf {
-//   std::optional<KuramotoConf> kuramoto;
-//   std::optional<BasicConf> basic;
-//   std::optional<BasicDistanceConf> bd;
-//   std::optional<BasicNLinConf> basicnlin;
-//   std::vector<TETMConf> tetm;
-//   std::optional<HankelScanConf> hsc;
-//   std::vector<HankelScanConf> hscs;
-// };
-
 enum Sims {
   eHankelTimeScan,
   eHankelScan,
   eHankel,
+  eKuramoto,
 };
 
-static const std::unordered_map<std::string_view, Sims> sim_types{
+static const std::unordered_map<std::string_view, Sims> SIM_TYPES{
     {"hankelscan", Sims::eHankelScan},
     {"hankeltimescan", Sims::eHankelTimeScan},
     {"hankel", eHankel},
+    {"kuramoto", eKuramoto},
 };
 
 inline std::vector<std::unique_ptr<SimConf>>
@@ -606,36 +580,46 @@ toml_to_dyn_conf(const std::string& fname) {
     return {};
   }
   spdlog::debug("File {} successfully parsed", fname);
-  std::vector<std::unique_ptr<SimConf>> retVec;
+  std::vector<std::unique_ptr<SimConf>> ret_vec;
   tbl.for_each([&](const toml::key& key, toml::array& val) {
     spdlog::debug("Found key: {}", key.str());
-    switch (sim_types.at(key.str())) {
-    case eHankelTimeScan:
+    switch (SIM_TYPES.at(key.str())) {
+    case eHankelTimeScan: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_dyn_conf: Pushing back hankel time scan conf.");
         HankelTimeScanConf tmp(arrtbl);
-        retVec.push_back(
+        ret_vec.push_back(
             std::unique_ptr<SimConf>(new HankelTimeScanConf(arrtbl)));
       });
       break;
-    case eHankelScan:
+    }
+    case eHankelScan: {
       val.for_each([&](toml::table& arrtbl) {
         spdlog::debug("toml_to_dyn_conf: Pushing back hankel scan conf.");
-        retVec.push_back(std::unique_ptr<SimConf>(new HankelScanConf(arrtbl)));
-      });
-      break;
-    case eHankel:
-      val.for_each([&](toml::table& arrtbl) {
-        spdlog::debug("toml_to_dyn_conf: Pushing back hankel conf.");
-        retVec.push_back(std::unique_ptr<SimConf>(new HankelConf(arrtbl)));
+        ret_vec.push_back(std::unique_ptr<SimConf>(new HankelScanConf(arrtbl)));
       });
       break;
     }
+    case eHankel: {
+      val.for_each([&](toml::table& arrtbl) {
+        spdlog::debug("toml_to_dyn_conf: Pushing back hankel conf.");
+        ret_vec.push_back(std::unique_ptr<SimConf>(new HankelConf(arrtbl)));
+      });
+      break;
+    }
+    case eKuramoto: {
+      val.for_each([&](toml::table& arrtbl) {
+        spdlog::debug("toml_to_dyn_conf: Pushing back hankel conf.");
+        ret_vec.push_back(std::unique_ptr<SimConf>(new KuramotoConf(arrtbl)));
+      });
+      break;
+    }
+    }
   });
-  return retVec;
+  return ret_vec;
 }
 
-// auto basic(const SparseMatrix<c64>& iH);
+// auto basic(const SparseMatrix<c64>& i_h);
 // int doBasic(const BasicConf& conf);
 // int doBasicNLin(const BasicNLinConf& conf);
 // int doExactBasic(const BasicConf& conf);
