@@ -11,3 +11,7 @@ env/
 data/
 gögn/
 assets/
+out/
+*.h5
+*.hd5
+*.hdf5

@@ -34,11 +34,16 @@ constexpr HighFive::CompoundType compound_params() {
 HIGHFIVE_REGISTER_TYPE(Params, compound_params);
 
 #define SET_STRUCT_FIELD(key, tbl)                                             \
-  if ((tbl).contains(#key))                                                    \
-  (key) = *(tbl)[#key].value<decltype(key)>()
+  if ((tbl).contains(#key)) {                                                  \
+    (key) = *(tbl)[#key].value<decltype(key)>();                               \
+  } else {                                                                     \
+    std::cerr << "Required key: " << (#key) << " not present.";                \
+    exit(-1);                                                                  \
+  }
 
 struct SimConf {
   virtual void run() const = 0;
+  [[nodiscard]] virtual std::string type() const = 0;
   virtual ~SimConf() = default;
 };
 
@@ -76,6 +81,8 @@ struct KuramotoConf : public SimConf {
     t = tblToRange(*tbl["t"].as_table());
   }
 
+  [[nodiscard]] std::string type() const override { return "kuramoto"; }
+
   void run() const override {
     VectorXd theta(n);
     VectorXd omega(n);
@@ -101,6 +108,85 @@ struct KuramotoConf : public SimConf {
     HighFive::File output(outfile, HighFive::File::Truncate);
     output.createDataSet("thetas", out_thetas);
     output.createDataSet("omegas", omega);
+    output.createDataSet("times", linspace(t, false));
+    fout.close();
+  }
+};
+
+struct KuramotoScan : public SimConf {
+  std::string outfile;
+  RangeConf<f64> k;
+  RangeConf<u32> n;
+  RangeConf<f64> t;
+
+  KuramotoScan(const toml::table& tbl) {
+    SET_STRUCT_FIELD(outfile, tbl);
+    k = tblToRange(*tbl["k"].as_table());
+    n = tblToRange(*tbl["n"].as_table());
+    t = tblToRange(*tbl["t"].as_table());
+  }
+
+  [[nodiscard]] std::string type() const override { return "kuramoto"; }
+
+  void run() const override {
+    std::vector<f64> abs_arr(n.n * k.n * t.n);
+    std::vector<f64> avg_theta_arr(n.n * k.n * t.n);
+    std::vector<f64> var_theta_arr(n.n * k.n * t.n);
+    std::vector<f64> var_dtheta_arr(n.n * k.n * t.n);
+    MatrixXd avg_omega(n.n, k.n);
+    MatrixXd var_omega(n.n, k.n);
+    for (u32 i = 0; i < n.n; i++) {
+      for (u32 l = 0; l < k.n; l++) {
+        VectorXd theta(n.ith(i));
+        VectorXd omega(n.ith(i));
+        std::random_device dev;
+        std::mt19937 gen(dev());
+        std::normal_distribution<> gauss_dis(0.0, M_PI_2);
+        std::uniform_real_distribution<> uni_dis(0.0, M_PI);
+        for (auto& e : omega) {
+          e = gauss_dis(gen);
+        }
+        avg_omegas(i, l) = omega.mean();
+        var_omegas(i, l) = omega.cwiseAbs2().mean() - square(omega.mean());
+        for (auto& e : theta) {
+          e = uni_dis(gen);
+        }
+        auto rhs = kuramoto(k, omega);
+        f64 old_avg_theta = theta.mean();
+        for (u32 j = 0; j < t.n; j++) {
+          theta = rk4step(theta, t.d(), rhs);
+          c64 order_param = (c64{0, 1} * theta).array().exp().mean();
+          f64 avg_theta = theta.mean();
+          f64 r = std::sqrt(std::norm(order_param));
+          f64 order_par_theta = std::arg(order_param);
+          abs_arr[(i * k.n + l) * t.n + j] = r;
+          avg_theta_arr[(i * k.n + l) * t.n + j] = avg_theta;
+          var_theta_arr[(i * k.n + l) * t.n + j] =
+              theta.cwiseAbs2().mean() - square(avg_theta);
+          f64 davg_theta = (avg_theta - old_avg_theta) / t.d();
+          VectorXd dtheta = (theta - old_theta) / t.d();
+          var_dtheta_arr[(i * k.n + l) * t.n + j] =
+              dtheta.cwiseAbs2().mean() - square(davg_theta);
+          old_avg_theta = avg_theta;
+          old_theta = theta;
+        }
+      }
+    }
+    HighFive::File output(outfile, HighFive::File::Truncate);
+    auto snapshot =
+        output.createDataSet<f64>("abs", HighFive::DataSpace({n.n, k.n, t.n}));
+    snapshot.write_raw(abs.data());
+    snapshot = output.createDataSet<f64>("avg_theta",
+                                         HighFive::DataSpace({n.n, k.n, t.n}));
+    snapshot.write_raw(avg_theta.data());
+    snapshot = output.createDataSet<f64>("var_theta",
+                                         HighFive::DataSpace({n.n, k.n, t.n}));
+    snapshot.write_raw(avg_theta.data());
+    snapshot = output.createDataSet<f64>("var_theta",
+                                         HighFive::DataSpace({n.n, k.n, t.n}));
+    snapshot.write_raw(avg_theta.data());
+    output.createDataSet("avg_omega", avg_omega);
+    output.createDataSet("var_omega", avg_omega);
     output.createDataSet("times", linspace(t, false));
     fout.close();
   }
@@ -204,6 +290,10 @@ struct HankelConf : public SimConf {
     t = tblToRange(*tbl["t"].as_table());
   }
 
+  [[nodiscard]] std::string type() const override {
+    return "single run of amplitude oscillator network";
+  }
+
   void run() const override {
     spdlog::debug("Function: doBasicHankelDD.");
     const auto start = std::chrono::high_resolution_clock::now();
@@ -291,6 +381,10 @@ struct HankelTimeScanConf : public SimConf {
     js = tblToRange(*tbl["js"].as_table());
     rscales = tblToRange(*tbl["rscales"].as_table());
     t = tblToRange(*tbl["t"].as_table());
+  }
+
+  [[nodiscard]] std::string type() const override {
+    return "hankel amplitude oscillators, scan over parameters and time";
   }
 
   void run() const override {
@@ -436,6 +530,10 @@ struct HankelScanConf : public SimConf {
     t = tblToRange(*tbl["t"].as_table());
   }
 
+  [[nodiscard]] std::string type() const override {
+    return "hankel amplitude oscillators, scan over parameters";
+  }
+
   void run() const override {
 
     spdlog::debug("HankelScanConf: method run.");
@@ -564,8 +662,8 @@ enum Sims {
 static const std::unordered_map<std::string_view, Sims> SIM_TYPES{
     {"hankelscan", Sims::eHankelScan},
     {"hankeltimescan", Sims::eHankelTimeScan},
-    {"hankel", eHankel},
-    {"kuramoto", eKuramoto},
+    {"hankel", Sims::eHankel},
+    {"kuramoto", Sims::eKuramoto},
 };
 
 inline std::vector<std::unique_ptr<SimConf>>

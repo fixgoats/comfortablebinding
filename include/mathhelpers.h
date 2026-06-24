@@ -16,7 +16,7 @@ using Eigen::MatrixXcd;
 
 constexpr f32 hbar = 6.582119569e-1;
 constexpr f32 muB = 5.7883818060e-2;
-constexpr f32 echarge = 1e3;
+constexpr f32 echarge = 1e3;:
 
 using Eigen::Vector2d;
 using std::bit_cast;
@@ -142,6 +142,14 @@ struct RangeConf {
 template <class T>
 constexpr size_t vec_bytes(std::vector<T>& v) {
   return v.size() * sizeof(T);
+}
+
+template <class T>
+constexpr T fwrap(T x, T begin, T end) {
+  T len = end - begin;
+  s64 n = std::floor(x / len);
+  T rem = x - n * len;
+  return begin + rem;
 }
 
 template <class T>
