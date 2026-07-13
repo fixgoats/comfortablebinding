@@ -26,6 +26,8 @@
   spdlog::error("{}: {}", __func__, std::format(__VA_ARGS__))
 #define WARN_LOG(...) spdlog::warn("{}: {}", __func__, std::format(__VA_ARGS__))
 
+
+
 using std::bit_cast;
 
 constexpr VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
@@ -116,7 +118,7 @@ consteval VkMemoryBarrier2 full_mem_barrier() {
   barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
   return barrier;
 }
-static const VkMemoryBarrier2 FULL_MEMORY_BARRIER = full_mem_barrier();
+static constexpr  VkMemoryBarrier2 FULL_MEMORY_BARRIER = full_mem_barrier();
 
 struct MetaBuffer {
   // A buffer + allocation stuff that you generally need to reference when using
@@ -128,27 +130,27 @@ struct MetaBuffer {
   VkDeviceAddress address;
   MetaBuffer() = default;
   MetaBuffer(VmaAllocator allocator, VkDevice device,
-             VmaAllocationCreateInfo& alloc_create_info,
-             VkBufferCreateInfo& bci);
+             const VmaAllocationCreateInfo& alloc_create_info,
+             const VkBufferCreateInfo& bci);
   // To call on default constructed metabuffer
   void allocate(VmaAllocator allocator, VkDevice device,
-                VmaAllocationCreateInfo& alloc_create_info,
-                VkBufferCreateInfo& bci);
+                const VmaAllocationCreateInfo& alloc_create_info,
+                const VkBufferCreateInfo& bci);
   ~MetaBuffer();
 };
 
 struct AllocatedImage {
-  VmaAllocator* p_allocator = nullptr;
+  VmaAllocator p_allocator = nullptr;
   VkImage img;
   VmaAllocation allocation;
   VmaAllocationInfo aInfo;
   AllocatedImage();
-  AllocatedImage(VmaAllocator& allocator,
-                 VmaAllocationCreateInfo& alloc_create_info,
-                 VkImageCreateInfo& ici);
-  void allocate(VmaAllocator& allocator,
-                VmaAllocationCreateInfo& alloc_create_info,
-                VkImageCreateInfo& ici);
+  AllocatedImage(VmaAllocator allocator,
+                 const VmaAllocationCreateInfo& alloc_create_info,
+                 const VkImageCreateInfo& ici);
+  void allocate(VmaAllocator allocator,
+                const VmaAllocationCreateInfo& alloc_create_info,
+                const VkImageCreateInfo& ici);
   ~AllocatedImage();
 };
 
@@ -189,8 +191,8 @@ struct Algorithm {
 
 static const std::vector<std::string> DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-static const std::string APP_NAME{"Vulkan GPE Simulator"};
-static const std::string ENGINE_NAME{"argablarg"};
+static constexpr std::string APP_NAME{"Vulkan GPE Simulator"};
+static constexpr std::string ENGINE_NAME{"argablarg"};
 
 struct AutoInstance {
   VkInstance instance;
@@ -245,9 +247,9 @@ struct Manager {
           std::span<const char*> extra_device_extensions = {});
   // void finish_setup(size_t staging_size, VkSurfaceKHR& surface);
   // Manager uses a single staging buffer for efficient copies.
-  void copy_buffer(VkBuffer& src_buffer, VkBuffer& dst_buffer, u32 buffer_size,
+  void copy_buffer(const VkBuffer& src_buffer, const VkBuffer& dst_buffer, u32 buffer_size,
                    u32 src_offset = 0, u32 dst_offset = 0) const;
-  void copy_in_batches(VkBuffer& src_buffer, VkBuffer& dst_buffer,
+  void copy_in_batches(const VkBuffer& src_buffer, const VkBuffer& dst_buffer,
                        u32 batch_size, u32 num_batches);
   void recreate_staging_buffer(size_t size);
 
@@ -257,13 +259,13 @@ struct Manager {
   void execute_no_sync(VkCommandBuffer b) const;
   void queue_wait_idle() const;
   // void get_queue_family_indices(VkSurfaceKHR& surface);
-  void write_to_buffer(MetaBuffer& dest, const void* source, size_t size,
+  void write_to_buffer(const MetaBuffer& dest, const void* source, size_t size,
                        size_t src_offset = 0, size_t dst_offset = 0);
   template <class T>
   void write_to_buffer(MetaBuffer& buffer, std::vector<T> vec) {
     write_to_buffer(buffer, vec.data(), vec.size() * sizeof(T));
   }
-  void write_from_buffer(MetaBuffer& source, void* dest, size_t size);
+  void write_from_buffer(const MetaBuffer& source, void* dest, size_t size);
   template <class T>
   void write_from_buffer(MetaBuffer& buffer, std::vector<T>& v) {
     write_from_buffer(buffer, v.data(), v.size() * sizeof(T));
@@ -277,7 +279,7 @@ struct Manager {
     copy_buffer(staging, buffer.buffer, n_elements * sizeof(T));
   }
   template <typename T>
-  [[nodiscard]] MetaBuffer make_raw_buffer(u32 n_elements) {
+  [[nodiscard]] MetaBuffer make_raw_buffer(u32 n_elements) const {
     VkBufferCreateInfo bci{};
     bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bci.size = round_up_x16(n_elements * sizeof(T));
@@ -295,7 +297,7 @@ struct Manager {
     return MetaBuffer{allocator, device, alloc_create_info, bci};
   }
   template <typename T>
-  MetaBuffer make_uniform_object() {
+  MetaBuffer make_uniform_object() const {
     VkBufferCreateInfo bci{};
     bci.size = sizeof(T);
     bci.usage =
@@ -312,11 +314,11 @@ struct Manager {
     return MetaBuffer{allocator, device, alloc_create_info, bci};
   }
 
-  void free_command_buffer(VkCommandBuffer& b) const {
+  void free_command_buffer(const VkCommandBuffer& b) const {
     vkFreeCommandBuffers(device, command_pool, 1, &b);
   }
 
-  void free_command_buffers(VkCommandBuffer* b, u32 n) const {
+  void free_command_buffers(const VkCommandBuffer* b, u32 n) const {
     vkFreeCommandBuffers(device, command_pool, n, b);
   }
 
@@ -349,7 +351,8 @@ struct Manager {
   // I'll just assume that here. If you use a non-float constant, just bit_cast
   // it to a float.
   [[nodiscard]] Algorithm
-  make_algorithm(std::string spirvname, const std::vector<VkImageView>& images,
+  make_algorithm(
+      const std::string& spirvname, const std::vector<VkImageView>& images,
                  const std::vector<VkDeviceAddress>& buffers,
                  std::span<const f32> spec_consts = {},
                  size_t n_push_constants = 0) const;
@@ -400,7 +403,6 @@ struct Renderer {
   VkDescriptorPool descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSetLayout descriptor_set_layout_tex{VK_NULL_HANDLE};
   VkDescriptorSet descriptor_set_tex{VK_NULL_HANDLE};
-  Slang::ComPtr<slang::IGlobalSession> slang_global_session;
   u32 frame_index{};
 
   void make_depth_img_and_view();

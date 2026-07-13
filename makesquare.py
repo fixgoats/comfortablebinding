@@ -1,4 +1,4 @@
 import numpy as np
 
-a = [[i, j] for i in range(100) for j in range(100)]
-np.savetxt("square100x100.txt", a)
+grid = np.array([[i, j] for i in range(15) for j in range(15)])
+np.savetxt("square225.txt", grid)

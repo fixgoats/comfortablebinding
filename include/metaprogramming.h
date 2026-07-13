@@ -18,7 +18,7 @@ template <class T, class B>
 T* pcast(B* x) {
   // bit_cast that checks at compile time if B is statically castable to T
   static_assert(is_safely_castable<T, B>(), "Types are not equivalent");
-  return std::bit_cast<T*>(x);
+  return reinterpret_cast<T*>(x);
 }
 
 template <auto Start, auto End, auto Inc, class F>

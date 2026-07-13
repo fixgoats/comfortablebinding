@@ -3,4 +3,4 @@ IndentWidth: 2
 DerivePointerAlignment: false
 PointerAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
-
+QualifierAlignment: Left

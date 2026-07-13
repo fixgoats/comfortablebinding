@@ -97,8 +97,6 @@ struct KuramotoConf : public SimConf {
       e = uni_dis(gen);
     }
     MatrixXd out_thetas(n, t.n);
-    std::ofstream fout(outfile);
-    fout << theta.format(ONE_LINER) << '\n';
     auto rhs = kuramoto(k, omega);
     for (u32 i = 0; i < t.n; i++) {
       theta = rk4step(theta, t.d(), rhs);
@@ -109,7 +107,6 @@ struct KuramotoConf : public SimConf {
     output.createDataSet("thetas", out_thetas);
     output.createDataSet("omegas", omega);
     output.createDataSet("times", linspace(t, false));
-    fout.close();
   }
 };
 
@@ -122,11 +119,11 @@ struct KuramotoScan : public SimConf {
   KuramotoScan(const toml::table& tbl) {
     SET_STRUCT_FIELD(outfile, tbl);
     k = tblToRange(*tbl["k"].as_table());
-    n = tblToRange(*tbl["n"].as_table());
+    n = tblToRange<u32>(*tbl["n"].as_table());
     t = tblToRange(*tbl["t"].as_table());
   }
 
-  [[nodiscard]] std::string type() const override { return "kuramoto"; }
+  [[nodiscard]] std::string type() const override { return "kuramoto scan"; }
 
   void run() const override {
     std::vector<f64> abs_arr(n.n * k.n * t.n);
@@ -146,19 +143,19 @@ struct KuramotoScan : public SimConf {
         for (auto& e : omega) {
           e = gauss_dis(gen);
         }
-        avg_omegas(i, l) = omega.mean();
-        var_omegas(i, l) = omega.cwiseAbs2().mean() - square(omega.mean());
+        avg_omega(i, l) = omega.mean();
+        var_omega(i, l) = omega.cwiseAbs2().mean() - square(omega.mean());
         for (auto& e : theta) {
           e = uni_dis(gen);
         }
-        auto rhs = kuramoto(k, omega);
+        auto rhs = kuramoto(k.ith(l), omega);
         f64 old_avg_theta = theta.mean();
+        VectorXd old_theta = theta;
         for (u32 j = 0; j < t.n; j++) {
           theta = rk4step(theta, t.d(), rhs);
           c64 order_param = (c64{0, 1} * theta).array().exp().mean();
           f64 avg_theta = theta.mean();
           f64 r = std::sqrt(std::norm(order_param));
-          f64 order_par_theta = std::arg(order_param);
           abs_arr[(i * k.n + l) * t.n + j] = r;
           avg_theta_arr[(i * k.n + l) * t.n + j] = avg_theta;
           var_theta_arr[(i * k.n + l) * t.n + j] =
@@ -175,20 +172,19 @@ struct KuramotoScan : public SimConf {
     HighFive::File output(outfile, HighFive::File::Truncate);
     auto snapshot =
         output.createDataSet<f64>("abs", HighFive::DataSpace({n.n, k.n, t.n}));
-    snapshot.write_raw(abs.data());
+    snapshot.write_raw(abs_arr.data());
     snapshot = output.createDataSet<f64>("avg_theta",
                                          HighFive::DataSpace({n.n, k.n, t.n}));
-    snapshot.write_raw(avg_theta.data());
+    snapshot.write_raw(avg_theta_arr.data());
     snapshot = output.createDataSet<f64>("var_theta",
                                          HighFive::DataSpace({n.n, k.n, t.n}));
-    snapshot.write_raw(avg_theta.data());
-    snapshot = output.createDataSet<f64>("var_theta",
+    snapshot.write_raw(var_theta_arr.data());
+    snapshot = output.createDataSet<f64>("var_dtheta",
                                          HighFive::DataSpace({n.n, k.n, t.n}));
-    snapshot.write_raw(avg_theta.data());
+    snapshot.write_raw(var_dtheta_arr.data());
     output.createDataSet("avg_omega", avg_omega);
-    output.createDataSet("var_omega", avg_omega);
+    output.createDataSet("var_omega", var_omega);
     output.createDataSet("times", linspace(t, false));
-    fout.close();
   }
 };
 

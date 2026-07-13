@@ -191,9 +191,17 @@ inline RangeConf<Vector2d> tblToVecRange(const toml::table& tbl) {
           tbl["n"].value_or<u64>(0)};
 };
 
+template <class T>
+inline RangeConf<T> tblToRange(const toml::table& tbl) {
+  return {.start = tbl["start"].value_or<T>({}),
+          .endpoint = tbl["end"].value_or<T>({}),
+          .n = tbl["n"].value_or<u64>(0)};
+}
+
 inline RangeConf<f64> tblToRange(const toml::table& tbl) {
-  return {tbl["start"].value_or<double>(0.0), tbl["end"].value_or<double>(0.0),
-          tbl["n"].value_or<u64>(0)};
+  return {.start = tbl["start"].value_or<double>(0.0),
+          .endpoint = tbl["end"].value_or<double>(0.0),
+          .n = tbl["n"].value_or<u64>(0)};
 };
 
 std::optional<EigenSolution> loadDiag(std::string fname);

@@ -16,7 +16,7 @@ using Eigen::MatrixXcd;
 
 constexpr f32 hbar = 6.582119569e-1;
 constexpr f32 muB = 5.7883818060e-2;
-constexpr f32 echarge = 1e3;:
+constexpr f32 echarge = 1e3;
 
 using Eigen::Vector2d;
 using std::bit_cast;

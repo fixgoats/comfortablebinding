@@ -537,11 +537,12 @@ int main(int argc, char* argv[]) {
 
   SetTargetFPS(10);
   const auto points = tree_to_hats(tiles[0]); // hat;
+  Matrix2Xd unique_pts = filterpts(points);
   std::cout << "number of points: " << points.cols() << '\n';
-  f64 xmin = points(0, all).minCoeff();
-  f64 xmax = points(0, all).maxCoeff();
-  f64 ymin = points(1, all).minCoeff();
-  f64 ymax = points(1, all).maxCoeff();
+  f64 xmin = points(0, all).minCoeff() + 10.;
+  f64 xmax = points(0, all).maxCoeff() - 10.;
+  f64 ymin = points(1, all).minCoeff() + 10.;
+  f64 ymax = points(1, all).maxCoeff() - 10.;
   f64 exmin = xmin - 0.05 * (xmax - xmin);
   f64 eymin = ymin - 0.05 * (ymax - ymin);
   f64 exmax = xmax + 0.05 * (xmax - xmin);
@@ -550,7 +551,7 @@ int main(int argc, char* argv[]) {
   while (!WindowShouldClose()) {
     width = GetScreenWidth();
     height = GetScreenHeight();
-    f64 min_of_wh = std::min(width, height);
+    f64 min_of_wh = 3 * std::min(width, height);
     BeginDrawing();
     ClearBackground(WHITE);
     for (s32 i = 0; i < tetrille_points.cols() / 4; ++i) {
@@ -585,6 +586,12 @@ int main(int argc, char* argv[]) {
                    4.0, BLACK);
       }
     }
+    for (s32 i = 0; i < unique_pts.cols(); ++i) {
+      DrawCircle(
+          toScreenIsotropic(unique_pts(0, i), exmin, max_of_exey, min_of_wh),
+          toScreenIsotropic(unique_pts(1, i), eymin, max_of_exey, min_of_wh), 8,
+          RED);
+    }
 
     // for (s32 i = 0; i < points.cols(); ++i) {
     //   DrawCircle(toScreenIsotropic(points(0, i), exmin, max_of_exey,
@@ -596,7 +603,6 @@ int main(int argc, char* argv[]) {
   }
   CloseWindow();
 
-  Matrix2Xd unique_pts = filterpts(points);
   std::ofstream outfile(result["o"].as<std::string>());
 
   for (s64 i = 0; i < unique_pts.cols(); ++i) {
