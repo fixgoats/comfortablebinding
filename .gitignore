@@ -1,5 +1,4 @@
-build/
-debug-build/
+*build*/
 debug/
 release/
 .cache/
@@ -15,3 +14,4 @@ out/
 *.h5
 *.hd5
 *.hdf5
+
